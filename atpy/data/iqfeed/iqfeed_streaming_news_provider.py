@@ -15,7 +15,6 @@ class IQFeedStreamingNewsProvider(IQFeedBaseProvider, SilentQuoteListener):
         if self.quote_conn is None or not self.quote_conn.connected():
             self.quote_conn = iq.QuoteConn()
             self.quote_conn.add_listener(self)
-            self.quote_conn.add_listener(VerboseQuoteListener("test_listener"))
             self.quote_conn.connect()
             self.quote_conn.news_on()
 
