@@ -33,11 +33,20 @@ class PCQueue(queue.Queue):
     def __init__(self, generator: Generator, maxsize=0):
         super().__init__(maxsize=maxsize)
 
-        def fill_queue():
-            for d in generator():
-                self.put(d)
-
-        self.producer_thread = threading.Thread(target=fill_queue, daemon=True)
+        self.is_running = False
+        self.producer_thread = None
+        self.generator = generator
 
     def start(self):
+        def fill_queue():
+            for d in self.generator():
+                self.put(d)
+                if not self.is_running:
+                    break
+
+        self.producer_thread = threading.Thread(target=fill_queue, daemon=True)
+        self.is_running = True
         self.producer_thread.start()
+
+    def stop(self):
+        self.is_running = False

@@ -4,7 +4,10 @@ import queue
 
 
 class IQFeedStreamingNewsProvider(IQFeedBaseProvider, SilentQuoteListener):
+
     def __init__(self, minibatch=1, key_suffix=''):
+        super().__init__(name="data provider listener")
+
         self.minibatch = minibatch
         self.quote_conn = None
         self.key_suffix = key_suffix

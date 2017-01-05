@@ -1,12 +1,12 @@
 import datetime
 from atpy.data.iqfeed.iqfeed_base_provider import *
-from typing import List
-from atpy.data.iqfeed.filters import *
+from typing import List, NamedTuple
+from abc import *
 
 
-class NewsFilter(NamedTuple):
+class HistoryFilter(NamedTuple):
     """
-    News filter parameters
+    History filter parameters
     """
     sources: List[str]
     symbols: List[str]
@@ -14,22 +14,59 @@ class NewsFilter(NamedTuple):
     timeout: int
     limit: int
 
-NewsFilter.__new__.__defaults__ = (None, None, None, None, 100000)
+HistoryFilter.__new__.__defaults__ = (None, None, None, None, 100000)
 
 
-class DefaultNewsFilterProvider(DefaultFilterProvider):
+class HistoryFilterProvider(metaclass=ABCMeta):
+    """Base news filter provider generator/iterator interface"""
+
+    @abstractmethod
+    def __iter__(self):
+        return
+
+    @abstractmethod
+    def __next__(self) -> HistoryFilter:
+        return
+
+
+class DefaultFilterProvider(NewsFilterProvider):
     """Default news filter provider, which contains a list of filters"""
 
-    def _default_filter(self):
-        return NewsFilter()
+    def __init__(self):
+        self._filters = list()
+
+    def __iadd__(self, fn):
+        self._filters.append(fn)
+        return self
+
+    def __isub__(self, fn):
+        self._filters.remove(fn)
+        return self
+
+    def __iter__(self):
+        self.__counter = -1
+        return self
+
+    def __next__(self) -> NewsFilter:
+        if len(self._filters) == 0:
+            return NewsFilter()
+        else:
+            self.__counter += 1
+            return self._filters[self.__counter % len(self._filters)]
 
 
 class IQFeedNewsProvider(IQFeedBaseProvider):
     """
-    IQFeed news data provider (not streaming). See the unit test on how to use
+    IQFeed news data provider (not streaming). Use like
+    >>> news_provider = IQFeedNewsProvider(attach_text=True)
+    >>> news_provider.add_filter(NewsFilter(symbols=['AAPL']))
+    >>> news_provider.add_filter(NewsFilter(symbols=['IBM']))
+    >>>
+    >>> for i in news_provider:
+    >>>     print(i)
     """
 
-    def __init__(self, minibatch=1, attach_text=False, random_order=False, key_suffix='', filter_provider=DefaultNewsFilterProvider()):
+    def __init__(self, minibatch=1, attach_text=False, random_order=False, key_suffix='', filter_provider=DefaultFilterProvider()):
         self.minibatch = minibatch
         self.attach_text = attach_text
         self.news_conn = None
