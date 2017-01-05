@@ -40,15 +40,56 @@ class IQFeedNewsProvider(IQFeedBaseProvider):
     def __iter__(self):
         super().__iter__()
 
-        if self.news_conn is None or not self.news_conn.connected():
+        if self.news_conn is None:
             self.news_conn = iq.NewsConn()
             self.news_conn.connect()
             self.cfg = self.news_conn.request_news_config()
+
+        return self
+
+    def __enter__(self):
+        super().__enter__()
+
+        self.news_conn = iq.NewsConn()
+        self.news_conn.connect()
+        self.cfg = self.news_conn.request_news_config()
 
         self.queue = PCQueue(self.produce)
         self.queue.start()
 
         return self
+
+    def __exit__(self, exception_type, exception_value, traceback):
+        """Disconnect connection etc"""
+        self.queue.stop()
+        self.news_conn.disconnect()
+        self.news_conn = None
+
+    def __del__(self):
+        if self.news_conn is not None:
+            self.news_conn.disconnect()
+            self.cfg = None
+
+        if self.queue is not None:
+            self.queue.stop()
+
+    def __next__(self) -> map:
+        result = {'id' + self.key_suffix: list(), 'headline' + self.key_suffix: list(),
+                  'date' + self.key_suffix: list(), 'time' + self.key_suffix: list(),
+                  'symbols' + self.key_suffix: list(), 'text' + self.key_suffix: list()}
+
+        for i, (story_id, headline, date, time, symbols, text) in enumerate(iter(self.queue.get, None)):
+            result['id' + self.key_suffix].append(story_id)
+            result['headline' + self.key_suffix].append(headline)
+            result['date' + self.key_suffix].append(date)
+            result['time' + self.key_suffix].append(time)
+            result['symbols' + self.key_suffix].append(symbols)
+
+            if text is not None:
+                result['text' + self.key_suffix].append(text)
+
+            if (i + 1) % self.minibatch == 0:
+                return result
 
     def produce(self):
         for f in self.filter_provider:
@@ -72,26 +113,3 @@ class IQFeedNewsProvider(IQFeedBaseProvider):
                         titles.append(h.headline)
 
                         yield h.story_id, h.headline, h.story_date, h.story_time, h.symbol_list, None
-
-    def __del__(self):
-        if self.news_conn is not None and self.news_conn.connected():
-            self.news_conn.disconnect()
-            self.cfg = None
-
-    def __next__(self) -> map:
-        result = {'id' + self.key_suffix: list(), 'headline' + self.key_suffix: list(),
-                  'date' + self.key_suffix: list(), 'time' + self.key_suffix: list(),
-                  'symbols' + self.key_suffix: list(), 'text' + self.key_suffix: list()}
-
-        for i, (story_id, headline, date, time, symbols, text) in enumerate(iter(self.queue.get, None)):
-            result['id' + self.key_suffix].append(story_id)
-            result['headline' + self.key_suffix].append(headline)
-            result['date' + self.key_suffix].append(date)
-            result['time' + self.key_suffix].append(time)
-            result['symbols' + self.key_suffix].append(symbols)
-
-            if text is not None:
-                result['text' + self.key_suffix].append(text)
-
-            if (i + 1) % self.minibatch == 0:
-                return result

@@ -15,7 +15,7 @@ class IQFeedStreamingNewsProvider(IQFeedBaseProvider, SilentQuoteListener):
     def __iter__(self):
         super().__iter__()
 
-        if self.quote_conn is None or not self.quote_conn.connected():
+        if self.quote_conn is None:
             self.quote_conn = iq.QuoteConn()
             self.quote_conn.add_listener(self)
             self.quote_conn.connect()
@@ -25,11 +25,27 @@ class IQFeedStreamingNewsProvider(IQFeedBaseProvider, SilentQuoteListener):
 
         return self
 
-    def process_news(self, news_item: QuoteConn.NewsMsg) -> None:
-        self.queue.put(news_item)
+    def __enter__(self):
+        super().__enter__()
+
+        self.quote_conn = iq.QuoteConn()
+        self.quote_conn.add_listener(self)
+        self.quote_conn.connect()
+        self.quote_conn.news_on()
+
+        self.queue = queue.Queue()
+
+        return self
+
+    def __exit__(self, exception_type, exception_value, traceback):
+        """Disconnect connection etc"""
+        self.quote_conn.remove_listener(self)
+        self.quote_conn.disconnect()
+        self.quote_conn = None
 
     def __del__(self):
-        if self.quote_conn is not None and self.quote_conn.connected():
+        if self.quote_conn is not None:
+            self.quote_conn.remove_listener(self)
             self.quote_conn.disconnect()
 
     def __next__(self) -> map:
@@ -50,3 +66,6 @@ class IQFeedStreamingNewsProvider(IQFeedBaseProvider, SilentQuoteListener):
 
             if (i + 1) % self.minibatch == 0:
                 return result
+
+    def process_news(self, news_item: QuoteConn.NewsMsg) -> None:
+        self.queue.put(news_item)

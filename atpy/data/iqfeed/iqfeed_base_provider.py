@@ -17,6 +17,16 @@ class IQFeedBaseProvider(DataProvider, metaclass=ABCMeta):
                              password=dtn_password)
         svc.launch()
 
+    def __enter__(self):
+        """Handle connection->connect etc"""
+        self.launch_service()
+        return self
+
+    @abstractmethod
+    def __exit__(self, exception_type, exception_value, traceback):
+        """Disconnect connection etc"""
+        return
+
     def __iter__(self):
         self.launch_service()
 
