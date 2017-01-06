@@ -63,7 +63,7 @@ class IQFeedNewsProvider(IQFeedBaseProvider):
         """Disconnect connection etc"""
         self.queue.stop()
         self.news_conn.disconnect()
-        self.news_conn = None
+        self.quote_conn = None
 
     def __del__(self):
         if self.news_conn is not None:
