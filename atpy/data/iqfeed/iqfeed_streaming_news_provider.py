@@ -49,20 +49,14 @@ class IQFeedStreamingNewsProvider(IQFeedBaseProvider, SilentQuoteListener):
             self.quote_conn.disconnect()
 
     def __next__(self) -> map:
-        result = {'id' + self.key_suffix: list(),
-                  'headline' + self.key_suffix: list(),
-                  'date' + self.key_suffix: list(),
-                  'time' + self.key_suffix: list(),
-                  'symbols' + self.key_suffix: list(),
-                  'distributor' + self.key_suffix: list()}
+        result = None
 
-        for i, (story_id, distributor, symbol_list, story_date, story_time, headline) in enumerate(iter(self.queue.get, None)):
-            result['id' + self.key_suffix].append(story_id)
-            result['headline' + self.key_suffix].append(headline)
-            result['date' + self.key_suffix].append(story_date)
-            result['time' + self.key_suffix].append(story_time)
-            result['symbols' + self.key_suffix].append(symbol_list)
-            result['distributor' + self.key_suffix].append(distributor)
+        for i, datum in enumerate(iter(self.queue.get, None)):
+            if result is None:
+                result = {f + self.key_suffix: list() for f in datum._fields}
+
+            for j, f in enumerate(datum._fields):
+                result[f + self.key_suffix].append(datum[j])
 
             if (i + 1) % self.minibatch == 0:
                 return result

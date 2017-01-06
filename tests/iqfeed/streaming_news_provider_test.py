@@ -10,7 +10,7 @@ class TestIQFeedStreamingNews(unittest.TestCase):
     def test_provider(self):
         with IQFeedStreamingNewsProvider() as news_provider:
             for i, d in enumerate(news_provider):
-                if i == 2:
+                if i == 1:
                     break
 
             self.assertEqual(len(d), 6)

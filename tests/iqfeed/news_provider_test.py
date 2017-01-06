@@ -14,7 +14,7 @@ class TestIQFeedNews(unittest.TestCase):
 
         with IQFeedNewsProvider(attach_text=True, minibatch=3, filter_provider=filter_provider) as news_provider:
             for i, d in enumerate(news_provider):
-                if i == 2:
+                if i == 1:
                     break
 
             self.assertEqual(len(d), 6)
