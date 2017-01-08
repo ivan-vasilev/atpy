@@ -12,8 +12,8 @@ class TestIQFeedNews(unittest.TestCase):
         filter_provider += NewsFilter(symbols=['AAPL'])
         filter_provider += NewsFilter(symbols=['IBM'])
 
-        with IQFeedNewsProvider(attach_text=True, minibatch=3, filter_provider=filter_provider) as news_provider:
-            for i, d in enumerate(news_provider):
+        with IQFeedNewsProvider(attach_text=True, minibatch=3, filter_provider=filter_provider) as provider:
+            for i, d in enumerate(provider):
                 if i == 1:
                     break
 

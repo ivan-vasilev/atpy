@@ -8,8 +8,8 @@ class TestIQFeedStreamingNews(unittest.TestCase):
     """
 
     def test_provider(self):
-        with IQFeedStreamingNewsProvider() as news_provider:
-            for i, d in enumerate(news_provider):
+        with IQFeedStreamingNewsProvider() as provider:
+            for i, d in enumerate(provider):
                 if i == 1:
                     break
 

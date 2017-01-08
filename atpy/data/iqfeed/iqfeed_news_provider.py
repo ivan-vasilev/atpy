@@ -32,7 +32,7 @@ class IQFeedNewsProvider(IQFeedBaseProvider):
     def __init__(self, minibatch=1, attach_text=False, random_order=False, key_suffix='', filter_provider=DefaultNewsFilterProvider()):
         self.minibatch = minibatch
         self.attach_text = attach_text
-        self.news_conn = None
+        self.conn = None
         self.random_order = random_order
         self.key_suffix = key_suffix
         self.filter_provider = filter_provider
@@ -40,19 +40,19 @@ class IQFeedNewsProvider(IQFeedBaseProvider):
     def __iter__(self):
         super().__iter__()
 
-        if self.news_conn is None:
-            self.news_conn = iq.NewsConn()
-            self.news_conn.connect()
-            self.cfg = self.news_conn.request_news_config()
+        if self.conn is None:
+            self.conn = iq.NewsConn()
+            self.conn.connect()
+            self.cfg = self.conn.request_news_config()
 
         return self
 
     def __enter__(self):
         super().__enter__()
 
-        self.news_conn = iq.NewsConn()
-        self.news_conn.connect()
-        self.cfg = self.news_conn.request_news_config()
+        self.conn = iq.NewsConn()
+        self.conn.connect()
+        self.cfg = self.conn.request_news_config()
 
         self.queue = PCQueue(self.produce)
         self.queue.start()
@@ -62,12 +62,12 @@ class IQFeedNewsProvider(IQFeedBaseProvider):
     def __exit__(self, exception_type, exception_value, traceback):
         """Disconnect connection etc"""
         self.queue.stop()
-        self.news_conn.disconnect()
+        self.conn.disconnect()
         self.quote_conn = None
 
     def __del__(self):
-        if self.news_conn is not None:
-            self.news_conn.disconnect()
+        if self.conn is not None:
+            self.conn.disconnect()
             self.cfg = None
 
         if self.queue is not None:
@@ -91,17 +91,23 @@ class IQFeedNewsProvider(IQFeedBaseProvider):
             if (i + 1) % self.minibatch == 0:
                 return result
 
+    def __getattr__(self, name):
+        if self.conn is not None:
+            return getattr(self.conn, name)
+        else:
+            raise AttributeError
+
     def produce(self):
         for f in self.filter_provider:
             ids = list()
             titles = list()
 
-            headlines = self.news_conn.request_news_headlines(sources=f.sources, symbols=f.symbols, date=f.date,
-                                                              limit=f.limit, timeout=f.timeout)
+            headlines = self.conn.request_news_headlines(sources=f.sources, symbols=f.symbols, date=f.date,
+                                                         limit=f.limit, timeout=f.timeout)
             if self.attach_text:
                 for h in headlines:
                     if h.story_id not in ids and h.headline not in titles:
-                        story = self.news_conn.request_news_story(h.story_id)
+                        story = self.conn.request_news_story(h.story_id)
                         ids.append(h.story_id)
                         titles.append(h.headline)
 

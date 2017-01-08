@@ -11,8 +11,8 @@ class TestIQFeedHistory(unittest.TestCase):
         filter_provider = DefaultFilterProvider()
         filter_provider += TicksFilter(ticker="IBM", max_ticks=100)
 
-        with IQFeedHistoryProvider(minibatch=4, filter_provider=filter_provider) as history_provider:
-            for i, d in enumerate(history_provider):
+        with IQFeedHistoryProvider(minibatch=4, filter_provider=filter_provider) as provider:
+            for i, d in enumerate(provider):
                 if i == 2:
                     break
 

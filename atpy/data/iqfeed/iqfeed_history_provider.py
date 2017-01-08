@@ -164,24 +164,24 @@ class IQFeedHistoryProvider(IQFeedBaseProvider):
 
     def __init__(self, minibatch=1, key_suffix='', filter_provider=DefaultFilterProvider()):
         self.minibatch = minibatch
-        self.history_conn = None
+        self.conn = None
         self.key_suffix = key_suffix
         self.filter_provider = filter_provider
 
     def __iter__(self):
         super().__iter__()
 
-        if self.history_conn is None:
-            self.history_conn = iq.HistoryConn()
-            self.history_conn.connect()
+        if self.conn is None:
+            self.conn = iq.HistoryConn()
+            self.conn.connect()
 
         return self
 
     def __enter__(self):
         super().__enter__()
 
-        self.history_conn = iq.HistoryConn()
-        self.history_conn.connect()
+        self.conn = iq.HistoryConn()
+        self.conn.connect()
 
         self.queue = PCQueue(self.produce)
         self.queue.start()
@@ -191,12 +191,12 @@ class IQFeedHistoryProvider(IQFeedBaseProvider):
     def __exit__(self, exception_type, exception_value, traceback):
         """Disconnect connection etc"""
         self.queue.stop()
-        self.history_conn.disconnect()
-        self.history_conn = None
+        self.conn.disconnect()
+        self.conn = None
 
     def __del__(self):
-        if self.history_conn is not None:
-            self.history_conn.disconnect()
+        if self.conn is not None:
+            self.conn.disconnect()
             self.cfg = None
 
         if self.queue is not None:
@@ -213,28 +213,34 @@ class IQFeedHistoryProvider(IQFeedBaseProvider):
             if (i + 1) % self.minibatch == 0:
                 return result
 
+    def __getattr__(self, name):
+        if self.conn is not None:
+            return getattr(self.conn, name)
+        else:
+            raise AttributeError
+
     def produce(self):
         for f in self.filter_provider:
             if isinstance(f, TicksFilter):
-                method = self.history_conn.request_ticks
+                method = self.conn.request_ticks
             elif isinstance(f, TicksForDaysFilter):
-                method = self.history_conn.request_ticks_for_days
+                method = self.conn.request_ticks_for_days
             elif isinstance(f, TicksInPeriodFilter):
-                method = self.history_conn.request_ticks_in_period
+                method = self.conn.request_ticks_in_period
             elif isinstance(f, BarsFilter):
-                method = self.history_conn.request_bars
+                method = self.conn.request_bars
             elif isinstance(f, BarsForDaysFilter):
-                method = self.history_conn.request_bars_for_days
+                method = self.conn.request_bars_for_days
             elif isinstance(f, BarsInPeriodFilter):
-                method = self.history_conn.request_bars_in_period
+                method = self.conn.request_bars_in_period
             elif isinstance(f, BarsDailyFilter):
-                method = self.history_conn.request_daily_data
+                method = self.conn.request_daily_data
             elif isinstance(f, BarsDailyForDatesFilter):
-                method = self.history_conn.request_daily_data_for_dates
+                method = self.conn.request_daily_data_for_dates
             elif isinstance(f, BarsWeeklyFilter):
-                method = self.history_conn.request_weekly_data
+                method = self.conn.request_weekly_data
             elif isinstance(f, BarsMonthlyFilter):
-                method = self.history_conn.request_monthly_data
+                method = self.conn.request_monthly_data
 
             data = method(*f)
 
