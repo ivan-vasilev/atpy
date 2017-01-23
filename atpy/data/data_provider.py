@@ -9,11 +9,11 @@ class DataProvider(metaclass=ABCMeta):
 
     @abstractmethod
     def __iter__(self):
-        return
+        pass
 
     @abstractmethod
-    def __next__(self) -> map:
-        return
+    def __next__(self) -> dict:
+        pass
 
 
 class PCQueue(queue.Queue):

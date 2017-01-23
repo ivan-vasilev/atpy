@@ -1,7 +1,8 @@
 from atpy.data.iqfeed.iqfeed_base_provider import *
 from atpy.data.iqfeed.filters import *
 import datetime
-import numpy as np
+from pyevents.events import *
+import atpy.data.iqfeed.util as iqfeedutil
 
 
 class TicksFilter(NamedTuple):
@@ -157,61 +158,44 @@ class BarsMonthlyFilter(NamedTuple):
 BarsMonthlyFilter.__new__.__defaults__ = (False, None)
 
 
-class IQFeedHistoryProvider(IQFeedBaseProvider):
+class IQFeedHistoryListener(object):
     """
-    IQFeed historical data provider (not streaming). See the unit test on how to use
+    IQFeed historical data listener. See the unit test on how to use
     """
 
-    def __init__(self, minibatch=1, key_suffix='', filter_provider=DefaultFilterProvider()):
+    def __init__(self, minibatch=1, column_mode=True, key_suffix='', filter_provider=DefaultFilterProvider()):
+        """
+        :param minibatch: size of the minibatch
+        :param column_mode: whether to organize the data in columns or rows
+        :param key_suffix: suffix for field names
+        :param filter_provider: news filter list
+        """
         self.minibatch = minibatch
-        self.conn = None
+        self.column_mode = column_mode
         self.key_suffix = key_suffix
+        self.current_minibatch = list()
         self.filter_provider = filter_provider
-
-    def __iter__(self):
-        super().__iter__()
-
-        if self.conn is None:
-            self.conn = iq.HistoryConn()
-            self.conn.connect()
-
-        return self
+        self.conn = None
 
     def __enter__(self):
-        super().__enter__()
-
+        launch_service()
         self.conn = iq.HistoryConn()
         self.conn.connect()
-
-        self.queue = PCQueue(self.produce)
-        self.queue.start()
+        self.is_running = True
+        self.producer_thread = threading.Thread(target=self.produce, daemon=True)
+        self.producer_thread.start()
 
         return self
 
     def __exit__(self, exception_type, exception_value, traceback):
-        """Disconnect connection etc"""
-        self.queue.stop()
         self.conn.disconnect()
         self.conn = None
+        self.is_running = False
 
     def __del__(self):
         if self.conn is not None:
             self.conn.disconnect()
             self.cfg = None
-
-        if self.queue is not None:
-            self.queue.stop()
-
-    def __next__(self) -> map:
-        for i, datum in enumerate(iter(self.queue.get, None)):
-            if i == 0:
-                result = {n: np.empty((self.minibatch,), d.dtype) for n, d in zip(datum.dtype.names, datum)}
-
-            for j, f in enumerate(datum.dtype.names):
-                result[f][i] = datum[j]
-
-            if (i + 1) % self.minibatch == 0:
-                return result
 
     def __getattr__(self, name):
         if self.conn is not None:
@@ -244,5 +228,56 @@ class IQFeedHistoryProvider(IQFeedBaseProvider):
 
             data = method(*f)
 
-            for d in data:
-                yield d
+            processed_data = list()
+
+            for datum in data:
+                processed_data.append(datum[0] if len(datum) == 1 else datum)
+                self.current_minibatch.append(datum[0] if len(datum) == 1 else datum)
+
+                if len(self.current_minibatch) == self.minibatch:
+                    self.process_minibatch(self.current_minibatch)
+                    self.current_minibatch = list()
+
+            self.process_batch(processed_data)
+
+            if not self.is_running:
+                return
+
+    @after
+    def process_batch(self, data):
+        return iqfeedutil.create_batch(data, self.column_mode, self.key_suffix)
+
+    @after
+    def process_minibatch(self, data):
+        return iqfeedutil.create_batch(data, self.column_mode, self.key_suffix)
+
+
+class IQFeedHistoryProvider(IQFeedHistoryListener):
+    """
+    IQFeed historical data provider (not streaming). See the unit test on how to use
+    """
+
+    def __init__(self, minibatch=1, column_mode=True, key_suffix='', filter_provider=DefaultFilterProvider(), use_minibatch=True):
+        """
+        :param minibatch: size of the minibatch
+        :param column_mode: whether to organize the data in columns or rows
+        :param key_suffix: suffix for field names
+        :param filter_provider: news filter list
+        """
+        super().__init__(minibatch=minibatch, key_suffix=key_suffix, column_mode=column_mode, filter_provider=filter_provider)
+
+        if use_minibatch:
+            self.process_minibatch += lambda *args, **kwargs: self.queue.put(kwargs[FUNCTION_OUTPUT])
+        else:
+            self.process_batch += lambda *args, **kwargs: self.queue.put(kwargs[FUNCTION_OUTPUT])
+
+    def __enter__(self):
+        self.queue = queue.Queue()
+        super().__enter__()
+        return self
+
+    def __iter__(self):
+        return self
+
+    def __next__(self) -> map:
+        return self.queue.get()
