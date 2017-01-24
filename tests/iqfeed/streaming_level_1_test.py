@@ -2,7 +2,7 @@ import unittest
 from atpy.data.iqfeed.iqfeed_level_1_provider import *
 
 
-class TestIQFeedStreamingNews(unittest.TestCase):
+class TestIQFeedLevel1(unittest.TestCase):
     """
     IQFeed streaming news test, which checks whether the class works in basic terms
     """
