@@ -1,4 +1,3 @@
-
 import unittest
 from atpy.data.iqfeed.iqfeed_level_1_provider import *
 
@@ -187,6 +186,38 @@ class TestIQFeedStreamingNews(unittest.TestCase):
                 self.assertEqual(len(update_item), 16)
                 self.assertEqual(len(update_item['Symbol']), 2)
                 self.assertTrue('AAPL'.encode() in update_item['Symbol'] or 'IBM'.encode() in update_item['Symbol'] or 'GOOG'.encode() in update_item['Symbol'] or 'MSFT'.encode() in update_item['Symbol'])
+
+                if i == 1:
+                    break
+
+    def test_update_row_mode(self):
+        with IQFeedLevel1Listener(minibatch=2, column_mode=False) as listener:
+            listener.watch('IBM')
+            listener.watch('AAPL')
+            listener.watch('GOOG')
+            listener.watch('MSFT')
+
+            def process_update_item(*args, **kwargs):
+                update_item = kwargs[FUNCTION_OUTPUT]
+                self.assertEqual(len(update_item), 16)
+
+            listener.process_update += process_update_item
+
+            def process_update_mb(*args, **kwargs):
+                update_item = kwargs[FUNCTION_OUTPUT]
+                self.assertEqual(len(update_item), 2)
+                self.assertEqual(len(update_item[0]), 16)
+
+                symbols = [update_item[0]['Symbol'], update_item[1]['Symbol']]
+                self.assertTrue('AAPL'.encode() in symbols or 'IBM'.encode() in symbols or 'GOOG'.encode() in symbols or 'MSFT'.encode() in symbols)
+
+            listener.process_update_mb += process_update_mb
+
+            for i, update_item in enumerate(listener.update_provider()):
+                self.assertEqual(len(update_item), 2)
+                self.assertEqual(len(update_item[0]), 16)
+                symbols = [update_item[0]['Symbol'], update_item[1]['Symbol']]
+                self.assertTrue('AAPL'.encode() in symbols or 'IBM'.encode() in symbols or 'GOOG'.encode() in symbols or 'MSFT'.encode() in symbols)
 
                 if i == 1:
                     break
