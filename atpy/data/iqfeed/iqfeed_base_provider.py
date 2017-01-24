@@ -5,15 +5,6 @@ import pyiqfeed as iq
 from passwords import dtn_product_id, dtn_login, dtn_password
 
 
-def launch_service():
-    """Check if IQFeed.exe is running and start if not"""
-
-    svc = iq.FeedService(product=dtn_product_id,
-                         version="Debugging",
-                         login=dtn_login,
-                         password=dtn_password)
-    svc.launch()
-
 
 class IQFeedBaseProvider(DataProvider, metaclass=ABCMeta):
 

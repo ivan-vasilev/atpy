@@ -163,7 +163,7 @@ class IQFeedHistoryListener(object):
     IQFeed historical data listener. See the unit test on how to use
     """
 
-    def __init__(self, minibatch=1, column_mode=True, key_suffix='', filter_provider=DefaultFilterProvider()):
+    def __init__(self, minibatch=None, column_mode=True, key_suffix='', filter_provider=DefaultFilterProvider()):
         """
         :param minibatch: size of the minibatch
         :param column_mode: whether to organize the data in columns or rows
@@ -178,7 +178,7 @@ class IQFeedHistoryListener(object):
         self.conn = None
 
     def __enter__(self):
-        launch_service()
+        iqfeedutil.launch_service()
         self.conn = iq.HistoryConn()
         self.conn.connect()
         self.is_running = True
@@ -232,11 +232,13 @@ class IQFeedHistoryListener(object):
 
             for datum in data:
                 processed_data.append(datum[0] if len(datum) == 1 else datum)
-                self.current_minibatch.append(datum[0] if len(datum) == 1 else datum)
 
-                if len(self.current_minibatch) == self.minibatch:
-                    self.process_minibatch(self.current_minibatch)
-                    self.current_minibatch = list()
+                if self.minibatch is not None:
+                    self.current_minibatch.append(datum[0] if len(datum) == 1 else datum)
+
+                    if len(self.current_minibatch) == self.minibatch:
+                        self.process_minibatch(self.current_minibatch)
+                        self.current_minibatch = list()
 
             self.process_batch(processed_data)
 

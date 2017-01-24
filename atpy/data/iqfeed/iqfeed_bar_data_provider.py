@@ -18,7 +18,7 @@ class IQFeedBarDataListener(SilentBarListener):
         self.current_batch = None
 
     def __enter__(self):
-        launch_service()
+        iqfeedutil.launch_service()
 
         self.conn = iq.BarConn()
         self.conn.add_listener(self)
@@ -86,11 +86,5 @@ class IQFeedBarDataProvider(IQFeedBarDataListener):
     def __iter__(self):
         return self
 
-    def __next__(self) -> map:
+    def __next__(self):
         return self.queue.get()
-
-    def __getattr__(self, name):
-        if self.conn is not None:
-            return getattr(self.conn, name)
-        else:
-            raise AttributeError

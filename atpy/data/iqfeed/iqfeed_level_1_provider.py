@@ -1,37 +1,32 @@
 from atpy.data.iqfeed.iqfeed_base_provider import *
+from atpy.data.iqfeed.util import *
 from pyiqfeed import *
 import queue
-import numpy as np
+from pyevents.events import *
 
 
-class IQFeedLevel1Provider(IQFeedBaseProvider, SilentQuoteListener):
+class IQFeedLevel1Listener(SilentQuoteListener):
 
-    def __init__(self, minibatch=1, key_suffix=''):
+    def __init__(self, minibatch=None, key_suffix='', column_mode=True):
         super().__init__(name="data provider listener")
 
         self.minibatch = minibatch
         self.conn = None
         self.key_suffix = key_suffix
+        self.column_mode = column_mode
 
-    def __iter__(self):
-        super().__iter__()
-
-        if self.conn is None:
-            self.conn = iq.QuoteConn()
-            self.conn.add_listener(self)
-            self.conn.connect()
-
-            self.queue = queue.Queue()
-
-        return self
+        self.current_fund_mb = list()
+        self.current_news_mb = list()
+        self.current_regional_mb = list()
+        self.current_summary_mb = list()
+        self.current_update_mb = list()
 
     def __enter__(self):
-        super().__enter__()
+        launch_service()
 
         self.conn = iq.QuoteConn()
         self.conn.add_listener(self)
         self.conn.connect()
-        self.conn.news_on()
 
         self.queue = queue.Queue()
 
@@ -48,87 +43,118 @@ class IQFeedLevel1Provider(IQFeedBaseProvider, SilentQuoteListener):
             self.conn.remove_listener(self)
             self.conn.disconnect()
 
-    def __next__(self) -> map:
-        result = None
-
-        for i, datum in enumerate(iter(self.queue.get, None)):
-            if result is None:
-                result = {f + self.key_suffix: list() for f in datum._fields}
-
-            for j, f in enumerate(datum._fields):
-                result[f + self.key_suffix].append(datum[j])
-
-            if (i + 1) % self.minibatch == 0:
-                return result
-
     def __getattr__(self, name):
         if self.conn is not None:
             return getattr(self.conn, name)
         else:
             raise AttributeError
 
-    def process_news(self, news_item: QuoteConn.NewsMsg) -> None:
-        self.queue.put(news_item)
+    @after
+    def process_news(self, news_item: QuoteConn.NewsMsg):
+        news_item = news_item._asdict()
 
-    def process_regional_quote(self, quote: np.array) -> None:
-        """
-        The top of book at a market-center was updated
+        if self.minibatch is not None:
+            self.current_news_mb.append(news_item)
+            if len(self.current_news_mb) == self.minibatch:
+                if self.column_mode:
+                    processed_data = {f + self.key_suffix: list() for f in news_item.keys()}
+                    for ni in self.current_news_mb:
+                        for k, v in ni.items():
+                            processed_data[k].append(v)
 
-        :param quote: numpy structured array with the actual quote
+                    self.process_news_mb(processed_data)
+                else:
+                    self.process_news_mb(self.current_news_mb)
 
-        dtype of quote is QuoteConn.regional_type
+                self.current_news_mb = list()
 
-        """
-        pass
+        return news_item
 
-    def process_summary(self, summary: np.array) -> None:
-        """
-        Initial data after subscription with latest quote, last trade etc.
+    @after
+    def process_news_mb(self, news_list):
+        return news_list
 
-        :param summary: numpy structured array with the data.
+    def news_provider(self):
+        return StreamingDataProvider(self.process_news_mb)
 
-        Fields in each update can be changed by calling
-        select_update_fieldnames on the QuoteConn class sending updates.
+    @after
+    def process_regional_quote(self, quote: np.array):
+        if self.minibatch is not None:
+            self.current_regional_mb.append(quote)
+            if len(self.current_regional_mb) == self.minibatch:
+                self.process_regional_mb(create_batch(self.current_regional_mb, self.column_mode, self.key_suffix))
+                self.current_regional_mb = list()
 
-        The dtype of the array includes all requested fields. It can be
-        different for each QuoteConn depending on the last call to
-        select_update_fieldnames.
+        return iqfeed_to_dict(quote, self.key_suffix)
 
-        """
-        pass
+    @after
+    def process_regional_mb(self, quote_list):
+        return quote_list
 
-    def process_update(self, update: np.array) -> None:
-        """
-        Update with latest quote, last trade etc.
+    def regional_provider(self):
+        return StreamingDataProvider(self.process_regional_mb)
 
-        :param update: numpy structured array with the data.
+    @after
+    def process_summary(self, summary: np.array):
+        if self.minibatch is not None:
+            self.current_summary_mb.append(summary)
+            if len(self.current_summary_mb) == self.minibatch:
+                self.process_summary_mb(create_batch(self.current_summary_mb, self.column_mode, self.key_suffix))
+                self.current_summary_mb = list()
 
-        Compare with prior cached values to find our what changed. Nothing may
-        have changed.
+        return iqfeed_to_dict(summary, self.key_suffix)
 
-        Fields in each update can be changed by calling
-        select_update_fieldnames on the QuoteConn class sending updates.
+    @after
+    def process_summary_mb(self, summary_list):
+        return summary_list
 
-        The dtype of the array includes all requested fields. It can be
-        different for each QuoteConn depending on the last call to
-        select_update_fieldnames.
+    def summary_provider(self):
+        return StreamingDataProvider(self.process_summary_mb)
 
-        """
-        pass
+    @after
+    def process_update(self, update: np.array):
+        if self.minibatch is not None:
+            self.current_update_mb.append(update)
+            if len(self.current_update_mb) == self.minibatch:
+                self.process_update_mb(create_batch(self.current_update_mb, self.column_mode, self.key_suffix))
+                self.current_update_mb = list()
 
-    def process_fundamentals(self, fund: np.array) -> None:
-        """
-        Message with information about symbol which does not change.
+        return iqfeed_to_dict(update, self.key_suffix)
 
-        :param fund: numpy structured array with the data.
+    @after
+    def process_update_mb(self, updates_list):
+        return updates_list
 
-        Despite the word fundamentals used to describe this message in the
-        IQFeed docs and the name of this function, you don't get just
-        fundamental data. You also get reference date like the expiration date
-        of an option.
+    def update_provider(self):
+        return StreamingDataProvider(self.process_update_mb)
 
-        Called once when you first subscribe and every time you request a
-        refresh.
+    @after
+    def process_fundamentals(self, fund: np.array):
+        if self.minibatch is not None:
+            self.current_fund_mb.append(fund)
+            if len(self.current_fund_mb) == self.minibatch:
+                self.process_fundamentals_mb(create_batch(self.current_fund_mb, self.column_mode, self.key_suffix))
+                self.current_fund_mb = list()
 
-        """
-        pass
+        return iqfeed_to_dict(fund, self.key_suffix)
+
+    @after
+    def process_fundamentals_mb(self, fund_list):
+        return fund_list
+
+    def fundamentals_provider(self):
+        return StreamingDataProvider(self.process_fundamentals_mb)
+
+
+class StreamingDataProvider(object):
+    """Streaming data provider generator/iterator interface"""
+
+    def __init__(self, producer):
+        self.q = queue.Queue()
+        producer += lambda *args, **kwargs: self.q.put(kwargs[FUNCTION_OUTPUT])
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        return self.q.get()
