@@ -1,11 +1,11 @@
-from atpy.data.iqfeed.iqfeed_base_provider import *
-from atpy.data.iqfeed.util import *
-from pyiqfeed import *
 import queue
+
+from atpy.data.iqfeed.util import *
 from pyevents.events import *
+import pyiqfeed as iq
 
 
-class IQFeedLevel1Listener(SilentQuoteListener):
+class IQFeedLevel1Listener(iq.SilentQuoteListener):
 
     def __init__(self, minibatch=None, key_suffix='', column_mode=True):
         super().__init__(name="data provider listener")
@@ -50,7 +50,7 @@ class IQFeedLevel1Listener(SilentQuoteListener):
             raise AttributeError
 
     @after
-    def process_news(self, news_item: QuoteConn.NewsMsg):
+    def process_news(self, news_item: iq.QuoteConn.NewsMsg):
         news_item = news_item._asdict()
 
         if self.minibatch is not None:

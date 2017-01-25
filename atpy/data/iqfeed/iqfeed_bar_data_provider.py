@@ -1,12 +1,11 @@
-from atpy.data.iqfeed.iqfeed_base_provider import *
-from pyiqfeed import *
+import pyiqfeed as iq
 import queue
 import numpy as np
 from pyevents.events import *
 import atpy.data.iqfeed.util as iqfeedutil
 
 
-class IQFeedBarDataListener(SilentBarListener):
+class IQFeedBarDataListener(iq.SilentBarListener):
 
     def __init__(self, minibatch=None, key_suffix='', column_mode=True):
         super().__init__(name="data provider listener")

@@ -1,9 +1,12 @@
 import datetime
-from atpy.data.iqfeed.iqfeed_base_provider import *
+import queue
+import threading
 from typing import List
+
+import atpy.data.iqfeed.util as iqfeedutil
+import pyiqfeed as iq
 from atpy.data.iqfeed.filters import *
 from pyevents.events import *
-import atpy.data.iqfeed.util as iqfeedutil
 
 
 class NewsFilter(NamedTuple):

@@ -1,8 +1,11 @@
-from atpy.data.iqfeed.iqfeed_base_provider import *
-from atpy.data.iqfeed.filters import *
 import datetime
-from pyevents.events import *
+import queue
+import threading
+
 import atpy.data.iqfeed.util as iqfeedutil
+import pyiqfeed as iq
+from atpy.data.iqfeed.filters import *
+from pyevents.events import *
 
 
 class TicksFilter(NamedTuple):
