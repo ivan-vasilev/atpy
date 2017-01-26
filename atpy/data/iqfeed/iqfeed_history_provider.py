@@ -4,6 +4,7 @@ import threading
 
 import atpy.data.iqfeed.util as iqfeedutil
 import pyiqfeed as iq
+from atpy.data.iqfeed.data_events import *
 from atpy.data.iqfeed.filters import *
 from pyevents.events import *
 
@@ -250,11 +251,11 @@ class IQFeedHistoryListener(object):
 
     @after
     def process_batch(self, data):
-        return iqfeedutil.create_batch(data, self.column_mode, self.key_suffix)
+        return HistoryEvent(iqfeedutil.create_batch(data, self.column_mode, self.key_suffix))
 
     @after
     def process_minibatch(self, data):
-        return iqfeedutil.create_batch(data, self.column_mode, self.key_suffix)
+        return HistoryBatchEvent(iqfeedutil.create_batch(data, self.column_mode, self.key_suffix))
 
 
 class IQFeedHistoryProvider(IQFeedHistoryListener):
@@ -272,9 +273,9 @@ class IQFeedHistoryProvider(IQFeedHistoryListener):
         super().__init__(minibatch=minibatch, key_suffix=key_suffix, column_mode=column_mode, filter_provider=filter_provider)
 
         if use_minibatch:
-            self.process_minibatch += lambda *args, **kwargs: self.queue.put(kwargs[FUNCTION_OUTPUT])
+            self.process_minibatch += lambda *args, **kwargs: self.queue.put(kwargs[FUNCTION_OUTPUT].data)
         else:
-            self.process_batch += lambda *args, **kwargs: self.queue.put(kwargs[FUNCTION_OUTPUT])
+            self.process_batch += lambda *args, **kwargs: self.queue.put(kwargs[FUNCTION_OUTPUT].data)
 
     def __enter__(self):
         self.queue = queue.Queue()

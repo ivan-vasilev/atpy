@@ -1,8 +1,10 @@
-import pyiqfeed as iq
 import queue
+
 import numpy as np
-from pyevents.events import *
+
 import atpy.data.iqfeed.util as iqfeedutil
+import pyiqfeed as iq
+from atpy.data.iqfeed.data_events import *
 
 
 class IQFeedBarDataListener(iq.SilentBarListener):
@@ -63,18 +65,18 @@ class IQFeedBarDataListener(iq.SilentBarListener):
                 self.process_bar_batch(self.current_batch)
                 self.current_batch = None
 
-        return {n + self.key_suffix: d for n, d in zip(bar_data.dtype.names, bar_data[0])}
+        return BarEvent({n + self.key_suffix: d for n, d in zip(bar_data.dtype.names, bar_data[0])})
 
     @after
     def process_bar_batch(self, batch):
-        return iqfeedutil.create_batch(batch, self.column_mode, self.key_suffix)
+        return BarBatchEvent(iqfeedutil.create_batch(batch, self.column_mode, self.key_suffix))
 
 
 class IQFeedBarDataProvider(IQFeedBarDataListener):
 
     def __init__(self, minibatch=None, key_suffix='', column_mode=True):
         super().__init__(minibatch=minibatch, key_suffix=key_suffix, column_mode=column_mode)
-        self.process_bar_batch += lambda *args, **kwargs: self.queue.put(kwargs[FUNCTION_OUTPUT])
+        self.process_bar_batch += lambda *args, **kwargs: self.queue.put(kwargs[FUNCTION_OUTPUT].data)
 
     def __enter__(self):
         super().__enter__()

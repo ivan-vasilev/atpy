@@ -45,7 +45,7 @@ class TestIQFeedBarData(unittest.TestCase):
 
             q = queue.Queue()
             provider.process_bar += lambda *args, **kwargs: self.assertEqual(kwargs[FUNCTION_OUTPUT]['symbol'], 'SPY'.encode(encoding='UTF-8'))
-            provider.process_bar_batch += lambda *args, **kwargs: q.put(kwargs[FUNCTION_OUTPUT])
+            provider.process_bar_batch += lambda *args, **kwargs: q.put(kwargs[FUNCTION_OUTPUT].data)
 
             provider.watch(symbol='SPY', interval_len=5,
                            interval_type='s', update=1, lookback_bars=10)

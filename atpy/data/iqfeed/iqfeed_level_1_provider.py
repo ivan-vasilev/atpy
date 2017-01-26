@@ -1,8 +1,8 @@
 import queue
 
 from atpy.data.iqfeed.util import *
-from pyevents.events import *
 import pyiqfeed as iq
+from atpy.data.iqfeed.data_events import *
 
 
 class IQFeedLevel1Listener(iq.SilentQuoteListener):
@@ -68,11 +68,11 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener):
 
                 self.current_news_mb = list()
 
-        return news_item
+        return Level1NewsItemEvent(news_item)
 
     @after
     def process_news_mb(self, news_list):
-        return news_list
+        return Level1NewsBatchEvent(news_list)
 
     def news_provider(self):
         return StreamingDataProvider(self.process_news_mb)
@@ -85,11 +85,11 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener):
                 self.process_regional_mb(create_batch(self.current_regional_mb, self.column_mode, self.key_suffix))
                 self.current_regional_mb = list()
 
-        return iqfeed_to_dict(quote, self.key_suffix)
+        return Level1RegionalQuoteEvent(iqfeed_to_dict(quote, self.key_suffix))
 
     @after
     def process_regional_mb(self, quote_list):
-        return quote_list
+        return Level1RegionalQuoteBatchEvent(quote_list)
 
     def regional_provider(self):
         return StreamingDataProvider(self.process_regional_mb)
@@ -102,11 +102,11 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener):
                 self.process_summary_mb(create_batch(self.current_summary_mb, self.column_mode, self.key_suffix))
                 self.current_summary_mb = list()
 
-        return iqfeed_to_dict(summary, self.key_suffix)
+        return Level1SummaryEvent(iqfeed_to_dict(summary, self.key_suffix))
 
     @after
     def process_summary_mb(self, summary_list):
-        return summary_list
+        return Level1SummaryBatchEvent(summary_list)
 
     def summary_provider(self):
         return StreamingDataProvider(self.process_summary_mb)
@@ -119,11 +119,11 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener):
                 self.process_update_mb(create_batch(self.current_update_mb, self.column_mode, self.key_suffix))
                 self.current_update_mb = list()
 
-        return iqfeed_to_dict(update, self.key_suffix)
+        return Level1UpdateEvent(iqfeed_to_dict(update, self.key_suffix))
 
     @after
     def process_update_mb(self, updates_list):
-        return updates_list
+        return Level1UpdateBatchEvent(updates_list)
 
     def update_provider(self):
         return StreamingDataProvider(self.process_update_mb)
@@ -136,11 +136,11 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener):
                 self.process_fundamentals_mb(create_batch(self.current_fund_mb, self.column_mode, self.key_suffix))
                 self.current_fund_mb = list()
 
-        return iqfeed_to_dict(fund, self.key_suffix)
+        return Level1FundamentalsEvent(iqfeed_to_dict(fund, self.key_suffix))
 
     @after
     def process_fundamentals_mb(self, fund_list):
-        return fund_list
+        return Level1FundamentalsBatchEvent(fund_list)
 
     def fundamentals_provider(self):
         return StreamingDataProvider(self.process_fundamentals_mb)
@@ -151,7 +151,7 @@ class StreamingDataProvider(object):
 
     def __init__(self, producer):
         self.q = queue.Queue()
-        producer += lambda *args, **kwargs: self.q.put(kwargs[FUNCTION_OUTPUT])
+        producer += lambda *args, **kwargs: self.q.put(kwargs[FUNCTION_OUTPUT].data)
 
     def __iter__(self):
         return self

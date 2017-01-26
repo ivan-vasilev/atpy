@@ -5,8 +5,8 @@ from typing import List
 
 import atpy.data.iqfeed.util as iqfeedutil
 import pyiqfeed as iq
+from atpy.data.iqfeed.data_events import *
 from atpy.data.iqfeed.filters import *
-from pyevents.events import *
 
 
 class NewsFilter(NamedTuple):
@@ -134,11 +134,11 @@ class IQFeedNewsListener(object):
 
     @after
     def process_batch(self, data):
-        return data
+        return NewsBatchEvent(data)
 
     @after
     def process_minibatch(self, data):
-        return data
+        return NewsMinibatchEvent(data)
 
 
 class IQFeedMewsProvider(IQFeedNewsListener):
@@ -158,9 +158,9 @@ class IQFeedMewsProvider(IQFeedNewsListener):
         super().__init__(minibatch=minibatch, attach_text=attach_text, key_suffix=key_suffix, column_mode=column_mode, filter_provider=filter_provider)
 
         if use_minibatch:
-            self.process_minibatch += lambda *args, **kwargs: self.queue.put(kwargs[FUNCTION_OUTPUT])
+            self.process_minibatch += lambda *args, **kwargs: self.queue.put(kwargs[FUNCTION_OUTPUT].data)
         else:
-            self.process_batch += lambda *args, **kwargs: self.queue.put(kwargs[FUNCTION_OUTPUT])
+            self.process_batch += lambda *args, **kwargs: self.queue.put(kwargs[FUNCTION_OUTPUT].data)
 
     def __enter__(self):
         self.queue = queue.Queue()

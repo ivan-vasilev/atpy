@@ -14,14 +14,14 @@ class TestIQFeedNews(unittest.TestCase):
 
         with IQFeedMewsProvider(attach_text=True, minibatch=3, filter_provider=filter_provider, column_mode=True) as provider:
             def process_batch_listener(*args, **kwargs):
-                batch = kwargs[FUNCTION_OUTPUT]
+                batch = kwargs[FUNCTION_OUTPUT].data
                 self.assertEqual(len(list(batch.keys())), 7)
                 self.assertEqual(len(batch[list(batch.keys())[0]]), 10)
 
             provider.process_batch += process_batch_listener
 
             def process_minibatch_listener(*args, **kwargs):
-                batch = kwargs[FUNCTION_OUTPUT]
+                batch = kwargs[FUNCTION_OUTPUT].data
                 self.assertEqual(len(list(batch.keys())), 7)
                 self.assertEqual(len(batch[list(batch.keys())[0]]), 3)
 
@@ -43,14 +43,14 @@ class TestIQFeedNews(unittest.TestCase):
 
         with IQFeedMewsProvider(attach_text=True, minibatch=3, filter_provider=filter_provider, column_mode=False) as provider:
             def process_batch_listener(*args, **kwargs):
-                batch = kwargs[FUNCTION_OUTPUT]
+                batch = kwargs[FUNCTION_OUTPUT].data
                 self.assertEqual(len(batch), 10)
                 self.assertEqual(len(batch[list(batch.keys())[0]]), 7)
 
             provider.process_batch += process_batch_listener
 
             def process_minibatch_listener(*args, **kwargs):
-                batch = kwargs[FUNCTION_OUTPUT]
+                batch = kwargs[FUNCTION_OUTPUT].data
                 self.assertEqual(len(batch), 3)
                 self.assertEqual(len(list(batch[0].keys())), 7)
 

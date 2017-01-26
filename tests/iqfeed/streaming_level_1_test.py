@@ -15,14 +15,14 @@ class TestIQFeedLevel1(unittest.TestCase):
             listener.news_on()
 
             def process_news_item(*args, **kwargs):
-                news_item = kwargs[FUNCTION_OUTPUT]
+                news_item = kwargs[FUNCTION_OUTPUT].data
                 self.assertEqual(len(news_item), 6)
                 self.assertGreater(len(news_item['headline']), 0)
 
             listener.process_news += process_news_item
 
             def process_news_mb(*args, **kwargs):
-                news_item = kwargs[FUNCTION_OUTPUT]
+                news_item = kwargs[FUNCTION_OUTPUT].data
                 self.assertEqual(len(news_item), 6)
                 self.assertEqual(len(news_item['headline']), 2)
                 self.assertGreater(len(news_item['headline'][0]), 0)
@@ -47,13 +47,13 @@ class TestIQFeedLevel1(unittest.TestCase):
             listener.watch('MSFT')
 
             def process_fund_item(*args, **kwargs):
-                fund_item = kwargs[FUNCTION_OUTPUT]
+                fund_item = kwargs[FUNCTION_OUTPUT].data
                 self.assertEqual(len(fund_item), 50)
 
             listener.process_fundamentals += process_fund_item
 
             def process_fund_mb(*args, **kwargs):
-                fund_item = kwargs[FUNCTION_OUTPUT]
+                fund_item = kwargs[FUNCTION_OUTPUT].data
                 self.assertEqual(len(fund_item), 50)
                 self.assertEqual(len(fund_item['Symbol']), 2)
                 self.assertTrue('AAPL'.encode() in fund_item['Symbol'] or 'IBM'.encode() in fund_item['Symbol'] or 'GOOG'.encode() in fund_item['Symbol'] or 'MSFT'.encode() in fund_item['Symbol'])
@@ -76,13 +76,13 @@ class TestIQFeedLevel1(unittest.TestCase):
             listener.watch('MSFT')
 
             def process_fund_item(*args, **kwargs):
-                fund_item = kwargs[FUNCTION_OUTPUT]
+                fund_item = kwargs[FUNCTION_OUTPUT].data
                 self.assertEqual(len(fund_item), 50)
 
             listener.process_fundamentals += process_fund_item
 
             def process_fund_mb(*args, **kwargs):
-                fund_item = kwargs[FUNCTION_OUTPUT]
+                fund_item = kwargs[FUNCTION_OUTPUT].data
                 self.assertEqual(len(fund_item), 2)
                 self.assertEqual(len(fund_item[0]), 50)
 
@@ -108,13 +108,13 @@ class TestIQFeedLevel1(unittest.TestCase):
             listener.watch('MSFT')
 
             def process_summary_item(*args, **kwargs):
-                summary_item = kwargs[FUNCTION_OUTPUT]
+                summary_item = kwargs[FUNCTION_OUTPUT].data
                 self.assertEqual(len(summary_item), 16)
 
             listener.process_summary += process_summary_item
 
             def process_summary_mb(*args, **kwargs):
-                summary_item = kwargs[FUNCTION_OUTPUT]
+                summary_item = kwargs[FUNCTION_OUTPUT].data
                 self.assertEqual(len(summary_item), 16)
                 self.assertEqual(len(summary_item['Symbol']), 2)
                 self.assertTrue('AAPL'.encode() in summary_item['Symbol'] or 'IBM'.encode() in summary_item['Symbol'] or 'GOOG'.encode() in summary_item['Symbol'] or 'MSFT'.encode() in summary_item['Symbol'])
@@ -137,13 +137,13 @@ class TestIQFeedLevel1(unittest.TestCase):
             listener.watch('MSFT')
 
             def process_summary_item(*args, **kwargs):
-                summary_item = kwargs[FUNCTION_OUTPUT]
+                summary_item = kwargs[FUNCTION_OUTPUT].data
                 self.assertEqual(len(summary_item), 16)
 
             listener.process_summary += process_summary_item
 
             def process_summary_mb(*args, **kwargs):
-                summary_item = kwargs[FUNCTION_OUTPUT]
+                summary_item = kwargs[FUNCTION_OUTPUT].data
                 self.assertEqual(len(summary_item), 2)
                 self.assertEqual(len(summary_item[0]), 16)
 
@@ -169,13 +169,13 @@ class TestIQFeedLevel1(unittest.TestCase):
             listener.watch('MSFT')
 
             def process_update_item(*args, **kwargs):
-                update_item = kwargs[FUNCTION_OUTPUT]
+                update_item = kwargs[FUNCTION_OUTPUT].data
                 self.assertEqual(len(update_item), 16)
 
             listener.process_update += process_update_item
 
             def process_update_mb(*args, **kwargs):
-                update_item = kwargs[FUNCTION_OUTPUT]
+                update_item = kwargs[FUNCTION_OUTPUT].data
                 self.assertEqual(len(update_item), 16)
                 self.assertEqual(len(update_item['Symbol']), 2)
                 self.assertTrue('AAPL'.encode() in update_item['Symbol'] or 'IBM'.encode() in update_item['Symbol'] or 'GOOG'.encode() in update_item['Symbol'] or 'MSFT'.encode() in update_item['Symbol'])
@@ -198,13 +198,13 @@ class TestIQFeedLevel1(unittest.TestCase):
             listener.watch('MSFT')
 
             def process_update_item(*args, **kwargs):
-                update_item = kwargs[FUNCTION_OUTPUT]
+                update_item = kwargs[FUNCTION_OUTPUT].data
                 self.assertEqual(len(update_item), 16)
 
             listener.process_update += process_update_item
 
             def process_update_mb(*args, **kwargs):
-                update_item = kwargs[FUNCTION_OUTPUT]
+                update_item = kwargs[FUNCTION_OUTPUT].data
                 self.assertEqual(len(update_item), 2)
                 self.assertEqual(len(update_item[0]), 16)
 

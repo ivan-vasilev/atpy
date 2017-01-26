@@ -14,14 +14,14 @@ class TestIQFeedHistory(unittest.TestCase):
 
         with provider:
             def process_batch_listener_column(*args, **kwargs):
-                batch = kwargs[FUNCTION_OUTPUT]
+                batch = kwargs[FUNCTION_OUTPUT].data
                 self.assertEqual(len(batch), 14)
                 self.assertEqual(len(batch[list(batch.keys())[0]]), 20)
 
             provider.process_batch += process_batch_listener_column
 
             def process_minibatch_listener_column(*args, **kwargs):
-                batch = kwargs[FUNCTION_OUTPUT]
+                batch = kwargs[FUNCTION_OUTPUT].data
                 self.assertEqual(len(batch), 14)
                 self.assertEqual(len(batch[list(batch.keys())[0]]), 4)
 
@@ -46,14 +46,14 @@ class TestIQFeedHistory(unittest.TestCase):
 
         with provider:
             def process_batch_listener(*args, **kwargs):
-                batch = kwargs[FUNCTION_OUTPUT]
+                batch = kwargs[FUNCTION_OUTPUT].data
                 self.assertEqual(len(batch[0]), 14)
                 self.assertEqual(len(batch), 20)
 
             provider.process_batch += process_batch_listener
 
             def process_minibatch_listener(*args, **kwargs):
-                batch = kwargs[FUNCTION_OUTPUT]
+                batch = kwargs[FUNCTION_OUTPUT].data
                 self.assertEqual(len(batch[0]), 14)
                 self.assertEqual(len(batch), 4)
 
