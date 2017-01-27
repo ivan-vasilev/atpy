@@ -1,6 +1,6 @@
 import unittest
+
 from atpy.data.iqfeed.iqfeed_bar_data_provider import *
-import queue
 
 
 class TestIQFeedBarData(unittest.TestCase):
@@ -10,8 +10,8 @@ class TestIQFeedBarData(unittest.TestCase):
 
     def test_provider_column_mode(self):
         with IQFeedBarDataProvider(minibatch=2, column_mode=True) as provider:
-            provider.process_bar += lambda *args, **kwargs: self.assertEqual(kwargs[FUNCTION_OUTPUT]['symbol'], 'SPY'.encode(encoding='UTF-8'))
-            provider.process_bar_batch += lambda *args, **kwargs: self.assertEqual(kwargs[FUNCTION_OUTPUT]['symbol'][0], 'SPY'.encode(encoding='UTF-8'))
+            provider.process_bar += lambda event: self.assertEqual(event['symbol'], 'SPY'.encode(encoding='UTF-8'))
+            provider.process_bar_batch += lambda event: self.assertEqual(event['symbol'][0], 'SPY'.encode(encoding='UTF-8'))
 
             provider.watch(symbol='SPY', interval_len=5,
                            interval_type='s', update=1, lookback_bars=10)
@@ -26,8 +26,8 @@ class TestIQFeedBarData(unittest.TestCase):
 
     def test_provider_row_mode(self):
         with IQFeedBarDataProvider(minibatch=2, column_mode=False) as provider:
-            provider.process_bar += lambda *args, **kwargs: self.assertEqual(kwargs[FUNCTION_OUTPUT]['symbol'], 'SPY'.encode(encoding='UTF-8'))
-            provider.process_bar_batch += lambda *args, **kwargs: self.assertEqual(kwargs[FUNCTION_OUTPUT][0]['symbol'], 'SPY'.encode(encoding='UTF-8'))
+            provider.process_bar += lambda event: self.assertEqual(event['symbol'], 'SPY'.encode(encoding='UTF-8'))
+            provider.process_bar_batch += lambda event: self.assertEqual(event[0]['symbol'], 'SPY'.encode(encoding='UTF-8'))
 
             provider.watch(symbol='SPY', interval_len=5,
                            interval_type='s', update=1, lookback_bars=10)
@@ -44,8 +44,8 @@ class TestIQFeedBarData(unittest.TestCase):
         with IQFeedBarDataListener(minibatch=2, column_mode=True) as provider:
 
             q = queue.Queue()
-            provider.process_bar += lambda *args, **kwargs: self.assertEqual(kwargs[FUNCTION_OUTPUT]['symbol'], 'SPY'.encode(encoding='UTF-8'))
-            provider.process_bar_batch += lambda *args, **kwargs: q.put(kwargs[FUNCTION_OUTPUT].data)
+            provider.process_bar += lambda event: self.assertEqual(event['symbol'], 'SPY'.encode(encoding='UTF-8'))
+            provider.process_bar_batch += lambda event: q.put(event.data)
 
             provider.watch(symbol='SPY', interval_len=5,
                            interval_type='s', update=1, lookback_bars=10)

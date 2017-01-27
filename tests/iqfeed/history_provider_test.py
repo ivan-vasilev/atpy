@@ -1,4 +1,5 @@
 import unittest
+
 from atpy.data.iqfeed.iqfeed_history_provider import *
 
 
@@ -13,15 +14,15 @@ class TestIQFeedHistory(unittest.TestCase):
         provider = IQFeedHistoryProvider(minibatch=4, filter_provider=filter_provider)
 
         with provider:
-            def process_batch_listener_column(*args, **kwargs):
-                batch = kwargs[FUNCTION_OUTPUT].data
+            def process_batch_listener_column(event):
+                batch = event.data
                 self.assertEqual(len(batch), 14)
                 self.assertEqual(len(batch[list(batch.keys())[0]]), 20)
 
             provider.process_batch += process_batch_listener_column
 
-            def process_minibatch_listener_column(*args, **kwargs):
-                batch = kwargs[FUNCTION_OUTPUT].data
+            def process_minibatch_listener_column(event):
+                batch = event.data
                 self.assertEqual(len(batch), 14)
                 self.assertEqual(len(batch[list(batch.keys())[0]]), 4)
 
@@ -45,15 +46,15 @@ class TestIQFeedHistory(unittest.TestCase):
         provider = IQFeedHistoryProvider(minibatch=4, filter_provider=filter_provider, column_mode=False)
 
         with provider:
-            def process_batch_listener(*args, **kwargs):
-                batch = kwargs[FUNCTION_OUTPUT].data
+            def process_batch_listener(event):
+                batch = event.data
                 self.assertEqual(len(batch[0]), 14)
                 self.assertEqual(len(batch), 20)
 
             provider.process_batch += process_batch_listener
 
-            def process_minibatch_listener(*args, **kwargs):
-                batch = kwargs[FUNCTION_OUTPUT].data
+            def process_minibatch_listener(event):
+                batch = event.data
                 self.assertEqual(len(batch[0]), 14)
                 self.assertEqual(len(batch), 4)
 

@@ -3,6 +3,7 @@ import queue
 from atpy.data.iqfeed.util import *
 import pyiqfeed as iq
 from atpy.data.iqfeed.data_events import *
+from atpy.util.events_util import *
 
 
 class IQFeedLevel1Listener(iq.SilentQuoteListener):
@@ -163,7 +164,7 @@ class StreamingDataProvider(object):
 
     def __init__(self, producer):
         self.q = queue.Queue()
-        producer += lambda *args, **kwargs: self.q.put(kwargs[FUNCTION_OUTPUT].data)
+        producer += lambda event: self.q.put(event.data)
 
     def __iter__(self):
         return self
