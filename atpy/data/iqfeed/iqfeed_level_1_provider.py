@@ -7,8 +7,8 @@ from atpy.data.iqfeed.data_events import *
 
 class IQFeedLevel1Listener(iq.SilentQuoteListener):
 
-    def __init__(self, minibatch=None, key_suffix='', column_mode=True):
-        super().__init__(name="data provider listener")
+    def __init__(self, minibatch=None, key_suffix='', column_mode=True, default_listeners=None):
+        super().__init__(name="Level 1 listener")
 
         self.minibatch = minibatch
         self.conn = None
@@ -20,6 +20,18 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener):
         self.current_regional_mb = list()
         self.current_summary_mb = list()
         self.current_update_mb = list()
+
+        default_listeners = default_listeners if default_listeners is not None else GlobalListeners()
+        self.process_update += default_listeners
+        self.process_update_mb += default_listeners
+        self.process_news += default_listeners
+        self.process_news_mb += default_listeners
+        self.process_summary += default_listeners
+        self.process_summary_mb += default_listeners
+        self.process_regional_quote += default_listeners
+        self.process_regional_mb += default_listeners
+        self.process_fundamentals += default_listeners
+        self.process_fundamentals_mb += default_listeners
 
     def __enter__(self):
         launch_service()

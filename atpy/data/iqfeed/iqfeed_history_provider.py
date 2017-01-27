@@ -167,12 +167,13 @@ class IQFeedHistoryListener(object):
     IQFeed historical data listener. See the unit test on how to use
     """
 
-    def __init__(self, minibatch=None, column_mode=True, key_suffix='', filter_provider=DefaultFilterProvider()):
+    def __init__(self, minibatch=None, column_mode=True, key_suffix='', filter_provider=DefaultFilterProvider(), default_listeners=None):
         """
         :param minibatch: size of the minibatch
         :param column_mode: whether to organize the data in columns or rows
         :param key_suffix: suffix for field names
         :param filter_provider: news filter list
+        :param default_listeners: list of the default listeners to be attached ot the event producers
         """
         self.minibatch = minibatch
         self.column_mode = column_mode
@@ -180,6 +181,10 @@ class IQFeedHistoryListener(object):
         self.current_minibatch = list()
         self.filter_provider = filter_provider
         self.conn = None
+
+        default_listeners = default_listeners if default_listeners is not None else GlobalListeners()
+        self.process_batch += default_listeners
+        self.process_minibatch += default_listeners
 
     def __enter__(self):
         iqfeedutil.launch_service()
@@ -263,14 +268,15 @@ class IQFeedHistoryProvider(IQFeedHistoryListener):
     IQFeed historical data provider (not streaming). See the unit test on how to use
     """
 
-    def __init__(self, minibatch=1, column_mode=True, key_suffix='', filter_provider=DefaultFilterProvider(), use_minibatch=True):
+    def __init__(self, minibatch=1, column_mode=True, key_suffix='', filter_provider=DefaultFilterProvider(), use_minibatch=True, default_listeners=None):
         """
         :param minibatch: size of the minibatch
         :param column_mode: whether to organize the data in columns or rows
         :param key_suffix: suffix for field names
         :param filter_provider: news filter list
+        :param default_listeners: list of the default listeners to be attached ot the event producers
         """
-        super().__init__(minibatch=minibatch, key_suffix=key_suffix, column_mode=column_mode, filter_provider=filter_provider)
+        super().__init__(minibatch=minibatch, key_suffix=key_suffix, column_mode=column_mode, filter_provider=filter_provider, default_listeners=default_listeners)
 
         if use_minibatch:
             self.process_minibatch += lambda *args, **kwargs: self.queue.put(kwargs[FUNCTION_OUTPUT].data)

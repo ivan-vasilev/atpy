@@ -9,14 +9,24 @@ from atpy.data.iqfeed.data_events import *
 
 class IQFeedBarDataListener(iq.SilentBarListener):
 
-    def __init__(self, minibatch=None, key_suffix='', column_mode=True):
-        super().__init__(name="data provider listener")
+    def __init__(self, minibatch=None, key_suffix='', column_mode=True, default_listeners=None):
+        """
+        :param minibatch: size of the minibatch
+        :param key_suffix: suffix to the fieldnames
+        :param column_mode: column/row data format
+        :param default_listeners: list of the default listeners to be attached ot the event producers
+        """
+        super().__init__(name="Bar data listener")
 
         self.minibatch = minibatch
         self.conn = None
         self.key_suffix = key_suffix
         self.column_mode = column_mode
         self.current_batch = None
+
+        default_listeners = default_listeners if default_listeners is not None else GlobalListeners()
+        self.process_bar += default_listeners
+        self.process_bar_batch += default_listeners
 
     def __enter__(self):
         iqfeedutil.launch_service()
@@ -74,8 +84,8 @@ class IQFeedBarDataListener(iq.SilentBarListener):
 
 class IQFeedBarDataProvider(IQFeedBarDataListener):
 
-    def __init__(self, minibatch=None, key_suffix='', column_mode=True):
-        super().__init__(minibatch=minibatch, key_suffix=key_suffix, column_mode=column_mode)
+    def __init__(self, minibatch=None, key_suffix='', column_mode=True, default_listeners=None):
+        super().__init__(minibatch=minibatch, key_suffix=key_suffix, column_mode=column_mode, default_listeners=default_listeners)
         self.process_bar_batch += lambda *args, **kwargs: self.queue.put(kwargs[FUNCTION_OUTPUT].data)
 
     def __enter__(self):

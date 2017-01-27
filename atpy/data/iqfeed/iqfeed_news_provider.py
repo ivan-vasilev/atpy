@@ -34,7 +34,7 @@ class IQFeedNewsListener(object):
     IQFeed news listener (not streaming). See the unit test on how to use
     """
 
-    def __init__(self, minibatch=None, attach_text=False, random_order=False, key_suffix='', filter_provider=DefaultNewsFilterProvider(), column_mode=True):
+    def __init__(self, minibatch=None, attach_text=False, random_order=False, key_suffix='', filter_provider=DefaultNewsFilterProvider(), column_mode=True, default_listeners=None):
         self.minibatch = minibatch
         self.attach_text = attach_text
         self.conn = None
@@ -43,6 +43,10 @@ class IQFeedNewsListener(object):
         self.filter_provider = filter_provider
         self.column_mode = column_mode
         self.current_minibatch = None
+
+        default_listeners = default_listeners if default_listeners is not None else GlobalListeners()
+        self.process_batch += default_listeners
+        self.process_minibatch += default_listeners
 
     def __enter__(self):
         iqfeedutil.launch_service()
@@ -146,7 +150,7 @@ class IQFeedMewsProvider(IQFeedNewsListener):
     IQFeed historical data provider (not streaming). See the unit test on how to use
     """
 
-    def __init__(self, minibatch=1, column_mode=True, attach_text=True, key_suffix='', filter_provider=DefaultNewsFilterProvider(), use_minibatch=True):
+    def __init__(self, minibatch=1, column_mode=True, attach_text=True, key_suffix='', filter_provider=DefaultNewsFilterProvider(), use_minibatch=True, default_listeners=None):
         """
         :param minibatch: size of the minibatch
         :param column_mode: whether to organize the data in columns or rows
@@ -155,7 +159,7 @@ class IQFeedMewsProvider(IQFeedNewsListener):
         :param filter_provider: news filter list
         :param use_minibatch: minibatch vs full patch
         """
-        super().__init__(minibatch=minibatch, attach_text=attach_text, key_suffix=key_suffix, column_mode=column_mode, filter_provider=filter_provider)
+        super().__init__(minibatch=minibatch, attach_text=attach_text, key_suffix=key_suffix, column_mode=column_mode, filter_provider=filter_provider, default_listeners=default_listeners)
 
         if use_minibatch:
             self.process_minibatch += lambda *args, **kwargs: self.queue.put(kwargs[FUNCTION_OUTPUT].data)
