@@ -5,16 +5,20 @@ from atpy.data.base_data_event import *
 class AlgoPhase(object):
     """Simple training/testing/evaluation class"""
 
-    def __init__(self, model, phase=None, default_listeners=None, event_type=BaseDataEvent):
+    def __init__(self, model, phase=None, default_listeners=None, input_event_processor=None):
         self.phase = phase
         self.model = model
-        self.event_type = event_type
         self.iteration = 0
+
+        if input_event_processor is not None:
+            self.input_event_processor = input_event_processor
+        else:
+            self.input_event_processor = lambda event: event.data if isinstance(event, BaseDataEvent) and event.phase == self.phase else None
 
         if default_listeners is not None:
             self.before_iteration += default_listeners
             self.after_iteration += default_listeners
-            default_listeners += self.new_input
+            default_listeners += self.onevent
 
     def train(self, data):
         self.iteration += 1
@@ -22,9 +26,10 @@ class AlgoPhase(object):
         model_output = self.model(data)
         self.after_iteration(data, model_output)
 
-    def new_input(self, event):
-        if isinstance(event, BaseDataEvent) and event.phase == self.phase and event.data is not None:
-            self.train(event.data)
+    def onevent(self, event):
+        processed_input = self.input_event_processor(event)
+        if processed_input is not None:
+            self.train(processed_input)
 
     @after
     def before_iteration(self, input_data):

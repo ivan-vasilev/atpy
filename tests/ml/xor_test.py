@@ -59,7 +59,7 @@ class XorTest(unittest.TestCase):
 
             @after
             def start_testing_listener(event):
-                if isinstance(event, AfterIterationEvent) and event.phase == MLPhase.TRAINING and event.iteration == 10000:
+                if isinstance(event, AfterIterationEvent) and event.phase == MLPhase.TRAINING and event.iteration == 1000:
                     return xor_data_provider(MLPhase.TESTING)
                 elif isinstance(event, AfterIterationEvent) and event.phase == MLPhase.TESTING:
                     self.assertEqual(event.model_output, 1)
@@ -68,7 +68,7 @@ class XorTest(unittest.TestCase):
             global_listeners += start_testing_listener
 
             # running
-            for i in range(10000):
+            for i in range(1000):
                 xor_data_provider(MLPhase.TRAINING)
 
 if __name__ == '__main__':
