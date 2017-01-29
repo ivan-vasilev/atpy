@@ -2,7 +2,7 @@ import queue
 
 from atpy.data.iqfeed.util import *
 import pyiqfeed as iq
-from atpy.data.iqfeed.data_events import *
+from atpy.data.iqfeed.iqfeed_events import *
 from atpy.util.events_util import *
 
 
@@ -22,17 +22,17 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener):
         self.current_summary_mb = list()
         self.current_update_mb = list()
 
-        default_listeners = default_listeners if default_listeners is not None else GlobalListeners()
-        self.process_update += default_listeners
-        self.process_update_mb += default_listeners
-        self.process_news += default_listeners
-        self.process_news_mb += default_listeners
-        self.process_summary += default_listeners
-        self.process_summary_mb += default_listeners
-        self.process_regional_quote += default_listeners
-        self.process_regional_mb += default_listeners
-        self.process_fundamentals += default_listeners
-        self.process_fundamentals_mb += default_listeners
+        if default_listeners is not None:
+            self.process_update += default_listeners
+            self.process_update_mb += default_listeners
+            self.process_news += default_listeners
+            self.process_news_mb += default_listeners
+            self.process_summary += default_listeners
+            self.process_summary_mb += default_listeners
+            self.process_regional_quote += default_listeners
+            self.process_regional_mb += default_listeners
+            self.process_fundamentals += default_listeners
+            self.process_fundamentals_mb += default_listeners
 
     def __enter__(self):
         launch_service()

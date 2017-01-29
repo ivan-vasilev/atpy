@@ -5,7 +5,7 @@ from typing import List
 
 import atpy.data.iqfeed.util as iqfeedutil
 import pyiqfeed as iq
-from atpy.data.iqfeed.data_events import *
+from atpy.data.iqfeed.iqfeed_events import *
 from atpy.data.iqfeed.filters import *
 from atpy.util.events_util import *
 
@@ -45,9 +45,9 @@ class IQFeedNewsListener(object):
         self.column_mode = column_mode
         self.current_minibatch = None
 
-        default_listeners = default_listeners if default_listeners is not None else GlobalListeners()
-        self.process_batch += default_listeners
-        self.process_minibatch += default_listeners
+        if default_listeners is not None:
+            self.process_batch += default_listeners
+            self.process_minibatch += default_listeners
 
     def __enter__(self):
         iqfeedutil.launch_service()
