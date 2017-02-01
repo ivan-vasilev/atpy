@@ -5,7 +5,7 @@ import numpy as np
 import atpy.data.iqfeed.util as iqfeedutil
 import pyiqfeed as iq
 from atpy.data.iqfeed.iqfeed_events import *
-from atpy.util.events_util import *
+from pyeventsml.events_util import *
 
 
 class IQFeedBarDataListener(iq.SilentBarListener):

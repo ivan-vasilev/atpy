@@ -1,4 +1,4 @@
-from atpy.data.base_data_event import *
+from pyeventsml.base_data_event import *
 
 
 class BarEvent(BaseDataEvent):

@@ -4,9 +4,9 @@ import threading
 
 import atpy.data.iqfeed.util as iqfeedutil
 import pyiqfeed as iq
-from atpy.data.iqfeed.iqfeed_events import *
 from atpy.data.iqfeed.filters import *
-from atpy.util.events_util import *
+from atpy.data.iqfeed.iqfeed_events import *
+from pyeventsml.events_util import *
 
 
 class TicksFilter(NamedTuple):
