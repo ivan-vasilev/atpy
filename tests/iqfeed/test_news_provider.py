@@ -14,19 +14,28 @@ class TestIQFeedNews(unittest.TestCase):
         filter_provider += NewsFilter(symbols=['IBM'], limit=10)
 
         with IQFeedMewsProvider(attach_text=True, minibatch=3, filter_provider=filter_provider, column_mode=True) as provider:
+            e1 = threading.Event()
+
             def process_batch_listener(event):
                 batch = event.data
                 self.assertEqual(len(list(batch.keys())), 7)
                 self.assertEqual(len(batch[list(batch.keys())[0]]), 10)
+                e1.set()
 
             provider.process_batch += process_batch_listener
+
+            e2 = threading.Event()
 
             def process_minibatch_listener(event):
                 batch = event.data
                 self.assertEqual(len(list(batch.keys())), 7)
                 self.assertEqual(len(batch[list(batch.keys())[0]]), 3)
+                e2.set()
 
             provider.process_minibatch += process_minibatch_listener
+
+            e1.wait()
+            e2.wait()
 
             for i, d in enumerate(provider):
                 self.assertEqual(len(d), 7)
@@ -43,17 +52,23 @@ class TestIQFeedNews(unittest.TestCase):
         filter_provider += NewsFilter(symbols=['IBM'], limit=10)
 
         with IQFeedMewsProvider(attach_text=True, minibatch=3, filter_provider=filter_provider, column_mode=False) as provider:
+            e1 = threading.Event()
+
             def process_batch_listener(event):
                 batch = event.data
                 self.assertEqual(len(batch), 10)
-                self.assertEqual(len(batch[list(batch.keys())[0]]), 7)
+                self.assertEqual(len(batch[0].keys()), 7)
+                e1.set()
 
             provider.process_batch += process_batch_listener
+
+            e2 = threading.Event()
 
             def process_minibatch_listener(event):
                 batch = event.data
                 self.assertEqual(len(batch), 3)
-                self.assertEqual(len(list(batch[0].keys())), 7)
+                self.assertEqual(len(batch[0].keys()), 7)
+                e2.set()
 
             provider.process_minibatch += process_minibatch_listener
 
@@ -66,6 +81,8 @@ class TestIQFeedNews(unittest.TestCase):
                 if i == 1:
                     break
 
+            e1.wait()
+            e2.wait()
 
 if __name__ == '__main__':
     unittest.main()

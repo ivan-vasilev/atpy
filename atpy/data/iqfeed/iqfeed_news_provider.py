@@ -126,7 +126,6 @@ class IQFeedNewsListener(object):
                                 self.current_minibatch = list()
 
                             self.current_minibatch.append(h)
-                            processed_data.append(h)
 
                             if len(self.current_minibatch) == self.minibatch:
                                 self.process_minibatch(self.current_minibatch)

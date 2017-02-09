@@ -14,17 +14,23 @@ class TestIQFeedHistory(unittest.TestCase):
         provider = IQFeedHistoryProvider(minibatch=4, filter_provider=filter_provider)
 
         with provider:
+            e1 = threading.Event()
+
             def process_batch_listener_column(event):
                 batch = event.data
                 self.assertEqual(len(batch), 14)
                 self.assertEqual(len(batch[list(batch.keys())[0]]), 20)
+                e1.set()
 
             provider.process_batch += process_batch_listener_column
+
+            e2 = threading.Event()
 
             def process_minibatch_listener_column(event):
                 batch = event.data
                 self.assertEqual(len(batch), 14)
                 self.assertEqual(len(batch[list(batch.keys())[0]]), 4)
+                e2.set()
 
             provider.process_minibatch += process_minibatch_listener_column
 
@@ -39,6 +45,9 @@ class TestIQFeedHistory(unittest.TestCase):
                 if i == 1:
                     break
 
+            e1.wait()
+            e2.wait()
+
     def test_provider_row_mode(self):
         filter_provider = DefaultFilterProvider()
         filter_provider += TicksFilter(ticker="IBM", max_ticks=20)
@@ -46,19 +55,28 @@ class TestIQFeedHistory(unittest.TestCase):
         provider = IQFeedHistoryProvider(minibatch=4, filter_provider=filter_provider, column_mode=False)
 
         with provider:
+            e1 = threading.Event()
+
             def process_batch_listener(event):
                 batch = event.data
                 self.assertEqual(len(batch[0]), 14)
                 self.assertEqual(len(batch), 20)
+                e1.set()
 
             provider.process_batch += process_batch_listener
+
+            e2 = threading.Event()
 
             def process_minibatch_listener(event):
                 batch = event.data
                 self.assertEqual(len(batch[0]), 14)
                 self.assertEqual(len(batch), 4)
+                e2.set()
 
             provider.process_minibatch += process_minibatch_listener
+
+            e1.wait()
+            e2.wait()
 
             for i, d in enumerate(provider):
                 self.assertEqual(len(d), 4)
@@ -70,7 +88,6 @@ class TestIQFeedHistory(unittest.TestCase):
 
                 if i == 1:
                     break
-
 
 if __name__ == '__main__':
     unittest.main()
