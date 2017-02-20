@@ -1,9 +1,5 @@
-import queue
-
-import pyiqfeed as iq
-from atpy.data.iqfeed.iqfeed_events import *
 from atpy.data.iqfeed.util import *
-from pyeventsml.events_util import *
+from pyevents.events import *
 
 
 class IQFeedLevel1Listener(iq.SilentQuoteListener):
@@ -81,14 +77,14 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener):
 
                 self.current_news_mb = list()
 
-        return Level1NewsItemEvent(news_item)
+        return {'type': 'level_1_news_item', 'data': news_item}
 
     @after
     def process_news_mb(self, news_list):
-        return Level1NewsBatchEvent(news_list)
+        return {'type': 'level_1_news_batch', 'data': news_list}
 
     def news_provider(self):
-        return StreamingDataProvider(self.process_news_mb)
+        return IQFeedDataProvider(self.process_news_mb)
 
     @after
     def process_regional_quote(self, quote: np.array):
@@ -98,14 +94,14 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener):
                 self.process_regional_mb(create_batch(self.current_regional_mb, self.column_mode, self.key_suffix))
                 self.current_regional_mb = list()
 
-        return Level1RegionalQuoteEvent(iqfeed_to_dict(quote, self.key_suffix))
+        return {'type': 'level_1_regional_quote', 'data': iqfeed_to_dict(quote, self.key_suffix)}
 
     @after
     def process_regional_mb(self, quote_list):
-        return Level1RegionalQuoteBatchEvent(quote_list)
+        return {'type': 'level_1_regional_quote_batch', 'data': quote_list}
 
     def regional_provider(self):
-        return StreamingDataProvider(self.process_regional_mb)
+        return IQFeedDataProvider(self.process_regional_mb)
 
     @after
     def process_summary(self, summary: np.array):
@@ -115,14 +111,14 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener):
                 self.process_summary_mb(create_batch(self.current_summary_mb, self.column_mode, self.key_suffix))
                 self.current_summary_mb = list()
 
-        return Level1SummaryEvent(iqfeed_to_dict(summary, self.key_suffix))
+        return {'type': 'level_1_tick', 'data': iqfeed_to_dict(summary, self.key_suffix)}
 
     @after
     def process_summary_mb(self, summary_list):
-        return Level1SummaryBatchEvent(summary_list)
+        return {'type': 'level_1_tick_batch', 'data': summary_list}
 
     def summary_provider(self):
-        return StreamingDataProvider(self.process_summary_mb)
+        return IQFeedDataProvider(self.process_summary_mb)
 
     @after
     def process_update(self, update: np.array):
@@ -132,14 +128,14 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener):
                 self.process_update_mb(create_batch(self.current_update_mb, self.column_mode, self.key_suffix))
                 self.current_update_mb = list()
 
-        return Level1UpdateEvent(iqfeed_to_dict(update, self.key_suffix))
+        return {'type': 'level_1_tick', 'data': iqfeed_to_dict(update, self.key_suffix)}
 
     @after
     def process_update_mb(self, updates_list):
-        return Level1UpdateBatchEvent(updates_list)
+        return {'type': 'level_1_tick_batch', 'data': updates_list}
 
     def update_provider(self):
-        return StreamingDataProvider(self.process_update_mb)
+        return IQFeedDataProvider(self.process_update_mb)
 
     @after
     def process_fundamentals(self, fund: np.array):
@@ -149,25 +145,11 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener):
                 self.process_fundamentals_mb(create_batch(self.current_fund_mb, self.column_mode, self.key_suffix))
                 self.current_fund_mb = list()
 
-        return Level1FundamentalsEvent(iqfeed_to_dict(fund, self.key_suffix))
+        return {'type': 'level_1_fundamentals', 'data': iqfeed_to_dict(fund, self.key_suffix)}
 
     @after
     def process_fundamentals_mb(self, fund_list):
-        return Level1FundamentalsBatchEvent(fund_list)
+        return {'type': 'level_1_fundamental_batch', 'data': fund_list}
 
     def fundamentals_provider(self):
-        return StreamingDataProvider(self.process_fundamentals_mb)
-
-
-class StreamingDataProvider(object):
-    """Streaming data provider generator/iterator interface"""
-
-    def __init__(self, producer):
-        self.q = queue.Queue()
-        producer += lambda event: self.q.put(event.data)
-
-    def __iter__(self):
-        return self
-
-    def __next__(self):
-        return self.q.get()
+        return IQFeedDataProvider(self.process_fundamentals_mb)

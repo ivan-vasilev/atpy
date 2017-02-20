@@ -1,11 +1,6 @@
-import queue
-
-import numpy as np
-
 import atpy.data.iqfeed.util as iqfeedutil
-import pyiqfeed as iq
-from atpy.data.iqfeed.iqfeed_events import *
-from pyeventsml.events_util import *
+from atpy.data.iqfeed.util import *
+from pyevents.events import *
 
 
 class IQFeedBarDataListener(iq.SilentBarListener):
@@ -76,27 +71,14 @@ class IQFeedBarDataListener(iq.SilentBarListener):
                 self.process_bar_batch(self.current_batch)
                 self.current_batch = None
 
-        return BarEvent({n + self.key_suffix: d for n, d in zip(bar_data.dtype.names, bar_data[0])})
+        return {'type': 'bar_data', 'data': {n + self.key_suffix: d for n, d in zip(bar_data.dtype.names, bar_data[0])}}
+
+    def bar_provider(self):
+        return IQFeedDataProvider(self.process_bar)
 
     @after
     def process_bar_batch(self, batch):
-        return BarBatchEvent(iqfeedutil.create_batch(batch, self.column_mode, self.key_suffix))
+        return {'type': 'bar_batch_event', 'data': iqfeedutil.create_batch(batch, self.column_mode, self.key_suffix)}
 
-
-class IQFeedBarDataProvider(IQFeedBarDataListener):
-
-    def __init__(self, minibatch=None, key_suffix='', column_mode=True, default_listeners=None):
-        super().__init__(minibatch=minibatch, key_suffix=key_suffix, column_mode=column_mode, default_listeners=default_listeners)
-        self.process_bar_batch += lambda event: self.queue.put(event.data)
-
-    def __enter__(self):
-        super().__enter__()
-        self.queue = queue.Queue()
-
-        return self
-
-    def __iter__(self):
-        return self
-
-    def __next__(self):
-        return self.queue.get()
+    def bar_batch_provider(self):
+        return IQFeedDataProvider(self.process_bar_batch)

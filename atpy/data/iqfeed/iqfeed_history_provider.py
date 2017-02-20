@@ -1,12 +1,9 @@
 import datetime
-import queue
-import threading
 
 import atpy.data.iqfeed.util as iqfeedutil
-import pyiqfeed as iq
 from atpy.data.iqfeed.filters import *
-from atpy.data.iqfeed.iqfeed_events import *
-from pyeventsml.events_util import *
+from pyevents.events import *
+from atpy.data.iqfeed.util import *
 
 
 class TicksFilter(NamedTuple):
@@ -256,40 +253,14 @@ class IQFeedHistoryListener(object):
 
     @after
     def process_batch(self, data):
-        return HistoryEvent(iqfeedutil.create_batch(data, self.column_mode, self.key_suffix))
+        return {'type': 'history_batch', 'data': iqfeedutil.create_batch(data, self.column_mode, self.key_suffix)}
+
+    def batch_provider(self):
+        return IQFeedDataProvider(self.process_batch)
 
     @after
     def process_minibatch(self, data):
-        return HistoryBatchEvent(iqfeedutil.create_batch(data, self.column_mode, self.key_suffix))
+        return {'type': 'history_minibatch', 'data': iqfeedutil.create_batch(data, self.column_mode, self.key_suffix)}
 
-
-class IQFeedHistoryProvider(IQFeedHistoryListener):
-    """
-    IQFeed historical data provider (not streaming). See the unit test on how to use
-    """
-
-    def __init__(self, minibatch=1, column_mode=True, key_suffix='', filter_provider=DefaultFilterProvider(), use_minibatch=True, default_listeners=None):
-        """
-        :param minibatch: size of the minibatch
-        :param column_mode: whether to organize the data in columns or rows
-        :param key_suffix: suffix for field names
-        :param filter_provider: news filter list
-        :param default_listeners: list of the default listeners to be attached ot the event producers
-        """
-        super().__init__(minibatch=minibatch, key_suffix=key_suffix, column_mode=column_mode, filter_provider=filter_provider, default_listeners=default_listeners)
-
-        if use_minibatch:
-            self.process_minibatch += lambda event: self.queue.put(event.data)
-        else:
-            self.process_batch += lambda event: self.queue.put(event.data)
-
-    def __enter__(self):
-        self.queue = queue.Queue()
-        super().__enter__()
-        return self
-
-    def __iter__(self):
-        return self
-
-    def __next__(self) -> map:
-        return self.queue.get()
+    def minibatch_provider(self):
+        return IQFeedDataProvider(self.process_minibatch)

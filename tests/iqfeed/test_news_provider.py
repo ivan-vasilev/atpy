@@ -13,26 +13,27 @@ class TestIQFeedNews(unittest.TestCase):
         filter_provider += NewsFilter(symbols=['AAPL'], limit=10)
         filter_provider += NewsFilter(symbols=['IBM'], limit=10)
 
-        with IQFeedMewsProvider(attach_text=True, minibatch=3, filter_provider=filter_provider, column_mode=True) as provider:
+        with IQFeedNewsListener(attach_text=True, minibatch=3, filter_provider=filter_provider, column_mode=True) as listener, listener.minibatch_provider() as provider:
             e1 = threading.Event()
 
             def process_batch_listener(event):
-                batch = event.data
+                batch = event['data']
                 self.assertEqual(len(list(batch.keys())), 7)
-                self.assertEqual(len(batch[list(batch.keys())[0]]), 10)
+
+                self.assertTrue(0 < len(batch[list(batch.keys())[0]]) <= 10)
                 e1.set()
 
-            provider.process_batch += process_batch_listener
+            listener.process_batch += process_batch_listener
 
             e2 = threading.Event()
 
             def process_minibatch_listener(event):
-                batch = event.data
+                batch = event['data']
                 self.assertEqual(len(list(batch.keys())), 7)
                 self.assertEqual(len(batch[list(batch.keys())[0]]), 3)
                 e2.set()
 
-            provider.process_minibatch += process_minibatch_listener
+            listener.process_minibatch += process_minibatch_listener
 
             e1.wait()
             e2.wait()
@@ -51,26 +52,26 @@ class TestIQFeedNews(unittest.TestCase):
         filter_provider += NewsFilter(symbols=['AAPL'], limit=10)
         filter_provider += NewsFilter(symbols=['IBM'], limit=10)
 
-        with IQFeedMewsProvider(attach_text=True, minibatch=3, filter_provider=filter_provider, column_mode=False) as provider:
+        with IQFeedNewsListener(attach_text=True, minibatch=3, filter_provider=filter_provider, column_mode=False) as listener, listener.minibatch_provider() as provider:
             e1 = threading.Event()
 
             def process_batch_listener(event):
-                batch = event.data
-                self.assertEqual(len(batch), 10)
+                batch = event['data']
+                self.assertTrue(0 < len(batch) < 10)
                 self.assertEqual(len(batch[0].keys()), 7)
                 e1.set()
 
-            provider.process_batch += process_batch_listener
+            listener.process_batch += process_batch_listener
 
             e2 = threading.Event()
 
             def process_minibatch_listener(event):
-                batch = event.data
+                batch = event['data']
                 self.assertEqual(len(batch), 3)
                 self.assertEqual(len(batch[0].keys()), 7)
                 e2.set()
 
-            provider.process_minibatch += process_minibatch_listener
+            listener.process_minibatch += process_minibatch_listener
 
             for i, d in enumerate(provider):
                 self.assertEqual(len(d), 3)
