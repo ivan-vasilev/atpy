@@ -1,7 +1,5 @@
-import logging
-import threading
-
 from atpy.portfolio.order import *
+from pyevents.events import *
 
 
 class PortfolioManager(object):
@@ -9,13 +7,15 @@ class PortfolioManager(object):
 
     def __init__(self, initial_capital: float, uid=None, orders=None, default_listeners=None):
         self.initial_capital = initial_capital
-        self.uid = uid if uid is not None else uuid.uuid4()
+        self._id = uid if uid is not None else uuid.uuid4()
         self.orders = orders if orders is not None else list()
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._values = dict()
+        self.default_listeners = default_listeners
 
         if default_listeners is not None:
             default_listeners += self.on_event
+            self.portfolio_updated += default_listeners
 
     def add_order(self, order):
         with self._lock:
@@ -29,6 +29,12 @@ class PortfolioManager(object):
                 raise Exception("Not enough capital to fulfill order")
 
             self.orders.append(order)
+
+        self.portfolio_updated()
+
+    @after
+    def portfolio_updated(self):
+        return {'type': 'portfolio_update', 'data': self}
 
     @property
     def capital(self):
@@ -96,3 +102,19 @@ class PortfolioManager(object):
             with self._lock:
                 if event['data'].symbol in [o.symbol for o in self.orders]:
                     self._values[event['data'].symbol] = (event['data']['Ask'] + event['data']['Bid']) / 2.0
+
+    def __getstate__(self):
+        # Copy the object's state from self.__dict__ which contains
+        # all our instance attributes. Always use the dict.copy()
+        # method to avoid modifying the original state.
+        state = self.__dict__.copy()
+        # Remove the unpicklable entries.
+        del state['_lock']
+        del state['default_listeners']
+
+        return state
+
+    def __setstate__(self, state):
+        # Restore instance attributes (i.e., _lock).
+        self.__dict__.update(state)
+        self._lock = threading.RLock()
