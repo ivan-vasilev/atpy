@@ -13,12 +13,15 @@ class TestPortfolioManager(unittest.TestCase):
         pm = PortfolioManager(10000)
 
         # order 1
-        o1 = MarketOrder(Type.BUY, 'GOOG', 100)
-        o1.fulfill_time = datetime.datetime.now()
-        o1.obtained_positions.append((14, 23))
-        o1.obtained_positions.append((86, 24))
+        o2 = MarketOrder(Type.BUY, 'GOOG', 100)
+        o2.fulfill_time = datetime.datetime.now()
+        o2.obtained_positions.append((14, 23))
+        o2.obtained_positions.append((86, 24))
 
-        pm.on_event({'type': 'order_fulfilled', 'order': o1})
+        e1 = threading.Event()
+        pm.add_order += lambda x: e1.set()
+        pm.on_event({'type': 'order_fulfilled', 'order': o2})
+        e1.wait()
 
         self.assertEqual(len(pm.quantity()), 1)
         self.assertEqual(pm.quantity()['GOOG'], 100)
@@ -29,13 +32,16 @@ class TestPortfolioManager(unittest.TestCase):
         self.assertEqual(pm.capital, 10000 - (14 * 23 + 86 * 24))
 
         # order 2
-        o1 = MarketOrder(Type.BUY, 'GOOG', 150)
-        o1.fulfill_time = datetime.datetime.now()
-        o1.obtained_positions.append((110, 25))
-        o1.obtained_positions.append((30, 26))
-        o1.obtained_positions.append((10, 27))
+        o2 = MarketOrder(Type.BUY, 'GOOG', 150)
+        o2.fulfill_time = datetime.datetime.now()
+        o2.obtained_positions.append((110, 25))
+        o2.obtained_positions.append((30, 26))
+        o2.obtained_positions.append((10, 27))
 
-        pm.on_event({'type': 'order_fulfilled', 'order': o1})
+        e2 = threading.Event()
+        pm.add_order += lambda x: e2.set()
+        pm.on_event({'type': 'order_fulfilled', 'order': o2})
+        e2.wait()
 
         self.assertEqual(len(pm.quantity()), 1)
         self.assertEqual(pm.quantity()['GOOG'], 250)
@@ -46,11 +52,14 @@ class TestPortfolioManager(unittest.TestCase):
         self.assertEqual(pm.capital, 10000 - (14 * 23 + 86 * 24 + 110 * 25 + 30 * 26 + 10 * 27))
 
         # order 3
-        o1 = MarketOrder(Type.SELL, 'GOOG', 60)
-        o1.fulfill_time = datetime.datetime.now()
-        o1.obtained_positions.append((60, 22))
+        o3 = MarketOrder(Type.SELL, 'GOOG', 60)
+        o3.fulfill_time = datetime.datetime.now()
+        o3.obtained_positions.append((60, 22))
 
-        pm.on_event({'type': 'order_fulfilled', 'order': o1})
+        e3 = threading.Event()
+        pm.add_order += lambda x: e3.set()
+        pm.on_event({'type': 'order_fulfilled', 'order': o3})
+        e3.wait()
 
         self.assertEqual(len(pm.quantity()), 1)
         self.assertEqual(pm.quantity()['GOOG'], 190)
@@ -61,11 +70,14 @@ class TestPortfolioManager(unittest.TestCase):
         self.assertEqual(pm.capital, 10000 - (14 * 23 + 86 * 24 + 110 * 25 + 30 * 26 + 10 * 27) + 60 * 22)
 
         # order 4
-        o1 = MarketOrder(Type.BUY, 'AAPL', 50)
-        o1.fulfill_time = datetime.datetime.now()
-        o1.obtained_positions.append((50, 21))
+        o4 = MarketOrder(Type.BUY, 'AAPL', 50)
+        o4.fulfill_time = datetime.datetime.now()
+        o4.obtained_positions.append((50, 21))
 
-        pm.on_event({'type': 'order_fulfilled', 'order': o1})
+        e4 = threading.Event()
+        pm.add_order += lambda x: e4.set()
+        pm.on_event({'type': 'order_fulfilled', 'order': o4})
+        e4.wait()
 
         self.assertEqual(len(pm.quantity()), 2)
         self.assertEqual(pm.quantity()['AAPL'], 50)

@@ -31,7 +31,7 @@ class PortfolioManager(object):
 
             self.orders.append(order)
 
-            return {'type': 'portfolio_update', 'data': self}
+            return CompositeEvent([{'type': 'watch_symbol', 'symbol': order.symbol}, {'type': 'portfolio_update', 'data': self}])
 
     @property
     def symbols(self):
