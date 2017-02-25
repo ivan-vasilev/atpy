@@ -1,9 +1,9 @@
 from atpy.data.iqfeed.util import *
 from pyevents.events import *
+from typing import Sequence
 
 
 class IQFeedLevel1Listener(iq.SilentQuoteListener):
-
     def __init__(self, minibatch=None, key_suffix='', column_mode=True, default_listeners=None):
         super().__init__(name="Level 1 listener")
 
@@ -11,6 +11,8 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener):
         self.conn = None
         self.key_suffix = key_suffix
         self.column_mode = column_mode
+
+        self.watched_symbols = set()
 
         self.current_fund_mb = list()
         self.current_news_mb = list()
@@ -29,6 +31,7 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener):
             self.process_regional_mb += default_listeners
             self.process_fundamentals += default_listeners
             self.process_fundamentals_mb += default_listeners
+            default_listeners += self.on_event
 
     def __enter__(self):
         launch_service()
@@ -58,6 +61,27 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener):
         else:
             raise AttributeError
 
+    def on_event(self, event):
+        if event['type'] == 'watch_symbol':
+            if event['symbol'] not in self.watched_symbols:
+                self.conn.watch(event['symbol'])
+                self.watched_symbols.add(event['symbol'])
+        elif event['type'] == 'portfolio_update':
+            to_watch = event['data'].symbols - self.watched_symbols
+            for symbol in to_watch:
+                self.conn.watch(symbol)
+                self.watched_symbols.add(symbol)
+
+    def process_invalid_symbol(self, bad_symbol: str) -> None:
+        """
+        You made a subscription request with an invalid symbol
+
+        :param bad_symbol: The bad symbol
+
+        """
+        if bad_symbol in self.watched_symbols and bad_symbol in self.watched_symbols:
+            self.watched_symbols.remove(bad_symbol)
+
     @after
     def process_news(self, news_item: iq.QuoteConn.NewsMsg):
         news_item = news_item._asdict()
@@ -85,6 +109,10 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener):
 
     def news_provider(self):
         return IQFeedDataProvider(self.process_news_mb)
+
+    def process_watched_symbols(self, symbols: Sequence[str]) -> None:
+        """List of all watched symbols when requested."""
+        self.watched_symbols = symbols
 
     @after
     def process_regional_quote(self, quote: np.array):

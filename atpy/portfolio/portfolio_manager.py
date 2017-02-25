@@ -15,8 +15,9 @@ class PortfolioManager(object):
 
         if default_listeners is not None:
             default_listeners += self.on_event
-            self.portfolio_updated += default_listeners
+            self.add_order += default_listeners
 
+    @after
     def add_order(self, order):
         with self._lock:
             if len([o for o in self.orders if o.uid == order.uid]) > 0:
@@ -30,11 +31,11 @@ class PortfolioManager(object):
 
             self.orders.append(order)
 
-        self.portfolio_updated()
+            return {'type': 'portfolio_update', 'data': self}
 
-    @after
-    def portfolio_updated(self):
-        return {'type': 'portfolio_update', 'data': self}
+    @property
+    def symbols(self):
+        return set([o.symbol for o in self.orders])
 
     @property
     def capital(self):
@@ -75,23 +76,23 @@ class PortfolioManager(object):
 
             return result
 
-    def value(self, symbol=None):
+    def value(self, symbol=None, multiply_by_quantity=False):
         with self._lock:
-            return self._value(symbol=symbol)
+            return self._value(symbol=symbol, multiply_by_quantity=multiply_by_quantity)
 
-    def _value(self, symbol=None):
+    def _value(self, symbol=None, multiply_by_quantity=False):
         if symbol is not None:
             if symbol not in self._values:
                 logging.getLogger(__name__).debug("No current information available for " + symbol + ". Falling back to last traded price")
                 symbol_orders = [o for o in self.orders if o.symbol == symbol]
                 order = sorted(symbol_orders, key=lambda o: o.fulfill_time, reverse=True)[0]
-                return order.obtained_positions[-1][1] * self._quantity(symbol=symbol)
+                return order.obtained_positions[-1][1] * (self._quantity(symbol=symbol) if multiply_by_quantity else 1)
             else:
-                return self._values[symbol]
+                return self._values[symbol] * (self._quantity(symbol=symbol) if multiply_by_quantity else 1)
         else:
             result = dict()
             for s in set([o.symbol for o in self.orders]):
-                result[s] = self._value(symbol=s)
+                result[s] = self._value(symbol=s, multiply_by_quantity=multiply_by_quantity)
 
             return result
 
@@ -100,8 +101,13 @@ class PortfolioManager(object):
             self.add_order(event['order'])
         elif event['type'] == 'level_1_tick':
             with self._lock:
-                if event['data'].symbol in [o.symbol for o in self.orders]:
-                    self._values[event['data'].symbol] = (event['data']['Ask'] + event['data']['Bid']) / 2.0
+                if event['data']['Symbol'].decode('ascii') in [o.symbol for o in self.orders]:
+                    self._values[event['data']['Symbol'].decode('ascii')] = event['data']['Most Recent Trade']
+                    self.portfolio_value_update()
+
+    @after
+    def portfolio_value_update(self):
+        return {'type': 'portfolio_value_update', 'data': self}
 
     def __getstate__(self):
         # Copy the object's state from self.__dict__ which contains

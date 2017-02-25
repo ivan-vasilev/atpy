@@ -15,7 +15,7 @@ class TestIQFeedLevel1(unittest.TestCase):
             listener.watch('GOOG')
             listener.watch('MSFT')
             listener.watch('SPY')
-
+            listener.request_watches()
             e1 = threading.Event()
 
             def process_fund_item(event):
