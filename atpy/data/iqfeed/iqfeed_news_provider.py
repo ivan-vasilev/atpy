@@ -4,7 +4,7 @@ from typing import List
 import atpy.data.iqfeed.util as iqfeedutil
 from atpy.data.iqfeed.filters import *
 from atpy.data.iqfeed.util import *
-from pyevents.events import *
+import pyevents.events as events
 
 
 class NewsFilter(NamedTuple):
@@ -28,12 +28,12 @@ class DefaultNewsFilterProvider(DefaultFilterProvider):
         return NewsFilter()
 
 
-class IQFeedNewsListener(object):
+class IQFeedNewsListener(object, metaclass=events.GlobalRegister):
     """
     IQFeed news listener (not streaming). See the unit test on how to use
     """
 
-    def __init__(self, minibatch=None, attach_text=False, random_order=False, key_suffix='', filter_provider=DefaultNewsFilterProvider(), column_mode=True, default_listeners=None):
+    def __init__(self, minibatch=None, attach_text=False, random_order=False, key_suffix='', filter_provider=DefaultNewsFilterProvider(), column_mode=True):
         self.minibatch = minibatch
         self.attach_text = attach_text
         self.conn = None
@@ -42,10 +42,6 @@ class IQFeedNewsListener(object):
         self.filter_provider = filter_provider
         self.column_mode = column_mode
         self.current_minibatch = None
-
-        if default_listeners is not None:
-            self.process_batch += default_listeners
-            self.process_minibatch += default_listeners
 
     def __enter__(self):
         iqfeedutil.launch_service()
@@ -134,14 +130,14 @@ class IQFeedNewsListener(object):
             if not self.is_running:
                 break
 
-    @after
+    @events.after
     def process_batch(self, data):
         return {'type': 'news_batch', 'data': data}
 
     def batch_provider(self):
         return IQFeedDataProvider(self.process_batch)
 
-    @after
+    @events.after
     def process_minibatch(self, data):
         return {'type': 'news_minibatch', 'data': data}
 

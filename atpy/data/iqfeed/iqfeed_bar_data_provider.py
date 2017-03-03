@@ -1,16 +1,15 @@
 import atpy.data.iqfeed.util as iqfeedutil
 from atpy.data.iqfeed.util import *
-from pyevents.events import *
+import pyevents.events as events
 
 
-class IQFeedBarDataListener(iq.SilentBarListener):
+class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegister):
 
-    def __init__(self, minibatch=None, key_suffix='', column_mode=True, default_listeners=None):
+    def __init__(self, minibatch=None, key_suffix='', column_mode=True):
         """
         :param minibatch: size of the minibatch
         :param key_suffix: suffix to the fieldnames
         :param column_mode: column/row data format
-        :param default_listeners: list of the default listeners to be attached ot the event producers
         """
         super().__init__(name="Bar data listener")
 
@@ -19,10 +18,6 @@ class IQFeedBarDataListener(iq.SilentBarListener):
         self.key_suffix = key_suffix
         self.column_mode = column_mode
         self.current_batch = None
-
-        if default_listeners is not None:
-            self.process_bar += default_listeners
-            self.process_bar_batch += default_listeners
 
     def __enter__(self):
         iqfeedutil.launch_service()
@@ -59,7 +54,7 @@ class IQFeedBarDataListener(iq.SilentBarListener):
     def process_history_bar(self, bar_data: np.array) -> None:
         self.process_bar(bar_data)
 
-    @after
+    @events.after
     def process_bar(self, bar_data):
         if self.minibatch is not None:
             if self.current_batch is None:
@@ -76,7 +71,7 @@ class IQFeedBarDataListener(iq.SilentBarListener):
     def bar_provider(self):
         return IQFeedDataProvider(self.process_bar)
 
-    @after
+    @events.after
     def process_bar_batch(self, batch):
         return {'type': 'bar_batch_event', 'data': iqfeedutil.create_batch(batch, self.column_mode, self.key_suffix)}
 

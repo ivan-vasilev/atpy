@@ -1,25 +1,25 @@
 from atpy.portfolio.order import *
-from pyevents.events import *
+import pyevents.events as events
+import threading
+import logging
 
 
-class PortfolioManager(object):
+class PortfolioManager(object, metaclass=events.GlobalRegister):
     """Orders portfolio manager"""
 
-    def __init__(self, initial_capital: float, uid=None, orders=None, default_listeners=None):
+    def __init__(self, initial_capital: float, uid=None, orders=None):
         self.initial_capital = initial_capital
         self._id = uid if uid is not None else uuid.uuid4()
         self.orders = orders if orders is not None else list()
         self._lock = threading.RLock()
         self._values = dict()
-        self.default_listeners = default_listeners
 
-        if default_listeners is not None:
-            default_listeners += self.on_event
-            self.add_order += default_listeners
-
-    @after
+    @events.after
     def add_order(self, order):
         with self._lock:
+            if order.fulfill_time is None:
+                raise Exception("Order has no fulfill_time set")
+
             if len([o for o in self.orders if o.uid == order.uid]) > 0:
                 raise Exception("Attempt to fulfill existing order")
 
@@ -31,7 +31,7 @@ class PortfolioManager(object):
 
             self.orders.append(order)
 
-            return CompositeEvent([{'type': 'watch_symbol', 'symbol': order.symbol}, {'type': 'portfolio_update', 'data': self}])
+            return events.CompositeEvent([{'type': 'watch_symbol', 'data': order.symbol}, {'type': 'portfolio_update', 'data': self}])
 
     @property
     def symbols(self):
@@ -96,6 +96,7 @@ class PortfolioManager(object):
 
             return result
 
+    @events.listener
     def on_event(self, event):
         if event['type'] == 'order_fulfilled':
             self.add_order(event['order'])
@@ -105,7 +106,7 @@ class PortfolioManager(object):
                     self._values[event['data']['Symbol'].decode('ascii')] = event['data']['Most Recent Trade']
                     self.portfolio_value_update()
 
-    @after
+    @events.after
     def portfolio_value_update(self):
         return {'type': 'portfolio_value_update', 'data': self}
 
@@ -116,7 +117,6 @@ class PortfolioManager(object):
         state = self.__dict__.copy()
         # Remove the unpicklable entries.
         del state['_lock']
-        del state['default_listeners']
 
         return state
 

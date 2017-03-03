@@ -18,7 +18,22 @@ class BaseOrder(object, metaclass=ABCMeta):
 
         self.obtained_positions = list()
         self.request_time = datetime.datetime.now()
-        self.fulfill_time = None
+        self.__fulfill_time = None
+
+    @property
+    def fulfill_time(self):
+        return self.__fulfill_time
+
+    @fulfill_time.setter
+    def fulfill_time(self, fulfill_time):
+        if self.obtained_quantity != self.quantity:
+            raise Exception("Order is not fulfilled. Obtained " + str(self.obtained_quantity) + " of " + str(self.quantity))
+
+        self.__fulfill_time = fulfill_time
+
+    @property
+    def obtained_quantity(self):
+        return sum([op[0] for op in self.obtained_positions])
 
 
 class MarketOrder(BaseOrder):
@@ -45,3 +60,4 @@ class StopLimitOrder(BaseOrder):
 
         self.limit_price = limit_price
         self.stop_price = stop_price
+2

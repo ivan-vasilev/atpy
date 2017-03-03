@@ -1,10 +1,10 @@
 from atpy.data.iqfeed.util import *
-from pyevents.events import *
+import pyevents.events as events
 from typing import Sequence
 
 
-class IQFeedLevel1Listener(iq.SilentQuoteListener):
-    def __init__(self, minibatch=None, key_suffix='', column_mode=True, default_listeners=None):
+class IQFeedLevel1Listener(iq.SilentQuoteListener, metaclass=events.GlobalRegister):
+    def __init__(self, minibatch=None, key_suffix='', column_mode=True):
         super().__init__(name="Level 1 listener")
 
         self.minibatch = minibatch
@@ -19,19 +19,6 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener):
         self.current_regional_mb = list()
         self.current_summary_mb = list()
         self.current_update_mb = list()
-
-        if default_listeners is not None:
-            self.process_update += default_listeners
-            self.process_update_mb += default_listeners
-            self.process_news += default_listeners
-            self.process_news_mb += default_listeners
-            self.process_summary += default_listeners
-            self.process_summary_mb += default_listeners
-            self.process_regional_quote += default_listeners
-            self.process_regional_mb += default_listeners
-            self.process_fundamentals += default_listeners
-            self.process_fundamentals_mb += default_listeners
-            default_listeners += self.on_event
 
     def __enter__(self):
         launch_service()
@@ -61,16 +48,12 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener):
         else:
             raise AttributeError
 
+    @events.listener
     def on_event(self, event):
         if event['type'] == 'watch_symbol':
-            if event['symbol'] not in self.watched_symbols:
-                self.conn.watch(event['symbol'])
-                self.watched_symbols.add(event['symbol'])
-        elif event['type'] == 'portfolio_update':
-            to_watch = event['data'].symbols - self.watched_symbols
-            for symbol in to_watch:
-                self.conn.watch(symbol)
-                self.watched_symbols.add(symbol)
+            if event['data'] not in self.watched_symbols:
+                self.conn.watch(event['data'])
+                self.watched_symbols.add(event['data'])
 
     def process_invalid_symbol(self, bad_symbol: str) -> None:
         """
@@ -82,7 +65,7 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener):
         if bad_symbol in self.watched_symbols and bad_symbol in self.watched_symbols:
             self.watched_symbols.remove(bad_symbol)
 
-    @after
+    @events.after
     def process_news(self, news_item: iq.QuoteConn.NewsMsg):
         news_item = news_item._asdict()
 
@@ -103,7 +86,7 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener):
 
         return {'type': 'level_1_news_item', 'data': news_item}
 
-    @after
+    @events.after
     def process_news_mb(self, news_list):
         return {'type': 'level_1_news_batch', 'data': news_list}
 
@@ -114,7 +97,7 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener):
         """List of all watched symbols when requested."""
         self.watched_symbols = symbols
 
-    @after
+    @events.after
     def process_regional_quote(self, quote: np.array):
         if self.minibatch is not None:
             self.current_regional_mb.append(quote)
@@ -124,14 +107,14 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener):
 
         return {'type': 'level_1_regional_quote', 'data': iqfeed_to_dict(quote, self.key_suffix)}
 
-    @after
+    @events.after
     def process_regional_mb(self, quote_list):
         return {'type': 'level_1_regional_quote_batch', 'data': quote_list}
 
     def regional_provider(self):
         return IQFeedDataProvider(self.process_regional_mb)
 
-    @after
+    @events.after
     def process_summary(self, summary: np.array):
         if self.minibatch is not None:
             self.current_summary_mb.append(summary)
@@ -141,14 +124,14 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener):
 
         return {'type': 'level_1_tick', 'data': iqfeed_to_dict(summary, self.key_suffix)}
 
-    @after
+    @events.after
     def process_summary_mb(self, summary_list):
         return {'type': 'level_1_tick_batch', 'data': summary_list}
 
     def summary_provider(self):
         return IQFeedDataProvider(self.process_summary_mb)
 
-    @after
+    @events.after
     def process_update(self, update: np.array):
         if self.minibatch is not None:
             self.current_update_mb.append(update)
@@ -158,14 +141,14 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener):
 
         return {'type': 'level_1_tick', 'data': iqfeed_to_dict(update, self.key_suffix)}
 
-    @after
+    @events.after
     def process_update_mb(self, updates_list):
         return {'type': 'level_1_tick_batch', 'data': updates_list}
 
     def update_provider(self):
         return IQFeedDataProvider(self.process_update_mb)
 
-    @after
+    @events.after
     def process_fundamentals(self, fund: np.array):
         if self.minibatch is not None:
             self.current_fund_mb.append(fund)
@@ -175,7 +158,7 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener):
 
         return {'type': 'level_1_fundamentals', 'data': iqfeed_to_dict(fund, self.key_suffix)}
 
-    @after
+    @events.after
     def process_fundamentals_mb(self, fund_list):
         return {'type': 'level_1_fundamental_batch', 'data': fund_list}
 

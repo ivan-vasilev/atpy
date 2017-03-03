@@ -2,7 +2,7 @@ import datetime
 
 import atpy.data.iqfeed.util as iqfeedutil
 from atpy.data.iqfeed.filters import *
-from pyevents.events import *
+import pyevents.events as events
 from atpy.data.iqfeed.util import *
 
 
@@ -159,18 +159,17 @@ class BarsMonthlyFilter(NamedTuple):
 BarsMonthlyFilter.__new__.__defaults__ = (False, None)
 
 
-class IQFeedHistoryListener(object):
+class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
     """
     IQFeed historical data listener. See the unit test on how to use
     """
 
-    def __init__(self, minibatch=None, column_mode=True, key_suffix='', filter_provider=DefaultFilterProvider(), default_listeners=None):
+    def __init__(self, minibatch=None, column_mode=True, key_suffix='', filter_provider=DefaultFilterProvider()):
         """
         :param minibatch: size of the minibatch
         :param column_mode: whether to organize the data in columns or rows
         :param key_suffix: suffix for field names
         :param filter_provider: news filter list
-        :param default_listeners: list of the default listeners to be attached ot the event producers
         """
         self.minibatch = minibatch
         self.column_mode = column_mode
@@ -178,10 +177,6 @@ class IQFeedHistoryListener(object):
         self.current_minibatch = list()
         self.filter_provider = filter_provider
         self.conn = None
-
-        if default_listeners is not None:
-            self.process_batch += default_listeners
-            self.process_minibatch += default_listeners
 
     def __enter__(self):
         iqfeedutil.launch_service()
@@ -251,14 +246,14 @@ class IQFeedHistoryListener(object):
             if not self.is_running:
                 return
 
-    @after
+    @events.after
     def process_batch(self, data):
         return {'type': 'history_batch', 'data': iqfeedutil.create_batch(data, self.column_mode, self.key_suffix)}
 
     def batch_provider(self):
         return IQFeedDataProvider(self.process_batch)
 
-    @after
+    @events.after
     def process_minibatch(self, data):
         return {'type': 'history_minibatch', 'data': iqfeedutil.create_batch(data, self.column_mode, self.key_suffix)}
 

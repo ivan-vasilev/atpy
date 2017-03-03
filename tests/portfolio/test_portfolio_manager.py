@@ -9,14 +9,17 @@ class TestPortfolioManager(unittest.TestCase):
     Test portfolio manager
     """
 
+    def setUp(self):
+        events.reset()
+
     def test_1(self):
         pm = PortfolioManager(10000)
 
         # order 1
         o2 = MarketOrder(Type.BUY, 'GOOG', 100)
-        o2.fulfill_time = datetime.datetime.now()
         o2.obtained_positions.append((14, 23))
         o2.obtained_positions.append((86, 24))
+        o2.fulfill_time = datetime.datetime.now()
 
         e1 = threading.Event()
         pm.add_order += lambda x: e1.set()
@@ -33,10 +36,10 @@ class TestPortfolioManager(unittest.TestCase):
 
         # order 2
         o2 = MarketOrder(Type.BUY, 'GOOG', 150)
-        o2.fulfill_time = datetime.datetime.now()
         o2.obtained_positions.append((110, 25))
         o2.obtained_positions.append((30, 26))
         o2.obtained_positions.append((10, 27))
+        o2.fulfill_time = datetime.datetime.now()
 
         e2 = threading.Event()
         pm.add_order += lambda x: e2.set()
@@ -53,8 +56,8 @@ class TestPortfolioManager(unittest.TestCase):
 
         # order 3
         o3 = MarketOrder(Type.SELL, 'GOOG', 60)
-        o3.fulfill_time = datetime.datetime.now()
         o3.obtained_positions.append((60, 22))
+        o3.fulfill_time = datetime.datetime.now()
 
         e3 = threading.Event()
         pm.add_order += lambda x: e3.set()
@@ -71,8 +74,8 @@ class TestPortfolioManager(unittest.TestCase):
 
         # order 4
         o4 = MarketOrder(Type.BUY, 'AAPL', 50)
-        o4.fulfill_time = datetime.datetime.now()
         o4.obtained_positions.append((50, 21))
+        o4.fulfill_time = datetime.datetime.now()
 
         e4 = threading.Event()
         pm.add_order += lambda x: e4.set()
@@ -88,34 +91,37 @@ class TestPortfolioManager(unittest.TestCase):
         self.assertEqual(pm.capital, 10000 - (14 * 23 + 86 * 24 + 110 * 25 + 30 * 26 + 10 * 27 + 50 * 21) + 60 * 22)
 
     def test_logging(self):
+        events.use_global_event_bus()
+
         client = pymongo.MongoClient()
+
         try:
             # logging.basicConfig(level=logging.DEBUG)
 
-            global_listeners = AsyncListeners()
+            events.use_global_event_bus()
 
-            pm = PortfolioManager(10000, default_listeners=global_listeners)
+            pm = PortfolioManager(10000)
 
-            store = MongoDBStore(client.test_db.store, lambda event: event['type'] == 'portfolio_update', default_listeners=global_listeners)
+            store = MongoDBStore(client.test_db.store, lambda event: event['type'] == 'portfolio_update')
 
             # order 1
             o1 = MarketOrder(Type.BUY, 'GOOG', 100)
-            o1.fulfill_time = datetime.datetime.now()
             o1.obtained_positions.append((14, 23))
             o1.obtained_positions.append((86, 24))
+            o1.fulfill_time = datetime.datetime.now()
 
             e1 = threading.Event()
-            store.object_stored += lambda x: e1.set()
+            events.listener(lambda x: e1.set() if x['type'] == 'store_object' else None)
             pm.on_event({'type': 'order_fulfilled', 'order': o1})
             e1.wait()
 
             # order 2
             o2 = MarketOrder(Type.BUY, 'AAPL', 50)
-            o2.fulfill_time = datetime.datetime.now()
             o2.obtained_positions.append((50, 21))
+            o2.fulfill_time = datetime.datetime.now()
 
             e2 = threading.Event()
-            store.object_stored += lambda x: e2.set()
+            events.listener(lambda x: e2.set() if x['type'] == 'store_object' else None)
             pm.on_event({'type': 'order_fulfilled', 'order': o2})
             e2.wait()
 
@@ -127,19 +133,19 @@ class TestPortfolioManager(unittest.TestCase):
             client.drop_database('test_db')
 
     def test_price_updates(self):
-        listeners = AsyncListeners()
+        events.use_global_event_bus()
 
-        with IQFeedLevel1Listener(minibatch=2, default_listeners=listeners) as listener:
-            pm = PortfolioManager(10000, default_listeners=listeners)
+        with IQFeedLevel1Listener(minibatch=2):
+            pm = PortfolioManager(10000)
 
             # order 1
             o1 = MarketOrder(Type.BUY, 'GOOG', 100)
-            o1.fulfill_time = datetime.datetime.now()
             o1.obtained_positions.append((14, 1))
             o1.obtained_positions.append((86, 1))
+            o1.fulfill_time = datetime.datetime.now()
 
             e1 = threading.Event()
-            pm.portfolio_value_update += lambda x: e1.set()
+            events.listener(lambda x: e1.set() if x['type'] == 'portfolio_value_update' else None)
             pm.on_event({'type': 'order_fulfilled', 'order': o1})
             e1.wait()
 
@@ -147,21 +153,21 @@ class TestPortfolioManager(unittest.TestCase):
 
             # order 2
             o2 = MarketOrder(Type.BUY, 'GOOG', 90)
-            o2.fulfill_time = datetime.datetime.now()
-            o2.obtained_positions.append((14, 0.5))
+            o2.obtained_positions.append((4, 0.5))
             o2.obtained_positions.append((86, 0.5))
+            o2.fulfill_time = datetime.datetime.now()
 
             self.assertNotEquals(pm.value('GOOG'), 1)
             self.assertNotEquals(pm.value('GOOG'), 0.5)
 
             # order 3
-            o3 = MarketOrder(Type.BUY, 'AAPL', 80)
-            o3.fulfill_time = datetime.datetime.now()
+            o3 = MarketOrder(Type.BUY, 'AAPL', 100)
             o3.obtained_positions.append((14, 0.2))
             o3.obtained_positions.append((86, 0.2))
+            o3.fulfill_time = datetime.datetime.now()
 
             e3 = threading.Event()
-            pm.portfolio_value_update += lambda x: e3.set()
+            events.listener(lambda x: e3.set() if x['type'] == 'portfolio_value_update' else None)
             pm.on_event({'type': 'order_fulfilled', 'order': o3})
             e3.wait()
 
