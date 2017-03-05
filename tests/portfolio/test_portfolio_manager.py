@@ -2,6 +2,7 @@ import unittest
 from atpy.portfolio.portfolio_manager import *
 from pyevents_util.mongodb.mongodb_store import *
 from atpy.data.iqfeed.iqfeed_level_1_provider import *
+from atpy.portfolio.backtesting.mock_orders import *
 
 
 class TestPortfolioManager(unittest.TestCase):
@@ -23,7 +24,7 @@ class TestPortfolioManager(unittest.TestCase):
 
         e1 = threading.Event()
         pm.add_order += lambda x: e1.set()
-        pm.on_event({'type': 'order_fulfilled', 'order': o2})
+        pm.on_event({'type': 'order_fulfilled', 'data': o2})
         e1.wait()
 
         self.assertEqual(len(pm.quantity()), 1)
@@ -43,7 +44,7 @@ class TestPortfolioManager(unittest.TestCase):
 
         e2 = threading.Event()
         pm.add_order += lambda x: e2.set()
-        pm.on_event({'type': 'order_fulfilled', 'order': o2})
+        pm.on_event({'type': 'order_fulfilled', 'data': o2})
         e2.wait()
 
         self.assertEqual(len(pm.quantity()), 1)
@@ -61,7 +62,7 @@ class TestPortfolioManager(unittest.TestCase):
 
         e3 = threading.Event()
         pm.add_order += lambda x: e3.set()
-        pm.on_event({'type': 'order_fulfilled', 'order': o3})
+        pm.on_event({'type': 'order_fulfilled', 'data': o3})
         e3.wait()
 
         self.assertEqual(len(pm.quantity()), 1)
@@ -79,7 +80,7 @@ class TestPortfolioManager(unittest.TestCase):
 
         e4 = threading.Event()
         pm.add_order += lambda x: e4.set()
-        pm.on_event({'type': 'order_fulfilled', 'order': o4})
+        pm.on_event({'type': 'order_fulfilled', 'data': o4})
         e4.wait()
 
         self.assertEqual(len(pm.quantity()), 2)
@@ -112,7 +113,7 @@ class TestPortfolioManager(unittest.TestCase):
 
             e1 = threading.Event()
             events.listener(lambda x: e1.set() if x['type'] == 'store_object' else None)
-            pm.on_event({'type': 'order_fulfilled', 'order': o1})
+            pm.on_event({'type': 'order_fulfilled', 'data': o1})
             e1.wait()
 
             # order 2
@@ -122,7 +123,7 @@ class TestPortfolioManager(unittest.TestCase):
 
             e2 = threading.Event()
             events.listener(lambda x: e2.set() if x['type'] == 'store_object' else None)
-            pm.on_event({'type': 'order_fulfilled', 'order': o2})
+            pm.on_event({'type': 'order_fulfilled', 'data': o2})
             e2.wait()
 
             obj = store.restore(client.test_db.store, pm._id)
@@ -146,7 +147,7 @@ class TestPortfolioManager(unittest.TestCase):
 
             e1 = threading.Event()
             events.listener(lambda x: e1.set() if x['type'] == 'portfolio_value_update' else None)
-            pm.on_event({'type': 'order_fulfilled', 'order': o1})
+            pm.on_event({'type': 'order_fulfilled', 'data': o1})
             e1.wait()
 
             self.assertNotEquals(pm.value('GOOG'), 1)
@@ -168,13 +169,60 @@ class TestPortfolioManager(unittest.TestCase):
 
             e3 = threading.Event()
             events.listener(lambda x: e3.set() if x['type'] == 'portfolio_value_update' else None)
-            pm.on_event({'type': 'order_fulfilled', 'order': o3})
+            pm.on_event({'type': 'order_fulfilled', 'data': o3})
             e3.wait()
 
             self.assertNotEquals(pm.value('GOOG'), 1)
             self.assertNotEquals(pm.value('GOOG'), 0.5)
             self.assertNotEquals(pm.value('AAPL'), 0.2)
             self.assertEqual(len(pm._values), 2)
+
+    def test_mock_orders(self):
+        events.use_global_event_bus()
+
+        with IQFeedLevel1Listener():
+            pm = PortfolioManager(10000)
+
+            mock_orders = MockOrders()
+
+            e1 = threading.Event()
+            events.listener(lambda x: e1.set() if x['type'] == 'portfolio_update' and 'GOOG' in x['data'].symbols else None)
+
+            e2 = threading.Event()
+            events.listener(lambda x: e2.set() if x['type'] == 'portfolio_update' and 'AAPL' in x['data'].symbols else None)
+
+            e3 = threading.Event()
+            events.listener(lambda x: e3.set() if x['type'] == 'portfolio_update' and 'IBM' in x['data'].symbols else None)
+
+            o1 = StopLimitOrder(Type.BUY, 'GOOG', 1, 99999, 1)
+            mock_orders.on_event({'type': 'order_request', 'data': o1})
+
+            o2 = StopLimitOrder(Type.BUY, 'AAPL', 3, 99999, 1)
+            mock_orders.on_event({'type': 'order_request', 'data': o2})
+
+            o3 = StopLimitOrder(Type.BUY, 'IBM', 1, 99999, 1)
+            mock_orders.on_event({'type': 'order_request', 'data': o3})
+
+            o4 = StopLimitOrder(Type.SELL, 'AAPL', 1, 1, 99999)
+            mock_orders.on_event({'type': 'order_request', 'data': o4})
+
+            e1.wait()
+            e2.wait()
+            e3.wait()
+
+        self.assertLess(pm.capital, 10000)
+        self.assertTrue('GOOG' in pm.symbols)
+        self.assertTrue('AAPL' in pm.symbols)
+        self.assertTrue('IBM' in pm.symbols)
+
+        self.assertEqual(pm.quantity('GOOG'), 1)
+        self.assertEqual(pm.quantity('AAPL'), 2)
+        self.assertEqual(pm.quantity('IBM'), 1)
+
+        self.assertGreater(pm.value('GOOG'), 0)
+        self.assertGreater(pm.value('AAPL'), 0)
+        self.assertGreater(pm.value('IBM'), 0)
+
 
 if __name__ == '__main__':
     unittest.main()

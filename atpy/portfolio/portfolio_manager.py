@@ -99,7 +99,7 @@ class PortfolioManager(object, metaclass=events.GlobalRegister):
     @events.listener
     def on_event(self, event):
         if event['type'] == 'order_fulfilled':
-            self.add_order(event['order'])
+            self.add_order(event['data'])
         elif event['type'] == 'level_1_tick':
             with self._lock:
                 if event['data']['Symbol'] in [o.symbol for o in self.orders]:
