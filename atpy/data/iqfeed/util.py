@@ -28,7 +28,7 @@ def create_batch(data, column_mode=True, key_suffix=''):
                 datum = datum[0]
 
             if i == 0:
-                result = {n + key_suffix: np.empty((len(data),), d.dtype if str(d.dtype) != '|S4' else object) for n, d in zip(datum.dtype.names, datum)}
+                result = {n + key_suffix: np.empty((len(data),), d.dtype if str(d.dtype) not in ('|S4', '|S3') else object) for n, d in zip(datum.dtype.names, datum)}
 
             for j, f in enumerate(datum.dtype.names):
                 d = datum[j]
