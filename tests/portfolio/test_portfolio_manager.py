@@ -1,8 +1,9 @@
 import unittest
-from atpy.portfolio.portfolio_manager import *
-from pyevents_util.mongodb.mongodb_store import *
+
 from atpy.data.iqfeed.iqfeed_level_1_provider import *
 from atpy.portfolio.backtesting.mock_orders import *
+from atpy.portfolio.portfolio_manager import *
+from pyevents_util.mongodb.mongodb_store import *
 
 
 class TestPortfolioManager(unittest.TestCase):
