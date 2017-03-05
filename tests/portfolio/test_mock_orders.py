@@ -20,23 +20,10 @@ class TestMockOrders(unittest.TestCase):
             mock_orders = MockOrders()
 
             e1 = threading.Event()
-
-            def callback_1(x):
-                print('callback_1' + str(x))
-                if ['type'] == 'order_fulfilled' and x['data'].symbol == 'GOOG':
-                    print('E1')
-                    e1.set()
-
-            events.listener(callback_1)
+            events.listener(lambda x: e1.set() if x['type'] == 'order_fulfilled' and x['data'].symbol == 'GOOG' else None)
 
             e2 = threading.Event()
-
-            def callback_2(x):
-                if ['type'] == 'order_fulfilled' and x['data'].symbol == 'AAPL':
-                    print('E2')
-                    e2.set()
-
-            events.listener(callback_2)
+            events.listener(lambda x: e2.set() if x['type'] == 'order_fulfilled' and x['data'].symbol == 'AAPL' else None)
 
             o1 = MarketOrder(Type.BUY, 'GOOG', 1)
             mock_orders.on_event({'type': 'order_request', 'data': o1})
@@ -45,14 +32,8 @@ class TestMockOrders(unittest.TestCase):
             mock_orders.on_event({'type': 'order_request', 'data': o2})
 
             e3 = threading.Event()
-
-            def callback_3(x):
-                if ['type'] == 'order_fulfilled' and x['data'].symbol == 'MSFT':
-                    print('E3')
-                    e3.set()
-
-            events.listener(callback_3)
-            o3 = MarketOrder(Type.SELL, 'MSFT', 1)
+            events.listener(lambda x: e3.set() if x['type'] == 'order_fulfilled' and x['data'].symbol == 'IBM' else None)
+            o3 = MarketOrder(Type.SELL, 'IBM', 1)
             mock_orders.on_event({'type': 'order_request', 'data': o3})
             e3.wait()
 

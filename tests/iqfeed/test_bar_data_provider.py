@@ -12,11 +12,11 @@ class TestIQFeedBarData(unittest.TestCase):
         with IQFeedBarDataListener(minibatch=2, column_mode=True) as listener, listener.bar_batch_provider() as provider:
             e1 = threading.Event()
 
-            listener.process_bar += lambda event: [self.assertEqual(event['data']['symbol'], 'SPY'.encode(encoding='UTF-8')), e1.set()]
+            listener.on_bar += lambda event: [self.assertEqual(event['data']['symbol'], 'SPY'.encode(encoding='UTF-8')), e1.set()]
 
             e2 = threading.Event()
 
-            listener.process_bar_batch += lambda event: [self.assertEqual(event['data']['symbol'][0], 'SPY'.encode(encoding='UTF-8')), e2.set()]
+            listener.on_bar_batch += lambda event: [self.assertEqual(event['data']['symbol'][0], 'SPY'.encode(encoding='UTF-8')), e2.set()]
 
             listener.watch(symbol='SPY', interval_len=5,
                            interval_type='s', update=1, lookback_bars=10)
@@ -35,10 +35,10 @@ class TestIQFeedBarData(unittest.TestCase):
     def test_provider_row_mode(self):
         with IQFeedBarDataListener(minibatch=2, column_mode=False) as listener, listener.bar_batch_provider() as provider:
             e1 = threading.Event()
-            listener.process_bar += lambda event: [self.assertEqual(event['data']['symbol'], 'SPY'.encode(encoding='UTF-8')), e1.set()]
+            listener.on_bar += lambda event: [self.assertEqual(event['data']['symbol'], 'SPY'.encode(encoding='UTF-8')), e1.set()]
 
             e2 = threading.Event()
-            listener.process_bar_batch += lambda event: [self.assertEqual(event['data'][0]['symbol'], 'SPY'.encode(encoding='UTF-8')), e2.set()]
+            listener.on_bar_batch += lambda event: [self.assertEqual(event['data'][0]['symbol'], 'SPY'.encode(encoding='UTF-8')), e2.set()]
 
             listener.watch(symbol='SPY', interval_len=5,
                            interval_type='s', update=1, lookback_bars=10)
@@ -60,9 +60,9 @@ class TestIQFeedBarData(unittest.TestCase):
 
             e1 = threading.Event()
 
-            listener.process_bar += lambda event: [self.assertEqual(event['data']['symbol'], 'SPY'.encode(encoding='UTF-8')), e1.set()]
+            listener.on_bar += lambda event: [self.assertEqual(event['data']['symbol'].decode('ascii'), 'SPY'), e1.set()]
 
-            listener.process_bar_batch += lambda event: q.put(event['data'])
+            listener.on_bar_batch += lambda event: q.put(event['data'])
 
             listener.watch(symbol='SPY', interval_len=5,
                            interval_type='s', update=1, lookback_bars=10)
@@ -72,7 +72,7 @@ class TestIQFeedBarData(unittest.TestCase):
             for i, d in enumerate(iter(q.get, None)):
                 self.assertEqual(len(d), 10)
                 self.assertEqual(len(d['symbol']), 2)
-                self.assertEqual(d['symbol'][0], 'SPY'.encode(encoding='UTF-8'))
+                self.assertEqual(d['symbol'][0].decode('ascii'), 'SPY')
 
                 if i == 1:
                     break

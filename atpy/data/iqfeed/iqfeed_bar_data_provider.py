@@ -1,4 +1,3 @@
-import atpy.data.iqfeed.util as iqfeedutil
 from atpy.data.iqfeed.util import *
 import pyevents.events as events
 
@@ -20,7 +19,7 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
         self.current_batch = None
 
     def __enter__(self):
-        iqfeedutil.launch_service()
+        launch_service()
 
         self.conn = iq.BarConn()
         self.conn.add_listener(self)
@@ -46,16 +45,15 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
             raise AttributeError
 
     def process_latest_bar_update(self, bar_data: np.array) -> None:
-        self.process_bar(bar_data)
+        self._on_bar(bar_data)
 
     def process_live_bar(self, bar_data: np.array) -> None:
-        self.process_bar(bar_data)
+        self._on_bar(bar_data)
 
     def process_history_bar(self, bar_data: np.array) -> None:
-        self.process_bar(bar_data)
+        self._on_bar(bar_data)
 
-    @events.after
-    def process_bar(self, bar_data):
+    def _on_bar(self, bar_data):
         if self.minibatch is not None:
             if self.current_batch is None:
                 self.current_batch = list()
@@ -63,17 +61,21 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
             self.current_batch.append(bar_data[0] if len(bar_data) == 1 else bar_data)
 
             if len(self.current_batch) == self.minibatch:
-                self.process_bar_batch(self.current_batch)
+                self.on_bar_batch(create_batch(self.current_batch, self.column_mode, self.key_suffix))
                 self.current_batch = None
 
-        return {'type': 'bar_data', 'data': {n + self.key_suffix: d for n, d in zip(bar_data.dtype.names, bar_data[0])}}
-
-    def bar_provider(self):
-        return IQFeedDataProvider(self.process_bar)
+        self.on_bar({'type': 'bar_data', 'data': iqfeed_to_dict(bar_data)})
 
     @events.after
-    def process_bar_batch(self, batch):
-        return {'type': 'bar_batch_event', 'data': iqfeedutil.create_batch(batch, self.column_mode, self.key_suffix)}
+    def on_bar(self, bar_data):
+        return bar_data
+
+    def bar_provider(self):
+        return IQFeedDataProvider(self.on_bar)
+
+    @events.after
+    def on_bar_batch(self, batch):
+        return {'type': 'bar_batch_event', 'data': batch}
 
     def bar_batch_provider(self):
-        return IQFeedDataProvider(self.process_bar_batch)
+        return IQFeedDataProvider(self.on_bar_batch)

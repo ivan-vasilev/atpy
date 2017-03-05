@@ -70,6 +70,8 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener, metaclass=events.GlobalRegist
 
         news_item = news_item._asdict()
 
+        self.on_news(news_item)
+
         if self.minibatch is not None:
             self.current_news_mb.append(news_item)
             if len(self.current_news_mb) == self.minibatch:
@@ -84,8 +86,6 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener, metaclass=events.GlobalRegist
                     self.on_news_mb(self.current_news_mb)
 
                 self.current_news_mb = list()
-
-        self.on_news(news_item)
 
     @events.after
     def on_news(self, news_item: iq.QuoteConn.NewsMsg):
@@ -107,17 +107,17 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener, metaclass=events.GlobalRegist
     def process_regional_quote(self, quote: np.array):
         super().process_regional_quote(quote)
 
+        self.on_regional_quote(iqfeed_to_dict(quote, self.key_suffix))
+
         if self.minibatch is not None:
             self.current_regional_mb.append(quote)
             if len(self.current_regional_mb) == self.minibatch:
                 self.on_regional_mb(create_batch(self.current_regional_mb, self.column_mode, self.key_suffix))
                 self.current_regional_mb = list()
 
-        self.on_regional_quote(quote)
-
     @events.after
-    def on_regional_quote(self, quote: np.array):
-        return {'type': 'level_1_regional_quote', 'data': iqfeed_to_dict(quote, self.key_suffix)}
+    def on_regional_quote(self, quote):
+        return {'type': 'level_1_regional_quote', 'data': quote}
 
     @events.after
     def on_regional_quote_mb(self, quote_list):
@@ -129,17 +129,17 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener, metaclass=events.GlobalRegist
     def process_summary(self, summary: np.array):
         super().process_summary(summary)
 
+        self.on_summary(iqfeed_to_dict(summary, self.key_suffix))
+
         if self.minibatch is not None:
             self.current_summary_mb.append(summary)
             if len(self.current_summary_mb) == self.minibatch:
                 self.on_summary_mb(create_batch(self.current_summary_mb, self.column_mode, self.key_suffix))
                 self.current_summary_mb = list()
 
-        self.on_summary(summary)
-
     @events.after
-    def on_summary(self, summary: np.array):
-        return {'type': 'level_1_tick', 'data': iqfeed_to_dict(summary, self.key_suffix)}
+    def on_summary(self, summary):
+        return {'type': 'level_1_tick', 'data': summary}
 
     @events.after
     def on_summary_mb(self, summary_list):
@@ -149,7 +149,9 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener, metaclass=events.GlobalRegist
         return IQFeedDataProvider(self.on_summary_mb)
 
     def process_update(self, update: np.array):
-        super().process_fundamentals(update)
+        super().process_update(update)
+
+        self.on_update(iqfeed_to_dict(update, self.key_suffix))
 
         if self.minibatch is not None:
             self.current_update_mb.append(update)
@@ -157,11 +159,9 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener, metaclass=events.GlobalRegist
                 self.on_update_mb(create_batch(self.current_update_mb, self.column_mode, self.key_suffix))
                 self.current_update_mb = list()
 
-        self.on_update(update)
-
     @events.after
-    def on_update(self, update: np.array):
-        return {'type': 'level_1_tick', 'data': iqfeed_to_dict(update, self.key_suffix)}
+    def on_update(self, update):
+        return {'type': 'level_1_tick', 'data': update}
 
     @events.after
     def on_update_mb(self, updates_list):
@@ -173,17 +173,17 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener, metaclass=events.GlobalRegist
     def process_fundamentals(self, fund: np.array):
         super().process_fundamentals(fund)
 
+        self.on_fundamentals(iqfeed_to_dict(fund, self.key_suffix))
+
         if self.minibatch is not None:
             self.current_fund_mb.append(fund)
             if len(self.current_fund_mb) == self.minibatch:
                 self.on_fundamentals_mb(create_batch(self.current_fund_mb, self.column_mode, self.key_suffix))
                 self.current_fund_mb = list()
 
-        self.on_fundamentals(fund)
-
     @events.after
     def on_fundamentals(self, fund: np.array):
-        return {'type': 'level_1_fundamentals', 'data': iqfeed_to_dict(fund, self.key_suffix)}
+        return {'type': 'level_1_fundamentals', 'data': fund}
 
     @events.after
     def on_fundamentals_mb(self, fund_list):
