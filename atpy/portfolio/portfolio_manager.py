@@ -26,7 +26,7 @@ class PortfolioManager(object, metaclass=events.GlobalRegister):
             if order.order_type == Type.SELL and self._quantity(order.symbol) < order.quantity:
                 raise Exception("Attempt to sell more shares than available")
 
-            if order.order_type == Type.BUY and self._capital < sum([p[0] * p[1] for p in order.obtained_positions]):
+            if order.order_type == Type.BUY and self._capital < order.cost:
                 raise Exception("Not enough capital to fulfill order")
 
             self.orders.append(order)
@@ -46,11 +46,11 @@ class PortfolioManager(object, metaclass=events.GlobalRegister):
     def _capital(self):
         turnover = 0
         for o in self.orders:
-            order_sum = sum([p[0] * p[1] for p in o.obtained_positions])
+            cost = o.cost
             if o.order_type == Type.SELL:
-                turnover += order_sum
+                turnover += cost
             elif o.order_type == Type.BUY:
-                turnover -= order_sum
+                turnover -= cost
 
         return self.initial_capital + turnover
 
@@ -86,7 +86,7 @@ class PortfolioManager(object, metaclass=events.GlobalRegister):
                 logging.getLogger(__name__).debug("No current information available for " + symbol + ". Falling back to last traded price")
                 symbol_orders = [o for o in self.orders if o.symbol == symbol]
                 order = sorted(symbol_orders, key=lambda o: o.fulfill_time, reverse=True)[0]
-                return order.obtained_positions[-1][1] * (self._quantity(symbol=symbol) if multiply_by_quantity else 1)
+                return order.last_cost_per_share * (self._quantity(symbol=symbol) if multiply_by_quantity else 1)
             else:
                 return self._values[symbol] * (self._quantity(symbol=symbol) if multiply_by_quantity else 1)
         else:
@@ -102,8 +102,8 @@ class PortfolioManager(object, metaclass=events.GlobalRegister):
             self.add_order(event['order'])
         elif event['type'] == 'level_1_tick':
             with self._lock:
-                if event['data']['Symbol'].decode('ascii') in [o.symbol for o in self.orders]:
-                    self._values[event['data']['Symbol'].decode('ascii')] = event['data']['Most Recent Trade']
+                if event['data']['Symbol'] in [o.symbol for o in self.orders]:
+                    self._values[event['data']['Symbol']] = event['data']['Bid']
                     self.portfolio_value_update()
 
     @events.after

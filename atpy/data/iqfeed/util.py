@@ -28,10 +28,14 @@ def create_batch(data, column_mode=True, key_suffix=''):
                 datum = datum[0]
 
             if i == 0:
-                result = {n + key_suffix: np.empty((len(data),), d.dtype) for n, d in zip(datum.dtype.names, datum)}
+                result = {n + key_suffix: np.empty((len(data),), d.dtype if str(d.dtype) != '|S4' else object) for n, d in zip(datum.dtype.names, datum)}
 
             for j, f in enumerate(datum.dtype.names):
-                result[f][i] = datum[j]
+                d = datum[j]
+                if isinstance(datum[j], bytes):
+                    d = datum[j].decode('ascii')
+
+                result[f][i] = d
     else:
         result = list()
         for datum in data:
@@ -50,7 +54,13 @@ def iqfeed_to_dict(data, key_suffix=''):
     if len(data) == 1:
         data = data[0]
 
-    return {n + key_suffix: d for n, d in zip(data.dtype.names, data)}
+    result = {n + key_suffix: d for n, d in zip(data.dtype.names, data)}
+
+    for k, v in result.items():
+        if isinstance(v, bytes):
+            result[k] = v.decode('ascii')
+
+    return result
 
 
 class IQFeedDataProvider(object):

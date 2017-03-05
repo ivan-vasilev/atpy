@@ -17,8 +17,8 @@ class TestPortfolioManager(unittest.TestCase):
 
         # order 1
         o2 = MarketOrder(Type.BUY, 'GOOG', 100)
-        o2.obtained_positions.append((14, 23))
-        o2.obtained_positions.append((86, 24))
+        o2.add_position(14, 23)
+        o2.add_position(86, 24)
         o2.fulfill_time = datetime.datetime.now()
 
         e1 = threading.Event()
@@ -36,9 +36,9 @@ class TestPortfolioManager(unittest.TestCase):
 
         # order 2
         o2 = MarketOrder(Type.BUY, 'GOOG', 150)
-        o2.obtained_positions.append((110, 25))
-        o2.obtained_positions.append((30, 26))
-        o2.obtained_positions.append((10, 27))
+        o2.add_position(110, 25)
+        o2.add_position(30, 26)
+        o2.add_position(10, 27)
         o2.fulfill_time = datetime.datetime.now()
 
         e2 = threading.Event()
@@ -56,7 +56,7 @@ class TestPortfolioManager(unittest.TestCase):
 
         # order 3
         o3 = MarketOrder(Type.SELL, 'GOOG', 60)
-        o3.obtained_positions.append((60, 22))
+        o3.add_position(60, 22)
         o3.fulfill_time = datetime.datetime.now()
 
         e3 = threading.Event()
@@ -74,7 +74,7 @@ class TestPortfolioManager(unittest.TestCase):
 
         # order 4
         o4 = MarketOrder(Type.BUY, 'AAPL', 50)
-        o4.obtained_positions.append((50, 21))
+        o4.add_position(50, 21)
         o4.fulfill_time = datetime.datetime.now()
 
         e4 = threading.Event()
@@ -106,8 +106,8 @@ class TestPortfolioManager(unittest.TestCase):
 
             # order 1
             o1 = MarketOrder(Type.BUY, 'GOOG', 100)
-            o1.obtained_positions.append((14, 23))
-            o1.obtained_positions.append((86, 24))
+            o1.add_position(14, 23)
+            o1.add_position(86, 24)
             o1.fulfill_time = datetime.datetime.now()
 
             e1 = threading.Event()
@@ -117,7 +117,7 @@ class TestPortfolioManager(unittest.TestCase):
 
             # order 2
             o2 = MarketOrder(Type.BUY, 'AAPL', 50)
-            o2.obtained_positions.append((50, 21))
+            o2.add_position(50, 21)
             o2.fulfill_time = datetime.datetime.now()
 
             e2 = threading.Event()
@@ -140,8 +140,8 @@ class TestPortfolioManager(unittest.TestCase):
 
             # order 1
             o1 = MarketOrder(Type.BUY, 'GOOG', 100)
-            o1.obtained_positions.append((14, 1))
-            o1.obtained_positions.append((86, 1))
+            o1.add_position(14, 1)
+            o1.add_position(86, 1)
             o1.fulfill_time = datetime.datetime.now()
 
             e1 = threading.Event()
@@ -153,8 +153,8 @@ class TestPortfolioManager(unittest.TestCase):
 
             # order 2
             o2 = MarketOrder(Type.BUY, 'GOOG', 90)
-            o2.obtained_positions.append((4, 0.5))
-            o2.obtained_positions.append((86, 0.5))
+            o2.add_position(4, 0.5)
+            o2.add_position(86, 0.5)
             o2.fulfill_time = datetime.datetime.now()
 
             self.assertNotEquals(pm.value('GOOG'), 1)
@@ -162,8 +162,8 @@ class TestPortfolioManager(unittest.TestCase):
 
             # order 3
             o3 = MarketOrder(Type.BUY, 'AAPL', 100)
-            o3.obtained_positions.append((14, 0.2))
-            o3.obtained_positions.append((86, 0.2))
+            o3.add_position(14, 0.2)
+            o3.add_position(86, 0.2)
             o3.fulfill_time = datetime.datetime.now()
 
             e3 = threading.Event()

@@ -65,8 +65,9 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener, metaclass=events.GlobalRegist
         if bad_symbol in self.watched_symbols and bad_symbol in self.watched_symbols:
             self.watched_symbols.remove(bad_symbol)
 
-    @events.after
     def process_news(self, news_item: iq.QuoteConn.NewsMsg):
+        super().process_news(news_item)
+
         news_item = news_item._asdict()
 
         if self.minibatch is not None:
@@ -78,89 +79,115 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener, metaclass=events.GlobalRegist
                         for k, v in ni.items():
                             processed_data[k].append(v)
 
-                    self.process_news_mb(processed_data)
+                    self.on_news_mb(processed_data)
                 else:
-                    self.process_news_mb(self.current_news_mb)
+                    self.on_news_mb(self.current_news_mb)
 
                 self.current_news_mb = list()
 
+        self.on_news(news_item)
+
+    @events.after
+    def on_news(self, news_item: iq.QuoteConn.NewsMsg):
         return {'type': 'level_1_news_item', 'data': news_item}
 
     @events.after
-    def process_news_mb(self, news_list):
+    def on_news_mb(self, news_list):
         return {'type': 'level_1_news_batch', 'data': news_list}
 
     def news_provider(self):
-        return IQFeedDataProvider(self.process_news_mb)
+        return IQFeedDataProvider(self.on_news_mb)
 
     def process_watched_symbols(self, symbols: Sequence[str]) -> None:
         """List of all watched symbols when requested."""
+        super().process_watched_symbols(symbols)
+
         self.watched_symbols = symbols
 
-    @events.after
     def process_regional_quote(self, quote: np.array):
+        super().process_regional_quote(quote)
+
         if self.minibatch is not None:
             self.current_regional_mb.append(quote)
             if len(self.current_regional_mb) == self.minibatch:
-                self.process_regional_mb(create_batch(self.current_regional_mb, self.column_mode, self.key_suffix))
+                self.on_regional_mb(create_batch(self.current_regional_mb, self.column_mode, self.key_suffix))
                 self.current_regional_mb = list()
 
+        self.on_regional_quote(quote)
+
+    @events.after
+    def on_regional_quote(self, quote: np.array):
         return {'type': 'level_1_regional_quote', 'data': iqfeed_to_dict(quote, self.key_suffix)}
 
     @events.after
-    def process_regional_mb(self, quote_list):
+    def on_regional_quote_mb(self, quote_list):
         return {'type': 'level_1_regional_quote_batch', 'data': quote_list}
 
-    def regional_provider(self):
-        return IQFeedDataProvider(self.process_regional_mb)
+    def regional_quote_provider(self):
+        return IQFeedDataProvider(self.on_regional_quote_mb)
 
-    @events.after
     def process_summary(self, summary: np.array):
+        super().process_summary(summary)
+
         if self.minibatch is not None:
             self.current_summary_mb.append(summary)
             if len(self.current_summary_mb) == self.minibatch:
-                self.process_summary_mb(create_batch(self.current_summary_mb, self.column_mode, self.key_suffix))
+                self.on_summary_mb(create_batch(self.current_summary_mb, self.column_mode, self.key_suffix))
                 self.current_summary_mb = list()
 
+        self.on_summary(summary)
+
+    @events.after
+    def on_summary(self, summary: np.array):
         return {'type': 'level_1_tick', 'data': iqfeed_to_dict(summary, self.key_suffix)}
 
     @events.after
-    def process_summary_mb(self, summary_list):
+    def on_summary_mb(self, summary_list):
         return {'type': 'level_1_tick_batch', 'data': summary_list}
 
     def summary_provider(self):
-        return IQFeedDataProvider(self.process_summary_mb)
+        return IQFeedDataProvider(self.on_summary_mb)
 
-    @events.after
     def process_update(self, update: np.array):
+        super().process_fundamentals(update)
+
         if self.minibatch is not None:
             self.current_update_mb.append(update)
             if len(self.current_update_mb) == self.minibatch:
-                self.process_update_mb(create_batch(self.current_update_mb, self.column_mode, self.key_suffix))
+                self.on_update_mb(create_batch(self.current_update_mb, self.column_mode, self.key_suffix))
                 self.current_update_mb = list()
 
+        self.on_update(update)
+
+    @events.after
+    def on_update(self, update: np.array):
         return {'type': 'level_1_tick', 'data': iqfeed_to_dict(update, self.key_suffix)}
 
     @events.after
-    def process_update_mb(self, updates_list):
+    def on_update_mb(self, updates_list):
         return {'type': 'level_1_tick_batch', 'data': updates_list}
 
     def update_provider(self):
-        return IQFeedDataProvider(self.process_update_mb)
+        return IQFeedDataProvider(self.on_update_mb)
 
-    @events.after
     def process_fundamentals(self, fund: np.array):
+        super().process_fundamentals(fund)
+
         if self.minibatch is not None:
             self.current_fund_mb.append(fund)
             if len(self.current_fund_mb) == self.minibatch:
-                self.process_fundamentals_mb(create_batch(self.current_fund_mb, self.column_mode, self.key_suffix))
+                self.on_fundamentals_mb(create_batch(self.current_fund_mb, self.column_mode, self.key_suffix))
                 self.current_fund_mb = list()
 
+        self.on_fundamentals(fund)
+
+    @events.after
+    def on_fundamentals(self, fund: np.array):
         return {'type': 'level_1_fundamentals', 'data': iqfeed_to_dict(fund, self.key_suffix)}
 
     @events.after
-    def process_fundamentals_mb(self, fund_list):
+    def on_fundamentals_mb(self, fund_list):
         return {'type': 'level_1_fundamental_batch', 'data': fund_list}
 
     def fundamentals_provider(self):
-        return IQFeedDataProvider(self.process_fundamentals_mb)
+        return IQFeedDataProvider(self.on_fundamentals_mb)

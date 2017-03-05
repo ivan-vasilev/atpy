@@ -18,22 +18,22 @@ class TestIQFeedLevel1(unittest.TestCase):
             listener.request_watches()
             e1 = threading.Event()
 
-            def process_fund_item(event):
+            def on_fund_item(event):
                 self.assertEqual(len(event['data']), 50)
                 e1.set()
 
-            listener.process_fundamentals += process_fund_item
+            listener.on_fundamentals += on_fund_item
 
             e2 = threading.Event()
 
-            def process_fund_mb(event):
+            def on_fund_mb(event):
                 fund_item = event['data']
                 self.assertEqual(len(fund_item), 50)
                 self.assertEqual(len(fund_item['Symbol']), 2)
-                self.assertTrue('SPY'.encode() in fund_item['Symbol'] or 'AAPL'.encode() in fund_item['Symbol'] or 'IBM'.encode() in fund_item['Symbol'] or 'GOOG'.encode() in fund_item['Symbol'] or 'MSFT'.encode() in fund_item['Symbol'])
+                self.assertTrue('SPY' in fund_item['Symbol'] or 'AAPL' in fund_item['Symbol'] or 'IBM' in fund_item['Symbol'] or 'GOOG' in fund_item['Symbol'] or 'MSFT' in fund_item['Symbol'])
                 e2.set()
 
-            listener.process_fundamentals_mb += process_fund_mb
+            listener.on_fundamentals_mb += on_fund_mb
 
             e1.wait()
             e2.wait()
@@ -41,7 +41,7 @@ class TestIQFeedLevel1(unittest.TestCase):
             for i, fund_item in enumerate(provider):
                 self.assertEqual(len(fund_item), 50)
                 self.assertEqual(len(fund_item['Symbol']), 2)
-                self.assertTrue('SPY'.encode() in fund_item['Symbol'] or 'AAPL'.encode() in fund_item['Symbol'] or 'IBM'.encode() in fund_item['Symbol'] or 'GOOG'.encode() in fund_item['Symbol'] or 'MSFT'.encode() in fund_item['Symbol'])
+                self.assertTrue('SPY' in fund_item['Symbol'] or 'AAPL' in fund_item['Symbol'] or 'IBM' in fund_item['Symbol'] or 'GOOG' in fund_item['Symbol'] or 'MSFT' in fund_item['Symbol'])
 
                 if i == 1:
                     break
@@ -56,24 +56,24 @@ class TestIQFeedLevel1(unittest.TestCase):
 
             e1 = threading.Event()
 
-            def process_fund_item(event):
+            def on_fund_item(event):
                 self.assertEqual(len(event['data']), 50)
                 e1.set()
 
-            listener.process_fundamentals += process_fund_item
+            listener.on_fundamentals += on_fund_item
 
             e2 = threading.Event()
 
-            def process_fund_mb(event):
+            def on_fund_mb(event):
                 fund_item = event['data']
                 self.assertEqual(len(fund_item), 2)
                 self.assertEqual(len(fund_item[0]), 50)
 
                 symbols = [fund_item[0]['Symbol'], fund_item[1]['Symbol']]
-                self.assertTrue('SPY'.encode() in symbols or 'AAPL'.encode() in symbols or 'IBM'.encode() in symbols or 'GOOG'.encode() in symbols or 'MSFT'.encode() in symbols)
+                self.assertTrue('SPY' in symbols or 'AAPL' in symbols or 'IBM' in symbols or 'GOOG' in symbols or 'MSFT' in symbols)
                 e2.set()
 
-            listener.process_fundamentals_mb += process_fund_mb
+            listener.on_fundamentals_mb += on_fund_mb
 
             e1.wait()
             e2.wait()
@@ -82,7 +82,7 @@ class TestIQFeedLevel1(unittest.TestCase):
                 self.assertEqual(len(fund_item), 2)
                 self.assertEqual(len(fund_item[0]), 50)
                 symbols = [fund_item[0]['Symbol'], fund_item[1]['Symbol']]
-                self.assertTrue('SPY'.encode() in symbols or 'AAPL'.encode() in symbols or 'IBM'.encode() in symbols or 'GOOG'.encode() in symbols or 'MSFT'.encode() in symbols)
+                self.assertTrue('SPY' in symbols or 'AAPL' in symbols or 'IBM' in symbols or 'GOOG' in symbols or 'MSFT' in symbols)
 
                 if i == 1:
                     break
@@ -97,22 +97,22 @@ class TestIQFeedLevel1(unittest.TestCase):
 
             e1 = threading.Event()
 
-            def process_summary_item(event):
+            def on_summary_item(event):
                 self.assertEqual(len(event['data']), 16)
                 e1.set()
 
-            listener.process_summary += process_summary_item
+            listener.on_summary += on_summary_item
 
             e2 = threading.Event()
 
-            def process_summary_mb(event):
+            def on_summary_mb(event):
                 summary_item = event['data']
                 self.assertEqual(len(summary_item), 16)
                 self.assertEqual(len(summary_item['Symbol']), 2)
-                self.assertTrue('SPY'.encode() in summary_item['Symbol'] or 'AAPL'.encode() in summary_item['Symbol'] or 'IBM'.encode() in summary_item['Symbol'] or 'GOOG'.encode() in summary_item['Symbol'] or 'MSFT'.encode() in summary_item['Symbol'])
+                self.assertTrue('SPY' in summary_item['Symbol'] or 'AAPL' in summary_item['Symbol'] or 'IBM' in summary_item['Symbol'] or 'GOOG' in summary_item['Symbol'] or 'MSFT' in summary_item['Symbol'])
                 e2.set()
 
-            listener.process_summary_mb += process_summary_mb
+            listener.on_summary_mb += on_summary_mb
 
             e1.wait()
             e2.wait()
@@ -120,7 +120,7 @@ class TestIQFeedLevel1(unittest.TestCase):
             for i, summary_item in enumerate(data_provider):
                 self.assertEqual(len(summary_item), 16)
                 self.assertEqual(len(summary_item['Symbol']), 2)
-                self.assertTrue('SPY'.encode() in summary_item['Symbol'] or 'AAPL'.encode() in summary_item['Symbol'] or 'IBM'.encode() in summary_item['Symbol'] or 'GOOG'.encode() in summary_item['Symbol'] or 'MSFT'.encode() in summary_item['Symbol'])
+                self.assertTrue('SPY' in summary_item['Symbol'] or 'AAPL' in summary_item['Symbol'] or 'IBM' in summary_item['Symbol'] or 'GOOG' in summary_item['Symbol'] or 'MSFT' in summary_item['Symbol'])
 
                 if i == 1:
                     break
@@ -135,24 +135,24 @@ class TestIQFeedLevel1(unittest.TestCase):
 
             e1 = threading.Event()
 
-            def process_summary_item(event):
+            def on_summary_item(event):
                 self.assertEqual(len(event['data']), 16)
                 e1.set()
 
-            listener.process_summary += process_summary_item
+            listener.on_summary += on_summary_item
 
             e2 = threading.Event()
 
-            def process_summary_mb(event):
+            def on_summary_mb(event):
                 summary_item = event['data']
                 self.assertEqual(len(summary_item), 2)
                 self.assertEqual(len(summary_item[0]), 16)
 
                 symbols = [summary_item[0]['Symbol'], summary_item[1]['Symbol']]
-                self.assertTrue('SPY'.encode() in symbols or 'AAPL'.encode() in symbols or 'IBM'.encode() in symbols or 'GOOG'.encode() in symbols or 'MSFT'.encode() in symbols)
+                self.assertTrue('SPY' in symbols or 'AAPL' in symbols or 'IBM' in symbols or 'GOOG' in symbols or 'MSFT' in symbols)
                 e2.set()
 
-            listener.process_summary_mb += process_summary_mb
+            listener.on_summary_mb += on_summary_mb
 
             e1.wait()
             e2.wait()
@@ -161,7 +161,7 @@ class TestIQFeedLevel1(unittest.TestCase):
                 self.assertEqual(len(summary_item), 2)
                 self.assertEqual(len(summary_item[0]), 16)
                 symbols = [summary_item[0]['Symbol'], summary_item[1]['Symbol']]
-                self.assertTrue('SPY'.encode() in symbols or 'AAPL'.encode() in symbols or 'IBM'.encode() in symbols or 'GOOG'.encode() in symbols or 'MSFT'.encode() in symbols)
+                self.assertTrue('SPY' in symbols or 'AAPL' in symbols or 'IBM' in symbols or 'GOOG' in symbols or 'MSFT' in symbols)
 
                 if i == 1:
                     break
@@ -176,22 +176,22 @@ class TestIQFeedLevel1(unittest.TestCase):
 
             e1 = threading.Event()
 
-            def process_update_item(event):
+            def on_update_item(event):
                 self.assertEqual(len(event['data']), 16)
                 e1.set()
 
-            listener.process_update += process_update_item
+            listener.on_update += on_update_item
 
             e2 = threading.Event()
 
-            def process_update_mb(event):
+            def on_update_mb(event):
                 update_item = event['data']
                 self.assertEqual(len(update_item), 16)
                 self.assertEqual(len(update_item['Symbol']), 2)
-                self.assertTrue('SPY'.encode() in update_item['Symbol'] or 'AAPL'.encode() in update_item['Symbol'] or 'IBM'.encode() in update_item['Symbol'] or 'GOOG'.encode() in update_item['Symbol'] or 'MSFT'.encode() in update_item['Symbol'])
+                self.assertTrue('SPY' in update_item['Symbol'] or 'AAPL' in update_item['Symbol'] or 'IBM' in update_item['Symbol'] or 'GOOG' in update_item['Symbol'] or 'MSFT' in update_item['Symbol'])
                 e2.set()
 
-            listener.process_update_mb += process_update_mb
+            listener.on_update_mb += on_update_mb
 
             e1.wait()
             e2.wait()
@@ -199,7 +199,7 @@ class TestIQFeedLevel1(unittest.TestCase):
             for i, update_item in enumerate(update_provider):
                 self.assertEqual(len(update_item), 16)
                 self.assertEqual(len(update_item['Symbol']), 2)
-                self.assertTrue('SPY'.encode() in update_item['Symbol'] or 'AAPL'.encode() in update_item['Symbol'] or 'IBM'.encode() in update_item['Symbol'] or 'GOOG'.encode() in update_item['Symbol'] or 'MSFT'.encode() in update_item['Symbol'])
+                self.assertTrue('SPY' in update_item['Symbol'] or 'AAPL' in update_item['Symbol'] or 'IBM' in update_item['Symbol'] or 'GOOG' in update_item['Symbol'] or 'MSFT' in update_item['Symbol'])
 
                 if i == 1:
                     break
@@ -214,24 +214,24 @@ class TestIQFeedLevel1(unittest.TestCase):
 
             e1 = threading.Event()
 
-            def process_update_item(event):
+            def on_update_item(event):
                 self.assertEqual(len(event['data']), 16)
                 e1.set()
 
-            listener.process_update += process_update_item
+            listener.on_update += on_update_item
 
             e2 = threading.Event()
 
-            def process_update_mb(event):
+            def on_update_mb(event):
                 update_item = event['data']
                 self.assertEqual(len(update_item), 2)
                 self.assertEqual(len(update_item[0]), 16)
 
                 symbols = [update_item[0]['Symbol'], update_item[1]['Symbol']]
-                self.assertTrue('SPY'.encode() in symbols or 'AAPL'.encode() in symbols or 'IBM'.encode() in symbols or 'GOOG'.encode() in symbols or 'MSFT'.encode() in symbols)
+                self.assertTrue('SPY' in symbols or 'AAPL' in symbols or 'IBM' in symbols or 'GOOG' in symbols or 'MSFT' in symbols)
                 e2.set()
 
-            listener.process_update_mb += process_update_mb
+            listener.on_update_mb += on_update_mb
 
             e1.wait()
             e2.wait()
@@ -240,7 +240,7 @@ class TestIQFeedLevel1(unittest.TestCase):
                 self.assertEqual(len(update_item), 2)
                 self.assertEqual(len(update_item[0]), 16)
                 symbols = [update_item[0]['Symbol'], update_item[1]['Symbol']]
-                self.assertTrue('SPY'.encode() in symbols or 'AAPL'.encode() in symbols or 'IBM'.encode() in symbols or 'GOOG'.encode() in symbols or 'MSFT'.encode() in symbols)
+                self.assertTrue('SPY' in symbols or 'AAPL' in symbols or 'IBM' in symbols or 'GOOG' in symbols or 'MSFT' in symbols)
 
                 if i == 1:
                     break
@@ -255,17 +255,17 @@ class TestIQFeedLevel1(unittest.TestCase):
 
             e1 = threading.Event()
 
-            def process_news_item(event):
+            def on_news_item(event):
                 news_item = event['data']
                 self.assertEqual(len(news_item), 6)
                 self.assertGreater(len(news_item['headline']), 0)
                 e1.set()
 
-            listener.process_news += process_news_item
+            listener.on_news += on_news_item
 
             e2 = threading.Event()
 
-            def process_news_mb(event):
+            def on_news_mb(event):
                 news_item = event['data']
                 self.assertEqual(len(news_item), 6)
                 self.assertEqual(len(news_item['headline']), 2)
@@ -273,7 +273,7 @@ class TestIQFeedLevel1(unittest.TestCase):
                 self.assertNotEqual(news_item['story_id'][0], news_item['story_id'][1])
                 e2.set()
 
-            listener.process_news_mb += process_news_mb
+            listener.on_news_mb += on_news_mb
 
             e1.wait()
             e2.wait()

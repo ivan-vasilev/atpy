@@ -16,7 +16,7 @@ class BaseOrder(object, metaclass=ABCMeta):
         self.symbol = symbol
         self.quantity = quantity
 
-        self.obtained_positions = list()
+        self.__obtained_positions = list()
         self.request_time = datetime.datetime.now()
         self.__fulfill_time = None
 
@@ -33,7 +33,26 @@ class BaseOrder(object, metaclass=ABCMeta):
 
     @property
     def obtained_quantity(self):
-        return sum([op[0] for op in self.obtained_positions])
+        return sum([op[0] for op in self.__obtained_positions])
+
+    def add_position(self, quantity, price):
+        if self.obtained_quantity >= self.quantity:
+            raise Exception("Order already fulfilled")
+
+        self.__obtained_positions.append((quantity if self.quantity - self.obtained_quantity >= quantity else self.quantity - self.obtained_quantity, price))
+
+        if self.obtained_quantity >= self.quantity:
+            self.__fulfill_time = datetime.datetime.now()
+
+        return True
+
+    @property
+    def cost(self):
+        return sum([p[0] * p[1] for p in self.__obtained_positions])
+
+    @property
+    def last_cost_per_share(self):
+        return self.__obtained_positions[-1][1]
 
 
 class MarketOrder(BaseOrder):
@@ -43,21 +62,42 @@ class MarketOrder(BaseOrder):
 class LimitOrder(BaseOrder):
     def __init__(self, order_type: Type, symbol: str, quantity: int, price: float):
         super().__init__(order_type, symbol, quantity)
-
         self.price = price
+
+    def add_position(self, quantity, price):
+        if (self.order_type == Type.BUY and self.price < price) or (self.order_type == Type.SELL and self.price > price):
+            return False
+
+        return super().add_position(quantity, price)
 
 
 class StopMarketOrder(BaseOrder):
-    def __init__(self, order_type: Type, symbol: str, quantity: int, stop_price: float):
+    def __init__(self, order_type: Type, symbol: str, quantity: int, price: float):
         super().__init__(order_type, symbol, quantity)
 
-        self.stop_price = stop_price
+        self.price = price
+        self._is_market = False
+
+    def add_position(self, quantity, price):
+        if (self.order_type == Type.BUY and self.price >= price) or (self.order_type == Type.SELL and self.price <= price):
+            self._is_market = True
+
+        return super().add_position(quantity, price) if self._is_market else False
 
 
 class StopLimitOrder(BaseOrder):
-    def __init__(self, order_type: Type, symbol: str, quantity: int, limit_price: float, stop_price: float):
+    def __init__(self, order_type: Type, symbol: str, quantity: int, stop_price: float, limit_price: float):
         super().__init__(order_type, symbol, quantity)
 
-        self.limit_price = limit_price
         self.stop_price = stop_price
-2
+        self.limit_price = limit_price
+        self._is_limit = False
+
+    def add_position(self, quantity, price):
+        if (self.order_type == Type.BUY and self.stop_price >= price) or (self.order_type == Type.SELL and self.stop_price <= price):
+            self._is_limit = True
+
+        if self._is_limit and (self.order_type == Type.BUY and self.limit_price < price) or (self.order_type == Type.SELL and self.limit_price > price):
+            return super().add_position(quantity, price)
+
+        return False
