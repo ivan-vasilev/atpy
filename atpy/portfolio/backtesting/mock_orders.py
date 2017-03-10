@@ -31,9 +31,15 @@ class MockOrders(object, metaclass=events.GlobalRegister):
         matching_orders = [o for o in self._pending_orders if o.symbol == data['Symbol']]
         for order in matching_orders:
             if order.order_type == orders.Type.BUY:
-                order.add_position(data['Ask Size'] if data['Ask Size'] > 0 else data['Most Recent Trade Size'], data['Ask'] if data['Ask Size'] > 0 else data['Most Recent Trade'])
+                if 'TickID' in data:
+                    order.add_position(data['Last Size'], data['Ask'])
+                else:
+                    order.add_position(data['Ask Size'] if data['Ask Size'] > 0 else data['Most Recent Trade Size'], data['Ask'] if data['Ask Size'] > 0 else data['Most Recent Trade'])
             elif order.order_type == orders.Type.SELL:
-                order.add_position(data['Bid Size'] if data['Bid Size'] > 0 else data['Most Recent Trade Size'], data['Bid'] if data['Bid Size'] > 0 else data['Most Recent Trade'])
+                if 'TickID' in data:
+                    order.add_position(data['Last Size'], data['Bid'])
+                else:
+                    order.add_position(data['Bid Size'] if data['Bid Size'] > 0 else data['Most Recent Trade Size'], data['Bid'] if data['Bid Size'] > 0 else data['Most Recent Trade'])
 
             if order.fulfill_time is not None:
                 self._pending_orders.remove(order)

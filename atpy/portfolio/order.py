@@ -19,6 +19,7 @@ class BaseOrder(object, metaclass=ABCMeta):
         self.__obtained_positions = list()
         self.request_time = datetime.datetime.now()
         self.__fulfill_time = None
+        self.__cached_cost = None
 
     @property
     def fulfill_time(self):
@@ -44,11 +45,16 @@ class BaseOrder(object, metaclass=ABCMeta):
         if self.obtained_quantity >= self.quantity:
             self.__fulfill_time = datetime.datetime.now()
 
+        self.__cached_cost = None
+
         return True
 
     @property
     def cost(self):
-        return sum([p[0] * p[1] for p in self.__obtained_positions])
+        if self.__cached_cost is None:
+            self.__cached_cost = sum([p[0] * p[1] for p in self.__obtained_positions])
+
+        return self.__cached_cost
 
     @property
     def last_cost_per_share(self):
@@ -60,8 +66,8 @@ class MarketOrder(BaseOrder):
 
 
 class LimitOrder(BaseOrder):
-    def __init__(self, order_type: Type, symbol: str, quantity: int, price: float):
-        super().__init__(order_type, symbol, quantity)
+    def __init__(self, order_type: Type, symbol: str, quantity: int, price: float, uid=None):
+        super().__init__(order_type, symbol, quantity, uid=uid)
         self.price = price
 
     def add_position(self, quantity, price):
@@ -72,8 +78,8 @@ class LimitOrder(BaseOrder):
 
 
 class StopMarketOrder(BaseOrder):
-    def __init__(self, order_type: Type, symbol: str, quantity: int, price: float):
-        super().__init__(order_type, symbol, quantity)
+    def __init__(self, order_type: Type, symbol: str, quantity: int, price: float, uid=None):
+        super().__init__(order_type, symbol, quantity, uid=uid)
 
         self.price = price
         self._is_market = False
@@ -86,8 +92,8 @@ class StopMarketOrder(BaseOrder):
 
 
 class StopLimitOrder(BaseOrder):
-    def __init__(self, order_type: Type, symbol: str, quantity: int, stop_price: float, limit_price: float):
-        super().__init__(order_type, symbol, quantity)
+    def __init__(self, order_type: Type, symbol: str, quantity: int, stop_price: float, limit_price: float, uid=None):
+        super().__init__(order_type, symbol, quantity, uid=uid)
 
         self.stop_price = stop_price
         self.limit_price = limit_price
