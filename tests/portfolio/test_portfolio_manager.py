@@ -223,10 +223,10 @@ class TestPortfolioManager(unittest.TestCase):
             pm.on_event({'type': 'order_fulfilled', 'data': o3})
             e3.wait()
 
-            self.assertNotEquals(pm.value('GOOG'), 1)
-            self.assertNotEquals(pm.value('GOOG'), 0.5)
-            self.assertNotEquals(pm.value('AAPL'), 0.2)
-            self.assertEqual(len(pm._values), 2)
+        self.assertNotEquals(pm.value('GOOG'), 1)
+        self.assertNotEquals(pm.value('GOOG'), 0.5)
+        self.assertNotEquals(pm.value('AAPL'), 0.2)
+        self.assertEqual(len(pm._values), 2)
 
     def test_mock_orders(self):
         events.use_global_event_bus()
@@ -277,37 +277,88 @@ class TestPortfolioManager(unittest.TestCase):
     def test_historical_mock_orders(self):
         events.use_global_event_bus()
 
+        pm = PortfolioManager(10000)
+
+        mock_orders = MockOrders()
+
+        e1 = threading.Event()
+        events.listener(lambda x: e1.set() if x['type'] == 'portfolio_update' and 'GOOG' in x['data'].symbols else None)
+
+        e2 = threading.Event()
+        events.listener(lambda x: e2.set() if x['type'] == 'portfolio_update' and 'AAPL' in x['data'].symbols else None)
+
+        e3 = threading.Event()
+        events.listener(lambda x: e3.set() if x['type'] == 'portfolio_update' and 'IBM' in x['data'].symbols else None)
+
+        o1 = StopLimitOrder(Type.BUY, 'GOOG', 1, 99999, 1)
+        mock_orders.on_event({'type': 'order_request', 'data': o1})
+
+        o2 = StopLimitOrder(Type.BUY, 'AAPL', 3, 99999, 1)
+        mock_orders.on_event({'type': 'order_request', 'data': o2})
+
+        o3 = StopLimitOrder(Type.BUY, 'IBM', 1, 99999, 1)
+        mock_orders.on_event({'type': 'order_request', 'data': o3})
+
+        o4 = StopLimitOrder(Type.SELL, 'AAPL', 1, 1, 99999)
+        mock_orders.on_event({'type': 'order_request', 'data': o4})
+
         filter_provider = DefaultFilterProvider()
         filter_provider += TicksFilter(ticker="GOOG", max_ticks=1)
         filter_provider += TicksFilter(ticker="AAPL", max_ticks=1)
         filter_provider += TicksFilter(ticker="IBM", max_ticks=1)
 
         with IQFeedHistoryListener(fire_ticks=True, filter_provider=filter_provider, column_mode=True):
-            pm = PortfolioManager(10000)
+            e1.wait()
+            e2.wait()
+            e3.wait()
 
-            mock_orders = MockOrders()
+        self.assertLess(pm.capital, pm.initial_capital)
+        self.assertTrue('GOOG' in pm.symbols)
+        self.assertTrue('AAPL' in pm.symbols)
+        self.assertTrue('IBM' in pm.symbols)
 
-            e1 = threading.Event()
-            events.listener(lambda x: e1.set() if x['type'] == 'portfolio_update' and 'GOOG' in x['data'].symbols else None)
+        self.assertEqual(pm.quantity('GOOG'), 1)
+        self.assertEqual(pm.quantity('AAPL'), 2)
+        self.assertEqual(pm.quantity('IBM'), 1)
 
-            e2 = threading.Event()
-            events.listener(lambda x: e2.set() if x['type'] == 'portfolio_update' and 'AAPL' in x['data'].symbols else None)
+        self.assertGreater(pm.value('GOOG'), 0)
+        self.assertGreater(pm.value('AAPL'), 0)
+        self.assertGreater(pm.value('IBM'), 0)
 
-            e3 = threading.Event()
-            events.listener(lambda x: e3.set() if x['type'] == 'portfolio_update' and 'IBM' in x['data'].symbols else None)
+    def test_historical_bar_mock_orders(self):
+        events.use_global_event_bus()
 
-            o1 = StopLimitOrder(Type.BUY, 'GOOG', 1, 99999, 1)
-            mock_orders.on_event({'type': 'order_request', 'data': o1})
+        pm = PortfolioManager(10000)
 
-            o2 = StopLimitOrder(Type.BUY, 'AAPL', 3, 99999, 1)
-            mock_orders.on_event({'type': 'order_request', 'data': o2})
+        mock_orders = MockOrders()
 
-            o3 = StopLimitOrder(Type.BUY, 'IBM', 1, 99999, 1)
-            mock_orders.on_event({'type': 'order_request', 'data': o3})
+        e1 = threading.Event()
+        events.listener(lambda x: e1.set() if x['type'] == 'portfolio_update' and 'GOOG' in x['data'].symbols else None)
 
-            o4 = StopLimitOrder(Type.SELL, 'AAPL', 1, 1, 99999)
-            mock_orders.on_event({'type': 'order_request', 'data': o4})
+        e2 = threading.Event()
+        events.listener(lambda x: e2.set() if x['type'] == 'portfolio_update' and 'AAPL' in x['data'].symbols else None)
 
+        e3 = threading.Event()
+        events.listener(lambda x: e3.set() if x['type'] == 'portfolio_update' and 'IBM' in x['data'].symbols else None)
+
+        o1 = StopLimitOrder(Type.BUY, 'GOOG', 1, 99999, 1)
+        mock_orders.on_event({'type': 'order_request', 'data': o1})
+
+        o2 = StopLimitOrder(Type.BUY, 'AAPL', 3, 99999, 1)
+        mock_orders.on_event({'type': 'order_request', 'data': o2})
+
+        o3 = StopLimitOrder(Type.BUY, 'IBM', 1, 99999, 1)
+        mock_orders.on_event({'type': 'order_request', 'data': o3})
+
+        o4 = StopLimitOrder(Type.SELL, 'AAPL', 1, 1, 99999)
+        mock_orders.on_event({'type': 'order_request', 'data': o4})
+
+        filter_provider = DefaultFilterProvider()
+        filter_provider += BarsFilter(ticker="GOOG", interval_len=60, interval_type='s', max_bars=20)
+        filter_provider += BarsFilter(ticker="AAPL", interval_len=60, interval_type='s', max_bars=20)
+        filter_provider += BarsFilter(ticker="IBM", interval_len=60, interval_type='s', max_bars=20)
+
+        with IQFeedHistoryListener(fire_ticks=True, filter_provider=filter_provider, column_mode=True):
             e1.wait()
             e2.wait()
             e3.wait()

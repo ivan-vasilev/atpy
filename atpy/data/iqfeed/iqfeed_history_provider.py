@@ -180,7 +180,7 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
         self.column_mode = column_mode
         self.key_suffix = key_suffix
         self.current_minibatch = list()
-        self.current_filter = None
+        filter = None
         self.filter_provider = filter_provider
         self.conn = None
 
@@ -212,8 +212,6 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
 
     def produce(self):
         for f in self.filter_provider:
-            self.current_filter = f
-
             if isinstance(f, TicksFilter):
                 method = self.conn.request_ticks
             elif isinstance(f, TicksForDaysFilter):
@@ -239,11 +237,13 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
 
             processed_data = list()
 
+            event_type = self._event_type(f)
+
             for datum in data:
                 datum = datum[0] if len(datum) == 1 else datum
 
                 if self.fire_ticks:
-                    self.process_datum(self._process_data(iqfeedutil.iqfeed_to_dict(datum, self.key_suffix)))
+                    self.process_datum({'type': event_type, 'data': self._process_data(iqfeedutil.iqfeed_to_dict(datum, self.key_suffix), f)})
 
                 processed_data.append(datum)
 
@@ -251,26 +251,26 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
                     self.current_minibatch.append(datum)
 
                     if len(self.current_minibatch) == self.minibatch:
-                        mb_data = self._process_data(iqfeedutil.create_batch(self.current_minibatch, self.column_mode, self.key_suffix))
-                        self.process_minibatch(mb_data)
+                        mb_data = self._process_data(iqfeedutil.create_batch(self.current_minibatch, self.column_mode, self.key_suffix), f)
+                        self.process_minibatch({'type': event_type + '_mb', 'data': mb_data})
                         self.current_minibatch = list()
 
             if self.fire_batches:
-                batch_data = self._process_data(iqfeedutil.create_batch(processed_data, self.column_mode, self.key_suffix))
-                self.process_batch(batch_data)
+                batch_data = self._process_data(iqfeedutil.create_batch(processed_data, self.column_mode, self.key_suffix), f)
+                self.process_batch({'type': event_type + '_batch', 'data': batch_data})
 
             if not self.is_running:
                 return
 
-    def _process_data(self, data):
-        if isinstance(self.current_filter, TicksFilter) or isinstance(self.current_filter, TicksForDaysFilter) or isinstance(self.current_filter, TicksInPeriodFilter):
-            return self._process_ticks_data(data)
-        elif isinstance(self.current_filter, BarsFilter) or isinstance(self.current_filter, BarsForDaysFilter) or isinstance(self.current_filter, BarsInPeriodFilter):
-            return self._process_bars_data(data)
-        elif isinstance(self.current_filter, BarsDailyFilter) or isinstance(self.current_filter, BarsDailyForDatesFilter) or isinstance(self.current_filter, BarsWeeklyFilter) or isinstance(self.current_filter, BarsMonthlyFilter):
-            return self._process_daily_data(data)
+    def _process_data(self, data, data_filter):
+        if isinstance(data_filter, TicksFilter) or isinstance(data_filter, TicksForDaysFilter) or isinstance(data_filter, TicksInPeriodFilter):
+            return self._process_ticks_data(data, data_filter)
+        elif isinstance(data_filter, BarsFilter) or isinstance(data_filter, BarsForDaysFilter) or isinstance(data_filter, BarsInPeriodFilter):
+            return self._process_bars_data(data, data_filter)
+        elif isinstance(data_filter, BarsDailyFilter) or isinstance(data_filter, BarsDailyForDatesFilter) or isinstance(data_filter, BarsWeeklyFilter) or isinstance(data_filter, BarsMonthlyFilter):
+            return self._process_daily_data(data, data_filter)
 
-    def _process_ticks_data(self, data):
+    def _process_ticks_data(self, data, data_filter):
         if isinstance(data, dict):
             result = dict()
 
@@ -290,17 +290,17 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
             result['cond4'] = data.pop('cond4')
 
             if isinstance(result['Date'], collections.Iterable):
-                result['Symbol'] = [self.current_filter.ticker] * len(result['Date'])
+                result['Symbol'] = [data_filter.ticker] * len(result['Date'])
             else:
-                result['Symbol'] = self.current_filter.ticker
+                result['Symbol'] = data_filter.ticker
         elif isinstance(data, collections.Iterable):
             result = list()
             for d in data:
-                result.append(self._process_ticks_data(d))
+                result.append(self._process_ticks_data(d, data_filter))
 
         return result
 
-    def _process_bars_data(self, data):
+    def _process_bars_data(self, data, data_filter):
         if isinstance(data, dict):
             result = dict()
 
@@ -315,17 +315,17 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
             result['Number of Trades'] = data.pop('num_trds')
 
             if isinstance(result['Date'], collections.Iterable):
-                result['Symbol'] = [self.current_filter.ticker] * len(result['Date'])
+                result['Symbol'] = [data_filter.ticker] * len(result['Date'])
             else:
-                result['Symbol'] = self.current_filter.ticker
+                result['Symbol'] = data_filter.ticker
         elif isinstance(data, collections.Iterable):
             result = list()
             for d in data:
-                result.append(self._process_bars_data(d))
+                result.append(self._process_bars_data(d, data_filter))
 
         return result
 
-    def _process_daily_data(self, data):
+    def _process_daily_data(self, data, data_filter):
         if isinstance(data, dict):
             result = dict()
 
@@ -338,30 +338,39 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
             result['Open Interest'] = data.pop('open_int')
 
             if isinstance(result['Date'], collections.Iterable):
-                result['Symbol'] = [self.current_filter.ticker] * len(result['Date'])
+                result['Symbol'] = [data_filter.ticker] * len(result['Date'])
             else:
-                result['Symbol'] = self.current_filter.ticker
+                result['Symbol'] = data_filter.ticker
         elif isinstance(data, collections.Iterable):
             result = list()
             for d in data:
-                result.append(self._process_daily_data(d))
+                result.append(self._process_daily_data(d, data_filter))
 
         return result
 
+    @staticmethod
+    def _event_type(data_filter):
+        if isinstance(data_filter, TicksFilter) or isinstance(data_filter, TicksForDaysFilter) or isinstance(data_filter, TicksInPeriodFilter):
+            return 'level_1_tick'
+        elif isinstance(data_filter, BarsFilter) or isinstance(data_filter, BarsForDaysFilter) or isinstance(data_filter, BarsInPeriodFilter):
+            return 'bar'
+        elif isinstance(data_filter, BarsDailyFilter) or isinstance(data_filter, BarsDailyForDatesFilter) or isinstance(data_filter, BarsWeeklyFilter) or isinstance(data_filter, BarsMonthlyFilter):
+            return 'daily'
+
     @events.after
     def process_datum(self, data):
-        return {'type': 'level_1_tick', 'data': data}
+        return data
 
     @events.after
     def process_batch(self, data):
-        return {'type': 'level_1_tick_batch', 'data': data}
+        return data
 
     def batch_provider(self):
         return IQFeedDataProvider(self.process_batch)
 
     @events.after
     def process_minibatch(self, data):
-        return {'type': 'level_1_tick_mb', 'data': data}
+        return data
 
     def minibatch_provider(self):
         return IQFeedDataProvider(self.process_minibatch)

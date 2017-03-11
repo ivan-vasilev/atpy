@@ -105,6 +105,11 @@ class PortfolioManager(object, metaclass=events.GlobalRegister):
                 if event['data']['Symbol'] in [o.symbol for o in self.orders]:
                     self._values[event['data']['Symbol']] = event['data']['Bid']
                     self.portfolio_value_update()
+        elif event['type'] == 'bar':
+            with self._lock:
+                if event['data']['Symbol'] in [o.symbol for o in self.orders]:
+                    self._values[event['data']['Symbol']] = event['data']['Close']
+                    self.portfolio_value_update()
 
     @events.after
     def portfolio_value_update(self):
