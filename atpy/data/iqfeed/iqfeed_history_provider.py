@@ -1,5 +1,8 @@
 import collections
 import datetime
+import pickle
+
+import lmdb
 
 import atpy.data.iqfeed.util as iqfeedutil
 import pyevents.events as events
@@ -165,7 +168,7 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
     IQFeed historical data listener. See the unit test on how to use
     """
 
-    def __init__(self, minibatch=None, fire_batches=False, fire_ticks=False, column_mode=True, key_suffix='', filter_provider=DefaultFilterProvider()):
+    def __init__(self, minibatch=None, fire_batches=False, fire_ticks=False, column_mode=True, key_suffix='', filter_provider=DefaultFilterProvider(), lmdb_path=None):
         """
         :param minibatch: size of the minibatch
         :param fire_batches: raise event for each batch
@@ -173,6 +176,7 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
         :param column_mode: whether to organize the data in columns or rows
         :param key_suffix: suffix for field names
         :param filter_provider: news filter list
+        :param lmdb_path: path to lmdb database. If not None, then the data is cached
         """
         self.minibatch = minibatch
         self.fire_batches = fire_batches
@@ -180,8 +184,10 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
         self.column_mode = column_mode
         self.key_suffix = key_suffix
         self.current_minibatch = list()
-        filter = None
         self.filter_provider = filter_provider
+
+        self.db = lmdb.open(lmdb_path) if lmdb_path is not None else None
+
         self.conn = None
 
     def __enter__(self):
@@ -233,7 +239,19 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
             elif isinstance(f, BarsMonthlyFilter):
                 method = self.conn.request_monthly_data
 
-            data = method(*f)
+            if self.db is not None:
+                with self.db.begin() as txn:
+                    data = txn.get(bytearray(f.__str__(), encoding='ascii'))
+
+                if data is None:
+                    data = method(*f)
+
+                    with self.db.begin(write=True) as txn:
+                        txn.put(bytearray(f.__str__(), encoding='ascii'), pickle.dumps(data))
+                else:
+                    data = pickle.loads(data)
+            else:
+                data = method(*f)
 
             processed_data = list()
 
