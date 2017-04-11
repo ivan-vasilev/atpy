@@ -109,7 +109,7 @@ class TestIQFeedHistory(unittest.TestCase):
                 if i == 1:
                     break
 
-    def test_bars_column_mode(self):
+    def test_bar_column_mode(self):
         filter_provider = DefaultFilterProvider()
         filter_provider += BarsFilter(ticker="IBM", interval_len=60, interval_type='s', max_bars=20)
 
@@ -151,6 +151,62 @@ class TestIQFeedHistory(unittest.TestCase):
                     self.assertEqual(len(v), 4)
 
                 self.assertNotEqual(d['Time'][0], d['Time'][1])
+
+                if i == 1:
+                    break
+
+            e2.wait()
+            e3.wait()
+
+    def test_bars(self):
+        filter_provider = DefaultFilterProvider()
+        filter_provider += BarsDailyFilter(ticker=["IBM", "AAPL"], num_days=20)
+
+        with IQFeedHistoryListener(minibatch=4, fire_batches=True, fire_ticks=True, filter_provider=filter_provider, column_mode=True) as listener, listener.minibatch_provider() as provider:
+
+            e1 = threading.Event()
+
+            def process_tick(event):
+                data = event['data']
+                self.assertEqual(len(list(data.keys())), 2)
+                self.assertEqual(len(list(data['IBM'].keys())), 8)
+                self.assertEqual(len(list(data['AAPL'].keys())), 8)
+                e1.set()
+
+            listener.process_datum += process_tick
+
+            e2 = threading.Event()
+
+            def process_batch_listener_column(event):
+                batch = event['data']
+                self.assertEqual(len(batch), 2)
+                self.assertEqual(batch['AAPL'].shape, (20, 8))
+                self.assertEqual(batch['IBM'].shape, (20, 8))
+                self.assertEqual(len(list(batch['AAPL'][batch['IBM'].columns[0]])), 20)
+                e2.set()
+
+            listener.process_batch += process_batch_listener_column
+
+            e3 = threading.Event()
+
+            def process_minibatch_listener_column(event):
+                batch = event['data']
+                self.assertEqual(len(batch), 2)
+                self.assertEqual(batch['AAPL'].shape, (4, 8))
+                self.assertEqual(batch['IBM'].shape, (4, 8))
+                self.assertEqual(len(list(batch['AAPL'][batch['IBM'].columns[0]])), 4)
+                e3.set()
+
+            listener.process_minibatch += process_minibatch_listener_column
+
+            for i, d in enumerate(provider):
+                self.assertEqual(len(d), 2)
+                self.assertEqual(d['AAPL'].shape, (4, 8))
+                self.assertEqual(d['IBM'].shape, (4, 8))
+                self.assertEqual(len(list(d['AAPL'][d['IBM'].columns[0]])), 4)
+
+                self.assertEqual(d['IBM']['Date'][0], d['AAPL']['Date'][0])
+                self.assertNotEqual(d['IBM']['Date'][0], d['AAPL']['Date'][1])
 
                 if i == 1:
                     break

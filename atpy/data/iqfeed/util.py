@@ -24,8 +24,7 @@ def create_batch(data, column_mode=True, key_suffix=''):
     """
     if column_mode:
         for i, datum in enumerate(data):
-            if len(datum) == 1:
-                datum = datum[0]
+            datum = datum[0] if len(datum) == 1 else datum
 
             if i == 0:
                 result = {n + key_suffix: np.empty((len(data),), d.dtype if str(d.dtype) not in ('|S4', '|S3') else object) for n, d in zip(datum.dtype.names, datum)}
@@ -51,8 +50,7 @@ def iqfeed_to_dict(data, key_suffix=''):
     :param key_suffix: suffix to each name
     :return:
     """
-    if len(data) == 1:
-        data = data[0]
+    data = data[0] if len(data) == 1 else data
 
     result = {n + key_suffix: d for n, d in zip(data.dtype.names, data)}
 
