@@ -260,15 +260,17 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
         col = 'Time Stamp' if 'Time Stamp' in list(signals.values())[0] else 'Date' if 'Date' in list(signals.values())[0] else None
         if col is not None:
             ts = pd.Series(name=col)
-            for t in f.ticker:
-                ts = ts.append(signals[t][col])
+            for _, s in signals.items():
+                s.drop_duplicates(subset=col, keep='last', inplace=True)
+                ts = ts.append(s[col])
 
             ts = ts.drop_duplicates()
             ts.sort_values(inplace=True)
             ts = ts.to_frame()
 
-            for t in f.ticker:
-                signals[t] = pd.merge_ordered(signals[t], ts, on=col, how='outer', fill_method='ffill')
+            for symbol, signal in signals.items():
+                signals[symbol] = pd.merge_ordered(signal, ts, on=col, how='outer', fill_method='ffill')
+                signals[symbol].fillna(method='backfill', inplace=True)
 
         batch = pd.Panel.from_dict(signals)
 

@@ -109,6 +109,56 @@ class TestIQFeedHistory(unittest.TestCase):
                 if i == 1:
                     break
 
+    def test_multiple_ticks(self):
+        filter_provider = DefaultFilterProvider()
+        filter_provider += TicksFilter(ticker=["IBM", "AAPL"], max_ticks=100)
+
+        with IQFeedHistoryListener(minibatch=4, fire_batches=True, fire_ticks=True, filter_provider=filter_provider, column_mode=True) as listener, listener.minibatch_provider() as provider:
+
+            e1 = threading.Event()
+
+            def process_tick(event):
+                data = event['data']
+                self.assertEqual(len(list(data.keys())), 2)
+                self.assertEqual(len(list(data['IBM'].keys())), 14)
+                self.assertEqual(len(list(data['AAPL'].keys())), 14)
+                e1.set()
+
+            listener.process_datum += process_tick
+
+            e2 = threading.Event()
+
+            def process_batch_listener_column(event):
+                batch = event['data']
+                self.assertEqual(batch['IBM'].shape[1], 14)
+                self.assertEqual(batch['AAPL'].shape[1], 14)
+                e2.set()
+
+            listener.process_batch += process_batch_listener_column
+
+            e3 = threading.Event()
+
+            def process_minibatch_listener_column(event):
+                batch = event['data']
+                self.assertEqual(batch['IBM'].shape, (4, 14))
+                self.assertEqual(batch['AAPL'].shape, (4, 14))
+                e3.set()
+
+            listener.process_minibatch += process_minibatch_listener_column
+
+            for i, d in enumerate(provider):
+                self.assertEqual(d['IBM'].shape, (4, 14))
+                self.assertEqual(d['AAPL'].shape, (4, 14))
+
+                self.assertEqual(d['IBM']['Time Stamp'].iloc[0], d['AAPL']['Time Stamp'].iloc[0])
+                self.assertNotEqual(d['IBM']['Time Stamp'].iloc[0], d['AAPL']['Time Stamp'].iloc[1])
+
+                if i == 1:
+                    break
+
+            e2.wait()
+            e3.wait()
+
     def test_bar_column_mode(self):
         filter_provider = DefaultFilterProvider()
         filter_provider += BarsFilter(ticker="IBM", interval_len=60, interval_type='s', max_bars=20)
@@ -217,7 +267,6 @@ class TestIQFeedHistory(unittest.TestCase):
     def test_bars_2(self):
         filter_provider = DefaultFilterProvider()
         filter_provider += BarsInPeriodFilter(ticker=["IBM", "AAPL"], bgn_prd=datetime.datetime(2017, 3, 1), end_prd=datetime.datetime(2017, 3, 2), interval_len=60, ascend=True, interval_type='s', max_ticks=20)
-        # filter_provider += BarsForDaysFilter(ticker=["IBM", "AAPL"], interval_type='s', interval_len=60, days=1, ascend=True)
 
         with IQFeedHistoryListener(minibatch=4, fire_batches=True, fire_ticks=True, filter_provider=filter_provider, column_mode=True) as listener, listener.minibatch_provider() as provider:
 
