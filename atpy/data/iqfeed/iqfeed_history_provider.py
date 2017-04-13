@@ -185,6 +185,8 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
         self.column_mode = column_mode
         self.key_suffix = key_suffix
         self.current_minibatch = None
+        self.current_batch = None
+        self.current_filter = None
         self.filter_provider = filter_provider
 
         self.db = lmdb.open(lmdb_path) if lmdb_path is not None else None
@@ -237,17 +239,21 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
                 self.process_datum({'type': event_type, 'data': self._process_data(iqfeedutil.iqfeed_to_dict(datum, self.key_suffix), f)})
 
             if self.minibatch is not None:
-                self.current_minibatch = self.current_minibatch if self.current_minibatch is not None else list()
+                if self.current_minibatch is None or (self.current_filter is not None and type(self.current_filter) != type(f)):
+                    self.current_minibatch = list()
+
                 self.current_minibatch.append(datum)
 
                 if len(self.current_minibatch) == self.minibatch:
                     mb_data = self._process_data(iqfeedutil.create_batch(self.current_minibatch, self.column_mode, self.key_suffix), f)
                     self.process_minibatch({'type': event_type + '_mb', 'data': mb_data})
-                    self.current_minibatch = list()
+                    self.current_minibatch = None
 
         if self.fire_batches:
             batch_data = self._process_data(iqfeedutil.create_batch(data, self.column_mode, self.key_suffix), f)
             self.process_batch({'type': event_type + '_batch', 'data': batch_data})
+
+        self.current_filter = f
 
     def _produce_signals(self, f):
         signals = dict()
@@ -270,7 +276,11 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
 
             for symbol, signal in signals.items():
                 signals[symbol] = pd.merge_ordered(signal, ts, on=col, how='outer', fill_method='ffill')
-                signals[symbol].fillna(method='backfill', inplace=True)
+
+                if self.current_filter is not None and type(self.current_filter) == type(f) and self.current_batch is not None and symbol in self.current_batch:
+                    signals[symbol].fillna(value=self.current_batch[symbol, self.current_batch.shape[1] - 1], inplace=True)
+                else:
+                    signals[symbol].fillna(method='backfill', inplace=True)
 
         batch = pd.Panel.from_dict(signals)
 
@@ -281,7 +291,7 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
                 self.process_datum({'type': event_type, 'data': batch.iloc[:, i].to_dict()})
 
         if self.minibatch is not None:
-            if self.current_minibatch is None:
+            if self.current_minibatch is None or (self.current_filter is not None and type(self.current_filter) != type(f)):
                 self.current_minibatch = batch.copy(deep=True)
             else:
                 self.current_minibatch = pd.concat([self.current_minibatch, batch], axis=1)
@@ -292,6 +302,9 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
 
         if self.fire_batches:
             self.process_batch({'type': event_type + '_batch', 'data': batch})
+
+        self.current_filter = f
+        self.current_batch = batch
 
     def _request_data(self, f):
         if isinstance(f, TicksFilter):
