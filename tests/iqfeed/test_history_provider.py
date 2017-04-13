@@ -20,7 +20,7 @@ class TestIQFeedHistory(unittest.TestCase):
 
                 def process_tick(event):
                     data = event['data']
-                    self.assertEqual(len(list(data.keys())), 15)
+                    self.assertEqual(len(list(data.keys())), 14)
                     e1.set()
 
                 listener.process_datum += process_tick
@@ -29,7 +29,7 @@ class TestIQFeedHistory(unittest.TestCase):
 
                 def process_batch_listener_column(event):
                     batch = event['data']
-                    self.assertEqual(len(batch), 15)
+                    self.assertEqual(len(batch), 14)
                     self.assertEqual(len(batch[list(batch.keys())[0]]), 20)
                     e2.set()
 
@@ -39,14 +39,14 @@ class TestIQFeedHistory(unittest.TestCase):
 
                 def process_minibatch_listener_column(event):
                     batch = event['data']
-                    self.assertEqual(len(batch), 15)
+                    self.assertEqual(len(batch), 14)
                     self.assertEqual(len(batch[list(batch.keys())[0]]), 4)
                     e3.set()
 
                 listener.process_minibatch += process_minibatch_listener_column
 
                 for i, d in enumerate(provider):
-                    self.assertEqual(len(d), 15)
+                    self.assertEqual(len(d), 14)
 
                     for v in d.values():
                         self.assertEqual(len(v), 4)
@@ -70,7 +70,7 @@ class TestIQFeedHistory(unittest.TestCase):
 
             def process_tick(event):
                 data = event['data']
-                self.assertEqual(len(list(data.keys())), 15)
+                self.assertEqual(len(list(data.keys())), 14)
                 e1.set()
 
             listener.process_datum += process_tick
@@ -79,7 +79,7 @@ class TestIQFeedHistory(unittest.TestCase):
 
             def process_batch_listener(event):
                 batch = event['data']
-                self.assertEqual(len(batch[0]), 15)
+                self.assertEqual(len(batch[0]), 14)
                 self.assertEqual(len(batch), 20)
                 e2.set()
 
@@ -89,7 +89,7 @@ class TestIQFeedHistory(unittest.TestCase):
 
             def process_minibatch_listener(event):
                 batch = event['data']
-                self.assertEqual(len(batch[0]), 15)
+                self.assertEqual(len(batch[0]), 14)
                 self.assertEqual(len(batch), 4)
                 e3.set()
 
@@ -102,7 +102,7 @@ class TestIQFeedHistory(unittest.TestCase):
                 self.assertEqual(len(d), 4)
 
                 for item in d:
-                    self.assertEqual(len(item), 15)
+                    self.assertEqual(len(item), 14)
 
                 self.assertNotEqual(d[0]['TickID'], d[1]['TickID'])
 
@@ -119,7 +119,7 @@ class TestIQFeedHistory(unittest.TestCase):
 
             def process_tick(event):
                 data = event['data']
-                self.assertEqual(len(list(data.keys())), 10)
+                self.assertEqual(len(list(data.keys())), 9)
                 e1.set()
 
             listener.process_datum += process_tick
@@ -128,7 +128,7 @@ class TestIQFeedHistory(unittest.TestCase):
 
             def process_batch_listener_column(event):
                 batch = event['data']
-                self.assertEqual(len(batch), 10)
+                self.assertEqual(len(batch), 9)
                 self.assertEqual(len(batch[list(batch.keys())[0]]), 20)
                 e2.set()
 
@@ -138,19 +138,19 @@ class TestIQFeedHistory(unittest.TestCase):
 
             def process_minibatch_listener_column(event):
                 batch = event['data']
-                self.assertEqual(len(batch), 10)
+                self.assertEqual(len(batch), 9)
                 self.assertEqual(len(batch[list(batch.keys())[0]]), 4)
                 e3.set()
 
             listener.process_minibatch += process_minibatch_listener_column
 
             for i, d in enumerate(provider):
-                self.assertEqual(len(d), 10)
+                self.assertEqual(len(d), 9)
 
                 for v in d.values():
                     self.assertEqual(len(v), 4)
 
-                self.assertNotEqual(d['Time'][0], d['Time'][1])
+                self.assertNotEqual(d['Time Stamp'][0], d['Time Stamp'][1])
 
                 if i == 1:
                     break
@@ -205,8 +205,64 @@ class TestIQFeedHistory(unittest.TestCase):
                 self.assertEqual(d['IBM'].shape, (4, 8))
                 self.assertEqual(len(list(d['AAPL'][d['IBM'].columns[0]])), 4)
 
-                self.assertEqual(d['IBM']['Date'][0], d['AAPL']['Date'][0])
-                self.assertNotEqual(d['IBM']['Date'][0], d['AAPL']['Date'][1])
+                self.assertEqual(d['IBM']['Date'].iloc[0], d['AAPL']['Date'].iloc[0])
+                self.assertNotEqual(d['IBM']['Date'].iloc[0], d['AAPL']['Date'].iloc[1])
+
+                if i == 1:
+                    break
+
+            e2.wait()
+            e3.wait()
+
+    def test_bars_2(self):
+        filter_provider = DefaultFilterProvider()
+        filter_provider += BarsInPeriodFilter(ticker=["IBM", "AAPL"], bgn_prd=datetime.datetime(2017, 3, 1), end_prd=datetime.datetime(2017, 3, 2), interval_len=60, ascend=True, interval_type='s', max_ticks=20)
+        # filter_provider += BarsForDaysFilter(ticker=["IBM", "AAPL"], interval_type='s', interval_len=60, days=1, ascend=True)
+
+        with IQFeedHistoryListener(minibatch=4, fire_batches=True, fire_ticks=True, filter_provider=filter_provider, column_mode=True) as listener, listener.minibatch_provider() as provider:
+
+            e1 = threading.Event()
+
+            def process_tick(event):
+                data = event['data']
+                self.assertEqual(len(list(data.keys())), 2)
+                self.assertEqual(len(list(data['IBM'].keys())), 9)
+                self.assertEqual(len(list(data['AAPL'].keys())), 9)
+                e1.set()
+
+            listener.process_datum += process_tick
+
+            e2 = threading.Event()
+
+            def process_batch_listener_column(event):
+                batch = event['data']
+                self.assertEqual(len(batch), 2)
+                self.assertEqual(batch['AAPL'].shape[1], 9)
+                self.assertEqual(batch['IBM'].shape[1], 9)
+                e2.set()
+
+            listener.process_batch += process_batch_listener_column
+
+            e3 = threading.Event()
+
+            def process_minibatch_listener_column(event):
+                batch = event['data']
+                self.assertEqual(len(batch), 2)
+                self.assertEqual(batch['AAPL'].shape, (4, 9))
+                self.assertEqual(batch['IBM'].shape, (4, 9))
+                self.assertEqual(len(list(batch['AAPL'][batch['IBM'].columns[0]])), 4)
+                e3.set()
+
+            listener.process_minibatch += process_minibatch_listener_column
+
+            for i, d in enumerate(provider):
+                self.assertEqual(len(d), 2)
+                self.assertEqual(d['AAPL'].shape, (4, 9))
+                self.assertEqual(d['IBM'].shape, (4, 9))
+                self.assertEqual(len(list(d['AAPL'][d['IBM'].columns[0]])), 4)
+
+                self.assertEqual(d['IBM']['Time Stamp'].iloc[0], d['AAPL']['Time Stamp'].iloc[0])
+                self.assertNotEqual(d['IBM']['Time Stamp'].iloc[0], d['AAPL']['Time Stamp'].iloc[1])
 
                 if i == 1:
                     break
@@ -224,7 +280,7 @@ class TestIQFeedHistory(unittest.TestCase):
 
                 def process_tick(event):
                     data = event['data']
-                    self.assertEqual(len(list(data.keys())), 10)
+                    self.assertEqual(len(list(data.keys())), 9)
                     e1.set()
 
                 listener.process_datum += process_tick
@@ -233,7 +289,7 @@ class TestIQFeedHistory(unittest.TestCase):
 
                 def process_batch_listener(event):
                     batch = event['data']
-                    self.assertEqual(len(batch[0]), 10)
+                    self.assertEqual(len(batch[0]), 9)
                     self.assertEqual(len(batch), 20)
                     e2.set()
 
@@ -243,7 +299,7 @@ class TestIQFeedHistory(unittest.TestCase):
 
                 def process_minibatch_listener(event):
                     batch = event['data']
-                    self.assertEqual(len(batch[0]), 10)
+                    self.assertEqual(len(batch[0]), 9)
                     self.assertEqual(len(batch), 4)
                     e3.set()
 
@@ -256,9 +312,9 @@ class TestIQFeedHistory(unittest.TestCase):
                     self.assertEqual(len(d), 4)
 
                     for item in d:
-                        self.assertEqual(len(item), 10)
+                        self.assertEqual(len(item), 9)
 
-                    self.assertNotEqual(d[0]['Time'], d[1]['Time'])
+                    self.assertNotEqual(d[0]['Time Stamp'], d[1]['Time Stamp'])
 
                     if i == 1:
                         break

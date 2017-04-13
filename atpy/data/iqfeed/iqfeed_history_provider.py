@@ -82,7 +82,6 @@ class BarsForDaysFilter(NamedTuple):
     interval_len: int
     interval_type: str
     days: int
-    num_days: int
     bgn_flt: datetime.time
     end_flt: datetime.time
     ascend: bool
@@ -108,7 +107,7 @@ class BarsInPeriodFilter(NamedTuple):
     max_ticks: int
     timeout: int
 
-TicksInPeriodFilter.__new__.__defaults__ = (None, None, False, None, None)
+BarsInPeriodFilter.__new__.__defaults__ = (None, None, False, None, None)
 
 
 class BarsDailyFilter(NamedTuple):
@@ -252,53 +251,44 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
 
     def _produce_signals(self, f):
         signals = dict()
-        filters = dict()
-        length = None
+
         for t in f.ticker:
-            filters[t] = f._replace(ticker=t)
-            d = self._request_data(filters[t])
+            ft = f._replace(ticker=t)
+            d = self._request_data(ft)
+            signals[t] = pd.DataFrame.from_dict(self._process_data(iqfeedutil.create_batch(d, True, self.key_suffix), ft))
 
-            length = length if length is not None else len(d)
+        col = 'Time Stamp' if 'Time Stamp' in list(signals.values())[0] else 'Date' if 'Date' in list(signals.values())[0] else None
+        if col is not None:
+            ts = pd.Series(name=col)
+            for t in f.ticker:
+                ts = ts.append(signals[t][col])
 
-            if len(d) != length:
-                raise Exception("Signal point count doesn't match other signals")
+            ts = ts.drop_duplicates()
+            ts.sort_values(inplace=True)
+            ts = ts.to_frame()
 
-            signals[t] = d
+            for t in f.ticker:
+                signals[t] = pd.merge_ordered(signals[t], ts, on=col, how='outer', fill_method='ffill')
+
+        batch = pd.Panel.from_dict(signals)
 
         event_type = self._event_type(f)
 
-        for i in range(length):
-            if self.fire_ticks:
-                datum = dict()
-                for t in f.ticker:
-                    datum[t] = self._process_data(iqfeedutil.iqfeed_to_dict(signals[t][i], self.key_suffix), filters[t])
+        if self.fire_ticks:
+            for i in range(batch.shape[1]):
+                self.process_datum({'type': event_type, 'data': batch.iloc[:, i].to_dict()})
 
-                self.process_datum({'type': event_type, 'data': datum})
+        if self.minibatch is not None:
+            if self.current_minibatch is None:
+                self.current_minibatch = batch.copy(deep=True)
+            else:
+                self.current_minibatch = pd.concat([self.current_minibatch, batch], axis=1)
 
-            if self.minibatch is not None:
-                self.current_minibatch = self.current_minibatch if self.current_minibatch is not None else dict()
-
-                for t in f.ticker:
-                    if t not in self.current_minibatch:
-                        self.current_minibatch[t] = list()
-
-                    self.current_minibatch[t].append(signals[t][i])
-
-            if len(self.current_minibatch[f.ticker[0]]) == self.minibatch:
-                mb_signals = dict()
-                for t in f.ticker:
-                    mb_signals[t] = pd.DataFrame.from_dict(self._process_data(iqfeedutil.create_batch(self.current_minibatch[t], True, self.key_suffix), filters[t]))
-
-                mb_data = pd.Panel.from_dict(mb_signals)
-                self.process_minibatch({'type': event_type + '_mb', 'data': mb_data})
-                self.current_minibatch = None
+            if self.minibatch <= self.current_minibatch.shape[1]:
+                self.process_minibatch({'type': event_type + '_mb', 'data': self.current_minibatch.iloc[:, :self.minibatch]})
+                self.current_minibatch = self.current_minibatch.iloc[:, self.minibatch:]
 
         if self.fire_batches:
-            batch_signals = dict()
-            for t in f.ticker:
-                batch_signals[t] = pd.DataFrame.from_dict(self._process_data(iqfeedutil.create_batch(signals[t], True, self.key_suffix), filters[t]))
-
-            batch = pd.Panel.from_dict(batch_signals)
             self.process_batch({'type': event_type + '_batch', 'data': batch})
 
     def _request_data(self, f):
@@ -351,8 +341,7 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
         if isinstance(data, dict):
             result = dict()
 
-            result['Date'] = data.pop('date')
-            result['Time'] = data.pop('time')
+            result['Time Stamp'] = data.pop('date') + data.pop('time')
             result['Last'] = data.pop('last')
             result['Last Size'] = data.pop('last_sz')
             result['Total Volume'] = data.pop('tot_vlm')
@@ -366,8 +355,8 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
             result['cond3'] = data.pop('cond3')
             result['cond4'] = data.pop('cond4')
 
-            if isinstance(result['Date'], collections.Iterable):
-                result['Symbol'] = [data_filter.ticker] * len(result['Date'])
+            if isinstance(result['Time Stamp'], collections.Iterable):
+                result['Symbol'] = [data_filter.ticker] * len(result['Time Stamp'])
             else:
                 result['Symbol'] = data_filter.ticker
         elif isinstance(data, collections.Iterable):
@@ -381,8 +370,7 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
         if isinstance(data, dict):
             result = dict()
 
-            result['Date'] = data.pop('date')
-            result['Time'] = data.pop('time')
+            result['Time Stamp'] = data.pop('date') + data.pop('time')
             result['High'] = data.pop('high_p')
             result['Low'] = data.pop('low_p')
             result['Open'] = data.pop('open_p')
@@ -391,8 +379,8 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
             result['Period Volume'] = data.pop('prd_vlm')
             result['Number of Trades'] = data.pop('num_trds')
 
-            if isinstance(result['Date'], collections.Iterable):
-                result['Symbol'] = [data_filter.ticker] * len(result['Date'])
+            if isinstance(result['Time Stamp'], collections.Iterable):
+                result['Symbol'] = [data_filter.ticker] * len(result['Time Stamp'])
             else:
                 result['Symbol'] = data_filter.ticker
         elif isinstance(data, collections.Iterable):
