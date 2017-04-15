@@ -2,22 +2,23 @@ import collections
 
 import pyevents.events as events
 from atpy.data.iqfeed.util import *
+import pandas as pd
 
 
 class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegister):
 
-    def __init__(self, minibatch=None, key_suffix='', column_mode=True):
+    def __init__(self, fire_bars=True, minibatch=None, key_suffix=''):
         """
+        :param fire_bars: raise event for each individual bar if True
         :param minibatch: size of the minibatch
         :param key_suffix: suffix to the fieldnames
-        :param column_mode: column/row data format
         """
         super().__init__(name="Bar data listener")
 
+        self.fire_bars = fire_bars
         self.minibatch = minibatch
         self.conn = None
         self.key_suffix = key_suffix
-        self.column_mode = column_mode
         self.current_batch = None
 
     def __enter__(self):
@@ -47,7 +48,8 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
             raise AttributeError
 
     def process_latest_bar_update(self, bar_data: np.array) -> None:
-        self._on_bar(bar_data)
+        if self.fire_bars:
+            self.on_latest_bar_update(self._process_data(iqfeed_to_dict(bar_data, key_suffix=self.key_suffix)))
 
     def process_live_bar(self, bar_data: np.array) -> None:
         self._on_bar(bar_data)
@@ -56,25 +58,27 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
         self._on_bar(bar_data)
 
     def _on_bar(self, bar_data):
+        bar_data = np.copy(bar_data)
+
+        if self.fire_bars:
+            self.on_bar(self._process_data(iqfeed_to_dict(bar_data, key_suffix=self.key_suffix)))
+
         if self.minibatch is not None:
             if self.current_batch is None:
                 self.current_batch = list()
 
-            self.current_batch.append(bar_data[0] if len(bar_data) == 1 else bar_data)
+            self.current_batch.append(bar_data)
 
             if len(self.current_batch) == self.minibatch:
-                self.on_bar_batch(self._process_data(create_batch(self.current_batch, self.column_mode, self.key_suffix)))
+                self.on_bar_batch(pd.DataFrame.from_dict(self._process_data(create_batch(self.current_batch, self.key_suffix))))
                 self.current_batch = None
-
-        self.on_bar(self._process_data(iqfeed_to_dict(bar_data, key_suffix=self.key_suffix)))
 
     def _process_data(self, data):
         if isinstance(data, dict):
             result = dict()
 
             result['Symbol'] = data.pop('symbol')
-            result['Date'] = data.pop('date')
-            result['Time'] = data.pop('time')
+            result['Time Stamp'] = data.pop('date') + data.pop('time')
             result['High'] = data.pop('high_p')
             result['Low'] = data.pop('low_p')
             result['Open'] = data.pop('open_p')
@@ -88,6 +92,10 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
                 result.append(self._process_data(d))
 
         return result
+
+    @events.after
+    def on_latest_bar_update(self, bar_data):
+        return {'type': 'latest_bar_update', 'data': bar_data}
 
     @events.after
     def on_bar(self, bar_data):
