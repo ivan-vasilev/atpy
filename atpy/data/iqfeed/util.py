@@ -15,30 +15,24 @@ def launch_service():
     svc.launch()
 
 
-def create_batch(data, column_mode=True, key_suffix=''):
+def create_batch(data, key_suffix=''):
     """
     Create minibatch-type data based on the pyiqfeed data format
     :param data: data list
-    :param column_mode: whether to convert the data to column mode (or row mode)
     :return:
     """
-    if column_mode:
-        for i, datum in enumerate(data):
-            datum = datum[0] if len(datum) == 1 else datum
+    for i, datum in enumerate(data):
+        datum = datum[0] if len(datum) == 1 else datum
 
-            if i == 0:
-                result = {n + key_suffix: np.empty((len(data),), d.dtype if str(d.dtype) not in ('|S4', '|S3') else object) for n, d in zip(datum.dtype.names, datum)}
+        if i == 0:
+            result = {n + key_suffix: np.empty((len(data),), d.dtype if str(d.dtype) not in ('|S4', '|S3') else object) for n, d in zip(datum.dtype.names, datum)}
 
-            for j, f in enumerate(datum.dtype.names):
-                d = datum[j]
-                if isinstance(datum[j], bytes):
-                    d = datum[j].decode('ascii')
+        for j, f in enumerate(datum.dtype.names):
+            d = datum[j]
+            if isinstance(datum[j], bytes):
+                d = datum[j].decode('ascii')
 
-                result[f][i] = d
-    else:
-        result = list()
-        for datum in data:
-            result.append(iqfeed_to_dict(datum, key_suffix))
+            result[f][i] = d
 
     return result
 

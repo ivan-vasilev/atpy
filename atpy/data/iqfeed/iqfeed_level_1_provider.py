@@ -4,6 +4,7 @@ from typing import Sequence
 
 
 class IQFeedLevel1Listener(iq.SilentQuoteListener, metaclass=events.GlobalRegister):
+
     def __init__(self, minibatch=None, key_suffix='', column_mode=True):
         super().__init__(name="Level 1 listener")
 
@@ -173,7 +174,11 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener, metaclass=events.GlobalRegist
     def process_fundamentals(self, fund: np.array):
         super().process_fundamentals(fund)
 
-        self.on_fundamentals(iqfeed_to_dict(fund, self.key_suffix))
+        f = iqfeed_to_dict(fund, self.key_suffix)
+
+        Fundamentals.fundamentals[f['Symbol']] = f
+
+        self.on_fundamentals(f)
 
         if self.minibatch is not None:
             self.current_fund_mb.append(fund)
@@ -191,3 +196,38 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener, metaclass=events.GlobalRegist
 
     def fundamentals_provider(self):
         return IQFeedDataProvider(self.on_fundamentals_mb)
+
+
+class Fundamentals(iq.SilentQuoteListener):
+
+    fundamentals = dict()
+
+    @staticmethod
+    def get(symbol: str, conn: iq.QuoteConn):
+        if symbol not in Fundamentals.fundamentals:
+            if not hasattr(Fundamentals, 'threading_events'):
+                Fundamentals.threading_events = dict()
+
+            Fundamentals.threading_events[symbol] = threading.Event()
+
+            class FL(iq.SilentQuoteListener):
+                def __init__(self):
+                    super().__init__("fundamental_listener")
+
+                def process_fundamentals(self, fund: np.array):
+                    Fundamentals.fundamentals[symbol] = iqfeed_to_dict(fund)
+                    if symbol in Fundamentals.threading_events:
+                        Fundamentals.threading_events[symbol].set()
+
+            fl = FL()
+
+            try:
+                conn.add_listener(fl)
+                conn.watch(symbol)
+                Fundamentals.threading_events[symbol].wait()
+            finally:
+                del Fundamentals.threading_events[symbol]
+                conn.remove_listener(fl)
+                conn.unwatch(symbol)
+
+        return Fundamentals.fundamentals[symbol]

@@ -10,6 +10,7 @@ from atpy.data.iqfeed.filters import *
 from atpy.data.iqfeed.util import *
 import typing
 import pandas as pd
+from atpy.data.iqfeed.iqfeed_level_1_provider import Fundamentals
 
 
 class TicksFilter(NamedTuple):
@@ -164,17 +165,16 @@ class BarsMonthlyFilter(NamedTuple):
 BarsMonthlyFilter.__new__.__defaults__ = (False, None)
 
 
-class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
+class IQFeedHistoryListener(iq.SilentQuoteListener, metaclass=events.GlobalRegister):
     """
     IQFeed historical data listener. See the unit test on how to use
     """
 
-    def __init__(self, minibatch=None, fire_batches=False, fire_ticks=False, column_mode=True, key_suffix='', filter_provider=DefaultFilterProvider(), lmdb_path=None):
+    def __init__(self, minibatch=None, fire_batches=False, fire_ticks=False, key_suffix='', filter_provider=DefaultFilterProvider(), lmdb_path=None):
         """
         :param minibatch: size of the minibatch
         :param fire_batches: raise event for each batch
         :param fire_ticks: raise event for each tick
-        :param column_mode: whether to organize the data in columns or rows
         :param key_suffix: suffix for field names
         :param filter_provider: news filter list
         :param lmdb_path: path to lmdb database. If not None, then the data is cached
@@ -182,36 +182,53 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
         self.minibatch = minibatch
         self.fire_batches = fire_batches
         self.fire_ticks = fire_ticks
-        self.column_mode = column_mode
         self.key_suffix = key_suffix
         self.current_minibatch = None
         self.current_batch = None
         self.current_filter = None
         self.filter_provider = filter_provider
+        self.fundamentals = dict()
 
         self.db = lmdb.open(lmdb_path) if lmdb_path is not None else None
 
         self.conn = None
+        self.streaming_conn = None
 
     def __enter__(self):
         iqfeedutil.launch_service()
         self.conn = iq.HistoryConn()
         self.conn.connect()
-        self.is_running = True
+
+        # streaming conn for fundamental data
+        self.streaming_conn = iq.QuoteConn()
+        self.streaming_conn.add_listener(self)
+        self.streaming_conn.connect()
+
         self.producer_thread = threading.Thread(target=self.produce, daemon=True)
         self.producer_thread.start()
+
+        self.is_running = True
 
         return self
 
     def __exit__(self, exception_type, exception_value, traceback):
+        self.is_running = False
+
         self.conn.disconnect()
         self.conn = None
-        self.is_running = False
+
+        self.streaming_conn.remove_listener(self)
+        self.streaming_conn.disconnect()
+        self.streaming_conn = None
 
     def __del__(self):
         if self.conn is not None:
             self.conn.disconnect()
             self.cfg = None
+
+        if self.streaming_conn is not None:
+            self.streaming_conn.remove_listener(self)
+            self.streaming_conn.disconnect()
 
     def __getattr__(self, name):
         if self.conn is not None:
@@ -232,36 +249,38 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
     def _produce_signal(self, f):
         data = self._request_data(f)
 
+        batch = pd.DataFrame.from_dict(self._process_data(iqfeedutil.create_batch(data, self.key_suffix), f))
+
         event_type = self._event_type(f)
 
-        for datum in data:
-            if self.fire_ticks:
-                self.process_datum({'type': event_type, 'data': self._process_data(iqfeedutil.iqfeed_to_dict(datum, self.key_suffix), f)})
+        if self.fire_ticks:
+            for i in range(batch.shape[0]):
+                self.process_datum({'type': event_type, 'data': batch.iloc[i].to_dict()})
 
-            if self.minibatch is not None:
-                if self.current_minibatch is None or (self.current_filter is not None and type(self.current_filter) != type(f)):
-                    self.current_minibatch = list()
+        if self.minibatch is not None:
+            if self.current_minibatch is None or (self.current_filter is not None and type(self.current_filter) != type(f)):
+                self.current_minibatch = batch.copy(deep=True)
+            else:
+                self.current_minibatch = pd.concat([self.current_minibatch, batch], axis=0)
 
-                self.current_minibatch.append(datum)
-
-                if len(self.current_minibatch) == self.minibatch:
-                    mb_data = self._process_data(iqfeedutil.create_batch(self.current_minibatch, self.column_mode, self.key_suffix), f)
-                    self.process_minibatch({'type': event_type + '_mb', 'data': mb_data})
-                    self.current_minibatch = None
+            if self.minibatch <= self.current_minibatch.shape[0]:
+                self.process_minibatch({'type': event_type + '_mb', 'data': self.current_minibatch.iloc[:self.minibatch]})
+                self.current_minibatch = self.current_minibatch.iloc[self.minibatch:]
 
         if self.fire_batches:
-            batch_data = self._process_data(iqfeedutil.create_batch(data, self.column_mode, self.key_suffix), f)
-            self.process_batch({'type': event_type + '_batch', 'data': batch_data})
+            self.process_batch({'type': event_type + '_batch', 'data': batch})
 
         self.current_filter = f
+        self.current_batch = batch
 
     def _produce_signals(self, f):
         signals = dict()
 
         for t in f.ticker:
+            fund = Fundamentals.get(t, self.streaming_conn)
             ft = f._replace(ticker=t)
             d = self._request_data(ft)
-            signals[t] = pd.DataFrame.from_dict(self._process_data(iqfeedutil.create_batch(d, True, self.key_suffix), ft))
+            signals[t] = pd.DataFrame.from_dict(self._process_data(iqfeedutil.create_batch(d, self.key_suffix), ft))
 
         col = 'Time Stamp' if 'Time Stamp' in list(signals.values())[0] else 'Date' if 'Date' in list(signals.values())[0] else None
         if col is not None:
