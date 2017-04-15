@@ -1,17 +1,18 @@
 from atpy.data.iqfeed.util import *
 import pyevents.events as events
 from typing import Sequence
+import pandas as pd
 
 
 class IQFeedLevel1Listener(iq.SilentQuoteListener, metaclass=events.GlobalRegister):
 
-    def __init__(self, minibatch=None, key_suffix='', column_mode=True):
+    def __init__(self, fire_ticks=True, minibatch=None, key_suffix=''):
         super().__init__(name="Level 1 listener")
 
+        self.fire_ticks = fire_ticks
         self.minibatch = minibatch
         self.conn = None
         self.key_suffix = key_suffix
-        self.column_mode = column_mode
 
         self.watched_symbols = set()
 
@@ -76,15 +77,12 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener, metaclass=events.GlobalRegist
         if self.minibatch is not None:
             self.current_news_mb.append(news_item)
             if len(self.current_news_mb) == self.minibatch:
-                if self.column_mode:
-                    processed_data = {f + self.key_suffix: list() for f in news_item.keys()}
-                    for ni in self.current_news_mb:
-                        for k, v in ni.items():
-                            processed_data[k].append(v)
+                processed_data = {f + self.key_suffix: list() for f in news_item.keys()}
+                for ni in self.current_news_mb:
+                    for k, v in ni.items():
+                        processed_data[k].append(v)
 
-                    self.on_news_mb(processed_data)
-                else:
-                    self.on_news_mb(self.current_news_mb)
+                self.on_news_mb(processed_data)
 
                 self.current_news_mb = list()
 
@@ -108,12 +106,13 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener, metaclass=events.GlobalRegist
     def process_regional_quote(self, quote: np.array):
         super().process_regional_quote(quote)
 
-        self.on_regional_quote(iqfeed_to_dict(quote, self.key_suffix))
+        if self.fire_ticks:
+            self.on_regional_quote(iqfeed_to_dict(quote, self.key_suffix))
 
         if self.minibatch is not None:
             self.current_regional_mb.append(quote)
             if len(self.current_regional_mb) == self.minibatch:
-                self.on_regional_mb(create_batch(self.current_regional_mb, self.column_mode, self.key_suffix))
+                self.on_regional_mb(pd.DataFrame.from_dict(create_batch(self.current_regional_mb, self.key_suffix)))
                 self.current_regional_mb = list()
 
     @events.after
@@ -130,12 +129,13 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener, metaclass=events.GlobalRegist
     def process_summary(self, summary: np.array):
         super().process_summary(summary)
 
-        self.on_summary(iqfeed_to_dict(summary, self.key_suffix))
+        if self.fire_ticks:
+            self.on_summary(iqfeed_to_dict(summary, self.key_suffix))
 
         if self.minibatch is not None:
             self.current_summary_mb.append(summary)
             if len(self.current_summary_mb) == self.minibatch:
-                self.on_summary_mb(create_batch(self.current_summary_mb, self.column_mode, self.key_suffix))
+                self.on_summary_mb(pd.DataFrame.from_dict(create_batch(self.current_summary_mb, self.key_suffix)))
                 self.current_summary_mb = list()
 
     @events.after
@@ -152,12 +152,13 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener, metaclass=events.GlobalRegist
     def process_update(self, update: np.array):
         super().process_update(update)
 
-        self.on_update(iqfeed_to_dict(update, self.key_suffix))
+        if self.fire_ticks:
+            self.on_update(iqfeed_to_dict(update, self.key_suffix))
 
         if self.minibatch is not None:
             self.current_update_mb.append(update)
             if len(self.current_update_mb) == self.minibatch:
-                self.on_update_mb(create_batch(self.current_update_mb, self.column_mode, self.key_suffix))
+                self.on_update_mb(pd.DataFrame.from_dict(create_batch(self.current_update_mb, self.key_suffix)))
                 self.current_update_mb = list()
 
     @events.after
@@ -183,7 +184,7 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener, metaclass=events.GlobalRegist
         if self.minibatch is not None:
             self.current_fund_mb.append(fund)
             if len(self.current_fund_mb) == self.minibatch:
-                self.on_fundamentals_mb(create_batch(self.current_fund_mb, self.column_mode, self.key_suffix))
+                self.on_fundamentals_mb(pd.DataFrame.from_dict(create_batch(self.current_fund_mb, self.key_suffix)))
                 self.current_fund_mb = list()
 
     @events.after

@@ -19,27 +19,33 @@ class TestIQFeedHistory(unittest.TestCase):
                 e1 = threading.Event()
 
                 def process_tick(event):
-                    data = event['data']
-                    self.assertEqual(len(list(data.keys())), 14)
-                    e1.set()
+                    try:
+                        data = event['data']
+                        self.assertEqual(len(list(data.keys())), 14)
+                    finally:
+                        e1.set()
 
                 listener.process_datum += process_tick
 
                 e2 = threading.Event()
 
                 def process_batch_listener_column(event):
-                    batch = event['data']
-                    self.assertEqual(batch.shape, (20, 14))
-                    e2.set()
+                    try:
+                        batch = event['data']
+                        self.assertEqual(batch.shape, (20, 14))
+                    finally:
+                        e2.set()
 
                 listener.process_batch += process_batch_listener_column
 
                 e3 = threading.Event()
 
                 def process_minibatch_listener_column(event):
-                    batch = event['data']
-                    self.assertEqual(batch.shape, (4, 14))
-                    e3.set()
+                    try:
+                        batch = event['data']
+                        self.assertEqual(batch.shape, (4, 14))
+                    finally:
+                        e3.set()
 
                 listener.process_minibatch += process_minibatch_listener_column
 
@@ -65,31 +71,37 @@ class TestIQFeedHistory(unittest.TestCase):
             e1 = threading.Event()
 
             def process_tick(event):
-                data = event['data']
-                self.assertEqual(len(list(data.keys())), 2)
-                self.assertEqual(len(list(data['IBM'].keys())), 14)
-                self.assertEqual(len(list(data['AAPL'].keys())), 14)
-                e1.set()
+                try:
+                    data = event['data']
+                    self.assertEqual(len(list(data.keys())), 2)
+                    self.assertEqual(len(list(data['IBM'].keys())), 14)
+                    self.assertEqual(len(list(data['AAPL'].keys())), 14)
+                finally:
+                    e1.set()
 
             listener.process_datum += process_tick
 
             e2 = threading.Event()
 
             def process_batch_listener_column(event):
-                batch = event['data']
-                self.assertEqual(batch['IBM'].shape[1], 14)
-                self.assertEqual(batch['AAPL'].shape[1], 14)
-                e2.set()
+                try:
+                    batch = event['data']
+                    self.assertEqual(batch['IBM'].shape[1], 14)
+                    self.assertEqual(batch['AAPL'].shape[1], 14)
+                finally:
+                    e2.set()
 
             listener.process_batch += process_batch_listener_column
 
             e3 = threading.Event()
 
             def process_minibatch_listener_column(event):
-                batch = event['data']
-                self.assertEqual(batch['IBM'].shape, (4, 14))
-                self.assertEqual(batch['AAPL'].shape, (4, 14))
-                e3.set()
+                try:
+                    batch = event['data']
+                    self.assertEqual(batch['IBM'].shape, (4, 14))
+                    self.assertEqual(batch['AAPL'].shape, (4, 14))
+                finally:
+                    e3.set()
 
             listener.process_minibatch += process_minibatch_listener_column
 
