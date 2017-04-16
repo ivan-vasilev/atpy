@@ -3,6 +3,7 @@ import pyiqfeed as iq
 from passwords import dtn_product_id, dtn_login, dtn_password
 import queue
 import threading
+import pandas as pd
 
 
 def launch_service():
@@ -55,6 +56,182 @@ def iqfeed_to_dict(data, key_suffix=''):
     return result
 
 
+def adjust_bars(bar_data, fundamentals: dict):
+    d = bar_data['date']
+
+    if d > fundamentals['Ex-dividend Date'] and d > fundamentals['Split Factor 1 Date'] and d > fundamentals['Split Factor 2 Date']:
+        return
+
+    if fundamentals['Ex-dividend Date'] > d > fundamentals['Split Factor 1 Date']:
+        if not np.isnan(fundamentals['Dividend Amount']):
+            bar_data['open_p'] -= fundamentals['Dividend Amount']
+            bar_data['close_p'] -= fundamentals['Dividend Amount']
+            bar_data['high_p'] -= fundamentals['Dividend Amount']
+            bar_data['low_p'] -= fundamentals['Dividend Amount']
+    elif fundamentals['Ex-dividend Date'] > fundamentals['Split Factor 1 Date'] > d > fundamentals['Split Factor 2 Date']:
+        if not np.isnan(fundamentals['Dividend Amount']):
+            bar_data['open_p'] -= fundamentals['Dividend Amount']
+            bar_data['close_p'] -= fundamentals['Dividend Amount']
+            bar_data['high_p'] -= fundamentals['Dividend Amount']
+            bar_data['low_p'] -= fundamentals['Dividend Amount']
+
+        if not np.isnan(fundamentals['Split Factor 1']):
+            bar_data['open_p'] /= fundamentals['Split Factor 1']
+            bar_data['close_p'] /= fundamentals['Split Factor 1']
+            bar_data['high_p'] /= fundamentals['Split Factor 1']
+            bar_data['low_p'] /= fundamentals['Split Factor 1']
+            bar_data['prd_vlm'] *= fundamentals['Split Factor 1']
+            bar_data['tot_vlm'] *= fundamentals['Split Factor 1']
+    elif fundamentals['Ex-dividend Date'] > fundamentals['Split Factor 1 Date'] > fundamentals['Split Factor 2 Date'] > d:
+        if not np.isnan(fundamentals['Dividend Amount']):
+            bar_data['open_p'] -= fundamentals['Dividend Amount']
+            bar_data['close_p'] -= fundamentals['Dividend Amount']
+            bar_data['high_p'] -= fundamentals['Dividend Amount']
+            bar_data['low_p'] -= fundamentals['Dividend Amount']
+
+        if not np.isnan(fundamentals['Split Factor 1']):
+            bar_data['open_p'] /= fundamentals['Split Factor 1']
+            bar_data['close_p'] /= fundamentals['Split Factor 1']
+            bar_data['high_p'] /= fundamentals['Split Factor 1']
+            bar_data['low_p'] /= fundamentals['Split Factor 1']
+            bar_data['prd_vlm'] *= fundamentals['Split Factor 1']
+            bar_data['tot_vlm'] *= fundamentals['Split Factor 1']
+
+        if not np.isnan(fundamentals['Split Factor 2']):
+            bar_data['open_p'] /= fundamentals['Split Factor 2']
+            bar_data['close_p'] /= fundamentals['Split Factor 2']
+            bar_data['high_p'] /= fundamentals['Split Factor 2']
+            bar_data['low_p'] /= fundamentals['Split Factor 2']
+            bar_data['prd_vlm'] *= fundamentals['Split Factor 2']
+            bar_data['tot_vlm'] *= fundamentals['Split Factor 2']
+    elif fundamentals['Split Factor 1 Date'] > d > fundamentals['Ex-dividend Date']:
+        if not np.isnan(fundamentals['Split Factor 1']):
+            bar_data['open_p'] /= fundamentals['Split Factor 1']
+            bar_data['close_p'] /= fundamentals['Split Factor 1']
+            bar_data['high_p'] /= fundamentals['Split Factor 1']
+            bar_data['low_p'] /= fundamentals['Split Factor 1']
+            bar_data['prd_vlm'] *= fundamentals['Split Factor 1']
+            bar_data['tot_vlm'] *= fundamentals['Split Factor 1']
+    elif fundamentals['Split Factor 1 Date'] > fundamentals['Ex-dividend Date'] > d > fundamentals['Split Factor 2 Date']:
+        if not np.isnan(fundamentals['Split Factor 1']):
+            bar_data['open_p'] /= fundamentals['Split Factor 1']
+            bar_data['close_p'] /= fundamentals['Split Factor 1']
+            bar_data['high_p'] /= fundamentals['Split Factor 1']
+            bar_data['low_p'] /= fundamentals['Split Factor 1']
+            bar_data['prd_vlm'] *= fundamentals['Split Factor 1']
+            bar_data['tot_vlm'] *= fundamentals['Split Factor 1']
+
+        if not np.isnan(fundamentals['Dividend Amount']):
+            bar_data['open_p'] -= fundamentals['Dividend Amount']
+            bar_data['close_p'] -= fundamentals['Dividend Amount']
+            bar_data['high_p'] -= fundamentals['Dividend Amount']
+            bar_data['low_p'] -= fundamentals['Dividend Amount']
+    elif fundamentals['Split Factor 1 Date'] > fundamentals['Split Factor 2 Date'] > fundamentals['Ex-dividend Date'] > d:
+        if not np.isnan(fundamentals['Split Factor 1']):
+            bar_data['open_p'] /= fundamentals['Split Factor 1']
+            bar_data['close_p'] /= fundamentals['Split Factor 1']
+            bar_data['high_p'] /= fundamentals['Split Factor 1']
+            bar_data['low_p'] /= fundamentals['Split Factor 1']
+            bar_data['prd_vlm'] *= fundamentals['Split Factor 1']
+            bar_data['tot_vlm'] *= fundamentals['Split Factor 1']
+
+        if not np.isnan(fundamentals['Split Factor 2']):
+            bar_data['open_p'] /= fundamentals['Split Factor 2']
+            bar_data['close_p'] /= fundamentals['Split Factor 2']
+            bar_data['high_p'] /= fundamentals['Split Factor 2']
+            bar_data['low_p'] /= fundamentals['Split Factor 2']
+            bar_data['prd_vlm'] *= fundamentals['Split Factor 2']
+            bar_data['tot_vlm'] *= fundamentals['Split Factor 2']
+
+        if not np.isnan(fundamentals['Dividend Amount']):
+            bar_data['open_p'] -= fundamentals['Dividend Amount']
+            bar_data['close_p'] -= fundamentals['Dividend Amount']
+            bar_data['high_p'] -= fundamentals['Dividend Amount']
+            bar_data['low_p'] -= fundamentals['Dividend Amount']
+
+
+def adjust_ticks(tick, fundamentals: dict):
+    d = tick['date']
+
+    if d > fundamentals['Ex-dividend Date'] and d > fundamentals['Split Factor 1 Date'] and d > fundamentals['Split Factor 2 Date']:
+        return
+
+    if fundamentals['Ex-dividend Date'] > d > fundamentals['Split Factor 1 Date']:
+        if not np.isnan(fundamentals['Dividend Amount']):
+            tick['ask'] -= fundamentals['Dividend Amount']
+            tick['bid'] -= fundamentals['Dividend Amount']
+            tick['last'] -= fundamentals['Dividend Amount']
+    elif fundamentals['Ex-dividend Date'] > fundamentals['Split Factor 1 Date'] > d > fundamentals['Split Factor 2 Date']:
+        if not np.isnan(fundamentals['Dividend Amount']):
+            tick['ask'] -= fundamentals['Dividend Amount']
+            tick['bid'] -= fundamentals['Dividend Amount']
+            tick['last'] -= fundamentals['Dividend Amount']
+
+        if not np.isnan(fundamentals['Split Factor 1']):
+            tick['ask'] /= fundamentals['Split Factor 1']
+            tick['bid'] /= fundamentals['Split Factor 1']
+            tick['last'] /= fundamentals['Split Factor 1']
+            tick['last_sz'] *= fundamentals['Split Factor 1']
+            tick['tot_vlm'] *= fundamentals['Split Factor 1']
+    elif fundamentals['Ex-dividend Date'] > fundamentals['Split Factor 1 Date'] > fundamentals['Split Factor 2 Date'] > d:
+        if not np.isnan(fundamentals['Dividend Amount']):
+            tick['ask'] -= fundamentals['Dividend Amount']
+            tick['bid'] -= fundamentals['Dividend Amount']
+            tick['last'] -= fundamentals['Dividend Amount']
+
+        if not np.isnan(fundamentals['Split Factor 1']):
+            tick['ask'] /= fundamentals['Split Factor 1']
+            tick['bid'] /= fundamentals['Split Factor 1']
+            tick['last'] /= fundamentals['Split Factor 1']
+            tick['last_sz'] *= fundamentals['Split Factor 1']
+            tick['tot_vlm'] *= fundamentals['Split Factor 1']
+
+        if not np.isnan(fundamentals['Split Factor 2']):
+            tick['ask'] /= fundamentals['Split Factor 2']
+            tick['bid'] /= fundamentals['Split Factor 2']
+            tick['last'] /= fundamentals['Split Factor 2']
+            tick['last_sz'] *= fundamentals['Split Factor 2']
+            tick['tot_vlm'] *= fundamentals['Split Factor 2']
+    elif fundamentals['Split Factor 1 Date'] > d > fundamentals['Ex-dividend Date']:
+        if not np.isnan(fundamentals['Split Factor 1']):
+            tick['ask'] /= fundamentals['Split Factor 1']
+            tick['bid'] /= fundamentals['Split Factor 1']
+            tick['last'] /= fundamentals['Split Factor 1']
+            tick['last_sz'] *= fundamentals['Split Factor 1']
+            tick['tot_vlm'] *= fundamentals['Split Factor 1']
+    elif fundamentals['Split Factor 1 Date'] > fundamentals['Ex-dividend Date'] > d > fundamentals['Split Factor 2 Date']:
+        if not np.isnan(fundamentals['Split Factor 1']):
+            tick['ask'] /= fundamentals['Split Factor 1']
+            tick['bid'] /= fundamentals['Split Factor 1']
+            tick['last'] /= fundamentals['Split Factor 1']
+            tick['last_sz'] *= fundamentals['Split Factor 1']
+            tick['tot_vlm'] *= fundamentals['Split Factor 1']
+
+        if not np.isnan(fundamentals['Dividend Amount']):
+            tick['ask'] -= fundamentals['Dividend Amount']
+            tick['bid'] -= fundamentals['Dividend Amount']
+            tick['last'] -= fundamentals['Dividend Amount']
+    elif fundamentals['Split Factor 1 Date'] > fundamentals['Split Factor 2 Date'] > fundamentals['Ex-dividend Date'] > d:
+        if not np.isnan(fundamentals['Split Factor 1']):
+            tick['ask'] /= fundamentals['Split Factor 1']
+            tick['bid'] /= fundamentals['Split Factor 1']
+            tick['last'] /= fundamentals['Split Factor 1']
+            tick['last_sz'] *= fundamentals['Split Factor 1']
+            tick['tot_vlm'] *= fundamentals['Split Factor 1']
+
+        if not np.isnan(fundamentals['Split Factor 2']):
+            tick['ask'] /= fundamentals['Split Factor 2']
+            tick['bid'] /= fundamentals['Split Factor 2']
+            tick['last'] /= fundamentals['Split Factor 2']
+            tick['last_sz'] *= fundamentals['Split Factor 2']
+            tick['tot_vlm'] *= fundamentals['Split Factor 2']
+
+        if not np.isnan(fundamentals['Dividend Amount']):
+            tick['ask'] -= fundamentals['Dividend Amount']
+            tick['bid'] -= fundamentals['Dividend Amount']
+            tick['last'] -= fundamentals['Dividend Amount']
+
+
 class IQFeedDataProvider(object):
     """Streaming data provider generator/iterator interface"""
 
@@ -89,3 +266,4 @@ class IQFeedDataProvider(object):
             if self._is_listening:
                 self._is_listening = False
                 self._producer -= self._populate_queue
+

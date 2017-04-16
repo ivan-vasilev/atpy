@@ -165,7 +165,7 @@ class BarsMonthlyFilter(NamedTuple):
 BarsMonthlyFilter.__new__.__defaults__ = (False, None)
 
 
-class IQFeedHistoryListener(iq.SilentQuoteListener, metaclass=events.GlobalRegister):
+class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
     """
     IQFeed historical data listener. See the unit test on how to use
     """
@@ -201,7 +201,6 @@ class IQFeedHistoryListener(iq.SilentQuoteListener, metaclass=events.GlobalRegis
 
         # streaming conn for fundamental data
         self.streaming_conn = iq.QuoteConn()
-        self.streaming_conn.add_listener(self)
         self.streaming_conn.connect()
 
         self.producer_thread = threading.Thread(target=self.produce, daemon=True)
@@ -217,7 +216,6 @@ class IQFeedHistoryListener(iq.SilentQuoteListener, metaclass=events.GlobalRegis
         self.conn.disconnect()
         self.conn = None
 
-        self.streaming_conn.remove_listener(self)
         self.streaming_conn.disconnect()
         self.streaming_conn = None
 
@@ -227,7 +225,6 @@ class IQFeedHistoryListener(iq.SilentQuoteListener, metaclass=events.GlobalRegis
             self.cfg = None
 
         if self.streaming_conn is not None:
-            self.streaming_conn.remove_listener(self)
             self.streaming_conn.disconnect()
 
     def __getattr__(self, name):
@@ -277,10 +274,10 @@ class IQFeedHistoryListener(iq.SilentQuoteListener, metaclass=events.GlobalRegis
         signals = dict()
 
         for t in f.ticker:
-            fund = Fundamentals.get(t, self.streaming_conn)
             ft = f._replace(ticker=t)
-            d = self._request_data(ft)
-            signals[t] = pd.DataFrame.from_dict(self._process_data(iqfeedutil.create_batch(d, self.key_suffix), ft))
+            data = self._request_data(ft)
+
+            signals[t] = pd.DataFrame.from_dict(self._process_data(iqfeedutil.create_batch(data, self.key_suffix), ft))
 
         col = 'Time Stamp' if 'Time Stamp' in list(signals.values())[0] else 'Date' if 'Date' in list(signals.values())[0] else None
         if col is not None:
@@ -326,18 +323,25 @@ class IQFeedHistoryListener(iq.SilentQuoteListener, metaclass=events.GlobalRegis
         self.current_batch = batch
 
     def _request_data(self, f):
+        adjust_ticks = False
+
         if isinstance(f, TicksFilter):
             method = self.conn.request_ticks
+            adjust = True
         elif isinstance(f, TicksForDaysFilter):
             method = self.conn.request_ticks_for_days
+            adjust = True
         elif isinstance(f, TicksInPeriodFilter):
             method = self.conn.request_ticks_in_period
+            adjust = True
         elif isinstance(f, BarsFilter):
             method = self.conn.request_bars
+            adjust = True
         elif isinstance(f, BarsForDaysFilter):
             method = self.conn.request_bars_for_days
         elif isinstance(f, BarsInPeriodFilter):
             method = self.conn.request_bars_in_period
+            adjust = True
         elif isinstance(f, BarsDailyFilter):
             method = self.conn.request_daily_data
         elif isinstance(f, BarsDailyForDatesFilter):
@@ -354,12 +358,23 @@ class IQFeedHistoryListener(iq.SilentQuoteListener, metaclass=events.GlobalRegis
             if data is None:
                 data = method(*f)
 
+                # if adjust:
+                for d in data:
+                    adjust_bars(d, Fundamentals.get(f.ticker, self.streaming_conn))
+
                 with self.db.begin(write=True) as txn:
                     txn.put(bytearray(f.__str__(), encoding='ascii'), pickle.dumps(data))
             else:
                 data = pickle.loads(data)
         else:
             data = method(*f)
+
+        if adjust:
+            for d in data:
+                if 'open_p' in d.dtype.names: # adjust bars
+                    adjust_bars(d, Fundamentals.get(f.ticker, self.streaming_conn))
+                elif 'ask' in d.dtype.names: # adjust ticks:
+                    adjust_ticks(d, Fundamentals.get(f.ticker, self.streaming_conn))
 
         return data
 
