@@ -378,25 +378,28 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
 
     def _process_ticks_data(self, data, data_filter):
         result = pd.DataFrame(data)
-        result['Time Stamp'] = data['date'] + data['time']
+        sf = self.key_suffix
+        result['Time Stamp' + sf] = data['date'] + data['time']
         result.drop(['date', 'time'], axis=1, inplace=True)
-        result.rename_axis({"last": "Last", "last_sz": "Last Size", "tot_vlm": "Total Volume", "bid": "Bid", "ask": "Ask", "tick_id": "TickID", "last_type": "Basis For Last", "mkt_ctr": "Trade Market Center"}, axis="columns", copy=False, inplace=True)
+        result.rename_axis({"last": "Last" + sf, "last_sz": "Last Size" + sf, "tot_vlm": "Total Volume" + sf, "bid": "Bid" + sf, "ask": "Ask" + sf, "tick_id": "TickID" + sf, "last_type": "Basis For Last" + sf, "mkt_ctr": "Trade Market Center" + sf}, axis="columns", copy=False, inplace=True)
         result['Symbol'] = data_filter.ticker
 
         return result
 
     def _process_bars_data(self, data, data_filter):
         result = pd.DataFrame(data)
-        result['Time Stamp'] = data['date'] + data['time']
+        sf = self.key_suffix
+        result['Time Stamp' + sf] = data['date'] + data['time']
         result.drop(['date', 'time'], axis=1, inplace=True)
-        result.rename_axis({"high_p": "High", "low_p": "Low", "open_p": "Open", "close_p": "Close", "tot_vlm": "Total Volume", "prd_vlm": "Period Volume", "num_trds": "Number of Trades"}, axis="columns", copy=False, inplace=True)
+        result.rename_axis({"high_p": "High" + sf, "low_p": "Low" + sf, "open_p": "Open" + sf, "close_p": "Close" + sf, "tot_vlm": "Total Volume" + sf, "prd_vlm": "Period Volume" + sf, "num_trds": "Number of Trades" + sf}, axis="columns", copy=False, inplace=True)
         result['Symbol'] = data_filter.ticker
 
         return result
 
     def _process_daily_data(self, data, data_filter):
         result = pd.DataFrame(data)
-        result.rename_axis({"date": "Date", "high_p": "High", "low_p": "Low", "open_p": "Open", "close_p": "Close", "prd_vlm": "Period Volume", "open_int": "Open Interest"}, axis="columns", copy=False, inplace=True)
+        sf = self.key_suffix
+        result.rename_axis({"date": "Date" + sf, "high_p": "High" + sf, "low_p": "Low" + sf, "open_p": "Open" + sf, "close_p": "Close" + sf, "prd_vlm": "Period Volume" + sf, "open_int": "Open Interest" + sf}, axis="columns", copy=False, inplace=True)
         result['Symbol'] = data_filter.ticker
 
         return result

@@ -26,26 +26,12 @@ class TestIQFeedLevel1(unittest.TestCase):
 
             listener.on_fundamentals += on_fund_item
 
-            e2 = threading.Event()
-
-            def on_fund_mb(event):
-                try:
-                    fund_item = event['data']
-                    self.assertEqual(fund_item.shape, (2, 50))
-                    l = list(fund_item['Symbol'])
-                    self.assertTrue('SPY' in l or 'AAPL' in l or 'IBM' in l or 'GOOG' in l or 'MSFT' in l)
-                finally:
-                    e2.set()
-
-            listener.on_fundamentals_mb += on_fund_mb
-
             e1.wait()
-            e2.wait()
 
             for i, fund_item in enumerate(provider):
-                self.assertEqual(fund_item.shape, (2, 50))
-                l = list(fund_item['Symbol'])
-                self.assertTrue('SPY' in l or 'AAPL' in l or 'IBM' in l or 'GOOG' in l or 'MSFT' in l)
+                self.assertEqual(len(fund_item), 50)
+                s = fund_item['Symbol']
+                self.assertTrue('SPY' == s or 'AAPL' == s or 'IBM' == s or 'GOOG' == s or 'MSFT' == s)
 
                 if i == 1:
                     break
@@ -68,26 +54,12 @@ class TestIQFeedLevel1(unittest.TestCase):
 
             listener.on_summary += on_summary_item
 
-            e2 = threading.Event()
-
-            def on_summary_mb(event):
-                try:
-                    summary_item = event['data']
-                    self.assertEqual(summary_item.shape, (2, 16))
-                    l = list(summary_item['Symbol'])
-                    self.assertTrue('SPY' in l or 'AAPL' in l or 'IBM' in l or 'GOOG' in l or 'MSFT' in l)
-                finally:
-                    e2.set()
-
-            listener.on_summary_mb += on_summary_mb
-
             e1.wait()
-            e2.wait()
 
             for i, summary_item in enumerate(data_provider):
-                self.assertEqual(summary_item.shape, (2, 16))
-                l = list(summary_item['Symbol'])
-                self.assertTrue('SPY' in l or 'AAPL' in l or 'IBM' in l or 'GOOG' in l or 'MSFT' in l)
+                self.assertEqual(len(summary_item), 16)
+                s = summary_item['Symbol']
+                self.assertTrue('SPY' == s or 'AAPL' == s or 'IBM' == s or 'GOOG' == s or 'MSFT' == s)
 
                 if i == 1:
                     break

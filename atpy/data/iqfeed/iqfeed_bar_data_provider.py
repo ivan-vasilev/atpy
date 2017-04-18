@@ -1,5 +1,3 @@
-import collections
-
 import pyevents.events as events
 from atpy.data.iqfeed.util import *
 from atpy.data.iqfeed.iqfeed_level_1_provider import Fundamentals
@@ -64,28 +62,34 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
             self.on_latest_bar_update(self._process_data(iqfeed_to_dict(np.copy(bar_data), key_suffix=self.key_suffix)))
 
     def process_live_bar(self, bar_data: np.array) -> None:
-        self._on_bar(np.copy(bar_data))
+        self._on_bar(np.copy(bar_data)[0])
+        if self.fire_bars:
+            self.on_bar(self._process_data(iqfeed_to_dict(bar_data, key_suffix=self.key_suffix)))
 
     def process_history_bar(self, bar_data: np.array) -> None:
         bar_data = np.copy(bar_data)
         bd = bar_data[0] if len(bar_data) == 1 else bar_data
         adjust(bd, Fundamentals.get(bd['symbol'].decode('ascii'), self.streaming_conn))
-        self._on_bar(bar_data)
 
-    def _on_bar(self, bar_data):
         if self.fire_bars:
             self.on_bar(self._process_data(iqfeed_to_dict(bar_data, key_suffix=self.key_suffix)))
 
+        self._on_bar(bd)
+
+    def _on_bar(self, bar_data):
         if self.minibatch is not None:
             if self.current_batch is None:
-                self.current_batch = list()
+                self.current_batch = np.empty((self.minibatch,), iq.BarConn.interval_data_type)
+                self._current_mb_index = 0
 
-            self.current_batch.append(bar_data)
+            self.current_batch[self._current_mb_index] = bar_data
+            self._current_mb_index += 1
 
-            if len(self.current_batch) == self.minibatch:
-                bar_dataframe = pd.DataFrame.from_dict(self._process_data(create_batch(self.current_batch, self.key_suffix)))
+            if self._current_mb_index == self.minibatch:
+                bar_dataframe = self._process_data(self.current_batch)
                 self.on_bar_batch(bar_dataframe)
                 self.current_batch = None
+                self._current_mb_index = None
 
     def _process_data(self, data):
         if isinstance(data, dict):
@@ -100,10 +104,13 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
             result['Total Volume'] = data.pop('tot_vlm')
             result['Period Volume'] = data.pop('prd_vlm')
             result['Number of Trades'] = data.pop('num_trds')
-        elif isinstance(data, collections.Iterable):
-            result = list()
-            for d in data:
-                result.append(self._process_data(d))
+        else:
+            result = pd.DataFrame(data)
+            result['symbol'] = result['symbol'].str.decode('ascii')
+            sf = self.key_suffix
+            result['Time Stamp' + sf] = data['date'] + data['time']
+            result.drop(['date', 'time'], axis=1, inplace=True)
+            result.rename_axis({"symbol": "Symbol" + sf, "high_p": "High" + sf, "low_p": "Low" + sf, "open_p": "Open" + sf, "close_p": "Close" + sf, "tot_vlm": "Total Volume" + sf, "prd_vlm": "Period Volume" + sf, "num_trds": "Number of Trades" + sf}, axis="columns", copy=False, inplace=True)
 
         return result
 

@@ -18,9 +18,8 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener, metaclass=events.GlobalRegist
 
         self.current_fund_mb = list()
         self.current_news_mb = list()
-        self.current_regional_mb = list()
-        self.current_summary_mb = list()
-        self.current_update_mb = list()
+        self.current_regional_mb = None
+        self.current_update_mb = None
 
     def __enter__(self):
         launch_service()
@@ -68,8 +67,6 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener, metaclass=events.GlobalRegist
             self.watched_symbols.remove(bad_symbol)
 
     def process_news(self, news_item: iq.QuoteConn.NewsMsg):
-        super().process_news(news_item)
-
         news_item = news_item._asdict()
 
         self.on_news(news_item)
@@ -99,21 +96,26 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener, metaclass=events.GlobalRegist
 
     def process_watched_symbols(self, symbols: Sequence[str]) -> None:
         """List of all watched symbols when requested."""
-        super().process_watched_symbols(symbols)
-
         self.watched_symbols = symbols
 
     def process_regional_quote(self, quote: np.array):
-        super().process_regional_quote(quote)
-
         if self.fire_ticks:
             self.on_regional_quote(iqfeed_to_dict(quote, self.key_suffix))
 
         if self.minibatch is not None:
-            self.current_regional_mb.append(quote)
+            if self.current_regional_mb is None:
+                self.current_regional_mb = np.empty((self.minibatch,), dtype=self.conn.regional_type)
+                self._current_regional_mb_index = 0
+
+            self.current_regional_mb[self._current_regional_mb_index] = quote
+            self._current_regional_mb_index += 1
+
             if len(self.current_regional_mb) == self.minibatch:
-                self.on_regional_mb(pd.DataFrame.from_dict(create_batch(self.current_regional_mb, self.key_suffix)))
-                self.current_regional_mb = list()
+                mb = pd.DataFrame(self.current_regional_mb)
+                mb['Symbol'] = mb['Symbol'].str.decode('ascii')
+                self.on_regional_quote_mb(mb)
+
+                self._current_regional_mb_index = None
 
     @events.after
     def on_regional_quote(self, quote):
@@ -127,39 +129,33 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener, metaclass=events.GlobalRegist
         return IQFeedDataProvider(self.on_regional_quote_mb)
 
     def process_summary(self, summary: np.array):
-        super().process_summary(summary)
-
         if self.fire_ticks:
             self.on_summary(iqfeed_to_dict(summary, self.key_suffix))
-
-        if self.minibatch is not None:
-            self.current_summary_mb.append(summary)
-            if len(self.current_summary_mb) == self.minibatch:
-                self.on_summary_mb(pd.DataFrame.from_dict(create_batch(self.current_summary_mb, self.key_suffix)))
-                self.current_summary_mb = list()
 
     @events.after
     def on_summary(self, summary):
         return {'type': 'level_1_tick', 'data': summary}
 
-    @events.after
-    def on_summary_mb(self, summary_list):
-        return {'type': 'level_1_tick_batch', 'data': summary_list}
-
     def summary_provider(self):
-        return IQFeedDataProvider(self.on_summary_mb)
+        return IQFeedDataProvider(self.on_summary)
 
     def process_update(self, update: np.array):
-        super().process_update(update)
-
         if self.fire_ticks:
             self.on_update(iqfeed_to_dict(update, self.key_suffix))
 
         if self.minibatch is not None:
-            self.current_update_mb.append(update)
+            if self.current_update_mb is None:
+                self.current_update_mb = np.empty((self.minibatch,), dtype=self.conn._update_dtype)
+                self._current_update_mb_index = 0
+
+            self.current_update_mb[self._current_update_mb_index] = update
+            self._current_update_mb_index += 1
+
             if len(self.current_update_mb) == self.minibatch:
-                self.on_update_mb(pd.DataFrame.from_dict(create_batch(self.current_update_mb, self.key_suffix)))
-                self.current_update_mb = list()
+                mb = pd.DataFrame(self.current_update_mb)
+                mb['Symbol'] = mb['Symbol'].str.decode('ascii')
+                self.on_update_mb(mb)
+                self.current_update_mb = None
 
     @events.after
     def on_update(self, update):
@@ -173,30 +169,18 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener, metaclass=events.GlobalRegist
         return IQFeedDataProvider(self.on_update_mb)
 
     def process_fundamentals(self, fund: np.array):
-        super().process_fundamentals(fund)
-
         f = iqfeed_to_dict(fund, self.key_suffix)
 
         Fundamentals.fundamentals[f['Symbol']] = f
 
         self.on_fundamentals(f)
 
-        if self.minibatch is not None:
-            self.current_fund_mb.append(fund)
-            if len(self.current_fund_mb) == self.minibatch:
-                self.on_fundamentals_mb(pd.DataFrame.from_dict(create_batch(self.current_fund_mb, self.key_suffix)))
-                self.current_fund_mb = list()
-
     @events.after
     def on_fundamentals(self, fund: np.array):
         return {'type': 'level_1_fundamentals', 'data': fund}
 
-    @events.after
-    def on_fundamentals_mb(self, fund_list):
-        return {'type': 'level_1_fundamental_batch', 'data': fund_list}
-
     def fundamentals_provider(self):
-        return IQFeedDataProvider(self.on_fundamentals_mb)
+        return IQFeedDataProvider(self.on_fundamentals)
 
 
 class Fundamentals(iq.SilentQuoteListener):
