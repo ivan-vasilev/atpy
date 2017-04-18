@@ -19,6 +19,7 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
         self.conn = None
         self.key_suffix = key_suffix
         self.current_batch = None
+        self.watched_symbols = set()
 
     def __enter__(self):
         launch_service()
@@ -75,6 +76,17 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
             self.on_bar(self._process_data(iqfeed_to_dict(bar_data, key_suffix=self.key_suffix)))
 
         self._on_bar(bd)
+
+    @events.listener
+    def on_event(self, event):
+        if event['type'] == 'watch_symbol':
+            if event['data'] not in self.watched_symbols:
+                self.conn.watch(event['data'])
+                self.watched_symbols.add(event['data'])
+
+    def process_invalid_symbol(self, bad_symbol: str) -> None:
+        if bad_symbol in self.watched_symbols and bad_symbol in self.watched_symbols:
+            self.watched_symbols.remove(bad_symbol)
 
     def _on_bar(self, bar_data):
         if self.minibatch is not None:
