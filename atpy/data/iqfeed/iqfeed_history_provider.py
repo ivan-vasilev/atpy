@@ -245,8 +245,7 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
 
     def _produce_signal(self, f):
         data = self._request_data(f)
-
-        batch = pd.DataFrame.from_dict(self._process_data(iqfeedutil.create_batch(data, self.key_suffix), f))
+        batch = self._process_data(data, f)
 
         event_type = self._event_type(f)
 
@@ -276,8 +275,7 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
         for t in f.ticker:
             ft = f._replace(ticker=t)
             data = self._request_data(ft)
-
-            signals[t] = pd.DataFrame.from_dict(self._process_data(iqfeedutil.create_batch(data, self.key_suffix), ft))
+            signals[t] = self._process_data(data, ft)
 
         col = 'Time Stamp' if 'Time Stamp' in list(signals.values())[0] else 'Date' if 'Date' in list(signals.values())[0] else None
         if col is not None:
@@ -323,25 +321,25 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
         self.current_batch = batch
 
     def _request_data(self, f):
-        adjust_ticks = False
+        adjust_data = False
 
         if isinstance(f, TicksFilter):
             method = self.conn.request_ticks
-            adjust = True
+            adjust_data = True
         elif isinstance(f, TicksForDaysFilter):
             method = self.conn.request_ticks_for_days
-            adjust = True
+            adjust_data = True
         elif isinstance(f, TicksInPeriodFilter):
             method = self.conn.request_ticks_in_period
-            adjust = True
+            adjust_data = True
         elif isinstance(f, BarsFilter):
             method = self.conn.request_bars
-            adjust = True
+            adjust_data = True
         elif isinstance(f, BarsForDaysFilter):
             method = self.conn.request_bars_for_days
         elif isinstance(f, BarsInPeriodFilter):
             method = self.conn.request_bars_in_period
-            adjust = True
+            adjust_data = True
         elif isinstance(f, BarsDailyFilter):
             method = self.conn.request_daily_data
         elif isinstance(f, BarsDailyForDatesFilter):
@@ -358,10 +356,6 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
             if data is None:
                 data = method(*f)
 
-                # if adjust:
-                for d in data:
-                    adjust_bars(d, Fundamentals.get(f.ticker, self.streaming_conn))
-
                 with self.db.begin(write=True) as txn:
                     txn.put(bytearray(f.__str__(), encoding='ascii'), pickle.dumps(data))
             else:
@@ -369,12 +363,8 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
         else:
             data = method(*f)
 
-        if adjust:
-            for d in data:
-                if 'open_p' in d.dtype.names: # adjust bars
-                    adjust_bars(d, Fundamentals.get(f.ticker, self.streaming_conn))
-                elif 'ask' in d.dtype.names: # adjust ticks:
-                    adjust_ticks(d, Fundamentals.get(f.ticker, self.streaming_conn))
+        if adjust_data:
+            adjust(data, Fundamentals.get(f.ticker, self.streaming_conn))
 
         return data
 
@@ -387,78 +377,27 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
             return self._process_daily_data(data, data_filter)
 
     def _process_ticks_data(self, data, data_filter):
-        if isinstance(data, dict):
-            result = dict()
-
-            result['Time Stamp'] = data.pop('date') + data.pop('time')
-            result['Last'] = data.pop('last')
-            result['Last Size'] = data.pop('last_sz')
-            result['Total Volume'] = data.pop('tot_vlm')
-            result['Bid'] = data.pop('bid')
-            result['Ask'] = data.pop('ask')
-            result['TickID'] = data.pop('tick_id')
-            result['Basis For Last'] = data.pop('last_type')
-            result['Trade Market Center'] = data.pop('mkt_ctr')
-            result['cond1'] = data.pop('cond1')
-            result['cond2'] = data.pop('cond2')
-            result['cond3'] = data.pop('cond3')
-            result['cond4'] = data.pop('cond4')
-
-            if isinstance(result['Time Stamp'], collections.Iterable):
-                result['Symbol'] = [data_filter.ticker] * len(result['Time Stamp'])
-            else:
-                result['Symbol'] = data_filter.ticker
-        elif isinstance(data, collections.Iterable):
-            result = list()
-            for d in data:
-                result.append(self._process_ticks_data(d, data_filter))
+        result = pd.DataFrame(data)
+        result['Time Stamp'] = data['date'] + data['time']
+        result.drop(['date', 'time'], axis=1, inplace=True)
+        result.rename_axis({"last": "Last", "last_sz": "Last Size", "tot_vlm": "Total Volume", "bid": "Bid", "ask": "Ask", "tick_id": "TickID", "last_type": "Basis For Last", "mkt_ctr": "Trade Market Center"}, axis="columns", copy=False, inplace=True)
+        result['Symbol'] = data_filter.ticker
 
         return result
 
     def _process_bars_data(self, data, data_filter):
-        if isinstance(data, dict):
-            result = dict()
-
-            result['Time Stamp'] = data.pop('date') + data.pop('time')
-            result['High'] = data.pop('high_p')
-            result['Low'] = data.pop('low_p')
-            result['Open'] = data.pop('open_p')
-            result['Close'] = data.pop('close_p')
-            result['Total Volume'] = data.pop('tot_vlm')
-            result['Period Volume'] = data.pop('prd_vlm')
-            result['Number of Trades'] = data.pop('num_trds')
-
-            if isinstance(result['Time Stamp'], collections.Iterable):
-                result['Symbol'] = [data_filter.ticker] * len(result['Time Stamp'])
-            else:
-                result['Symbol'] = data_filter.ticker
-        elif isinstance(data, collections.Iterable):
-            result = list()
-            for d in data:
-                result.append(self._process_bars_data(d, data_filter))
+        result = pd.DataFrame(data)
+        result['Time Stamp'] = data['date'] + data['time']
+        result.drop(['date', 'time'], axis=1, inplace=True)
+        result.rename_axis({"high_p": "High", "low_p": "Low", "open_p": "Open", "close_p": "Close", "tot_vlm": "Total Volume", "prd_vlm": "Period Volume", "num_trds": "Number of Trades"}, axis="columns", copy=False, inplace=True)
+        result['Symbol'] = data_filter.ticker
 
         return result
 
     def _process_daily_data(self, data, data_filter):
-        if isinstance(data, dict):
-            result = dict()
-
-            result['Date'] = data.pop('date')
-            result['High'] = data.pop('high_p')
-            result['Low'] = data.pop('low_p')
-            result['Open'] = data.pop('open_p')
-            result['Close'] = data.pop('close_p')
-            result['Period Volume'] = data.pop('prd_vlm')
-            result['Open Interest'] = data.pop('open_int')
-
-            if isinstance(result['Date'], collections.Iterable):
-                result['Symbol'] = [data_filter.ticker] * len(result['Date'])
-            else:
-                result['Symbol'] = data_filter.ticker
-        elif isinstance(data, collections.Iterable):
-            result = list()
-            for d in data:
-                result.append(self._process_daily_data(d, data_filter))
+        result = pd.DataFrame(data)
+        result.rename_axis({"date": "Date", "high_p": "High", "low_p": "Low", "open_p": "Open", "close_p": "Close", "prd_vlm": "Period Volume", "open_int": "Open Interest"}, axis="columns", copy=False, inplace=True)
+        result['Symbol'] = data_filter.ticker
 
         return result
 

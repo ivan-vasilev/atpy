@@ -69,7 +69,7 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
     def process_history_bar(self, bar_data: np.array) -> None:
         bar_data = np.copy(bar_data)
         bd = bar_data[0] if len(bar_data) == 1 else bar_data
-        adjust_bars(bd, Fundamentals.get(bd['symbol'].decode('ascii'), self.streaming_conn))
+        adjust(bd, Fundamentals.get(bd['symbol'].decode('ascii'), self.streaming_conn))
         self._on_bar(bar_data)
 
     def _on_bar(self, bar_data):

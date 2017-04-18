@@ -126,12 +126,12 @@ class TestIQFeedHistory(unittest.TestCase):
 
             e1 = threading.Event()
 
-            def process_tick(event):
+            def process_bar(event):
                 data = event['data']
                 self.assertEqual(len(list(data.keys())), 9)
                 e1.set()
 
-            listener.process_datum += process_tick
+            listener.process_datum += process_bar
 
             e2 = threading.Event()
 
@@ -169,14 +169,14 @@ class TestIQFeedHistory(unittest.TestCase):
 
             e1 = threading.Event()
 
-            def process_tick(event):
+            def process_bar(event):
                 data = event['data']
                 self.assertEqual(len(list(data.keys())), 2)
                 self.assertEqual(len(list(data['IBM'].keys())), 8)
                 self.assertEqual(len(list(data['AAPL'].keys())), 8)
                 e1.set()
 
-            listener.process_datum += process_tick
+            listener.process_datum += process_bar
 
             e2 = threading.Event()
 
@@ -226,14 +226,14 @@ class TestIQFeedHistory(unittest.TestCase):
 
                 e1 = threading.Event()
 
-                def process_tick(event):
+                def process_bar(event):
                     data = event['data']
                     self.assertEqual(len(list(data.keys())), 2)
                     self.assertEqual(len(list(data['IBM'].keys())), 9)
                     self.assertEqual(len(list(data['AAPL'].keys())), 9)
                     e1.set()
 
-                listener.process_datum += process_tick
+                listener.process_datum += process_bar
 
                 e2 = threading.Event()
 
@@ -272,6 +272,34 @@ class TestIQFeedHistory(unittest.TestCase):
 
             e2.wait()
             e3.wait()
+        finally:
+            shutil.rmtree('/tmp/test_history_provider_test_bars_row_mode')
+
+    def test_bar_adjust(self):
+        filter_provider = DefaultFilterProvider()
+        filter_provider += BarsInPeriodFilter(ticker="PLUS", bgn_prd=datetime.datetime(2017, 3, 31), end_prd=datetime.datetime(2017, 4, 5), interval_len=3600, ascend=True, interval_type='s', max_ticks=100)
+
+        try:
+            with IQFeedHistoryListener(fire_batches=True, fire_ticks=True, filter_provider=filter_provider, lmdb_path='/tmp/test_history_provider_test_bars_row_mode') as listener, listener.batch_provider() as provider:
+                e1 = threading.Event()
+
+                def process_bar(event):
+                    try:
+                        self.assertLess(event['data']['Open'], 68)
+                        self.assertGreater(event['data']['Open'], 65)
+                    finally:
+                        e1.set()
+
+                listener.process_datum += process_bar
+
+                e1.wait()
+
+                for i, d in enumerate(provider):
+                    self.assertLess(d['Open'].max(), 68)
+                    self.assertGreater(d['Open'].min(), 65)
+
+                    if i == 1:
+                        break
         finally:
             shutil.rmtree('/tmp/test_history_provider_test_bars_row_mode')
 
