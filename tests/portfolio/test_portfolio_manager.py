@@ -186,7 +186,7 @@ class TestPortfolioManager(unittest.TestCase):
         filter_provider += TicksFilter(ticker="GOOG", max_ticks=1)
         filter_provider += TicksFilter(ticker="AAPL", max_ticks=1)
 
-        with IQFeedHistoryListener(fire_ticks=True, filter_provider=filter_provider, column_mode=True):
+        with IQFeedHistoryListener(fire_ticks=True, filter_provider=filter_provider):
             pm = PortfolioManager(10000)
 
             # order 1
@@ -307,7 +307,7 @@ class TestPortfolioManager(unittest.TestCase):
         filter_provider += TicksFilter(ticker="AAPL", max_ticks=1)
         filter_provider += TicksFilter(ticker="IBM", max_ticks=1)
 
-        with IQFeedHistoryListener(fire_ticks=True, filter_provider=filter_provider, column_mode=True):
+        with IQFeedHistoryListener(fire_ticks=True, filter_provider=filter_provider):
             e1.wait()
             e2.wait()
             e3.wait()
@@ -358,7 +358,7 @@ class TestPortfolioManager(unittest.TestCase):
         filter_provider += BarsFilter(ticker="AAPL", interval_len=60, interval_type='s', max_bars=20)
         filter_provider += BarsFilter(ticker="IBM", interval_len=60, interval_type='s', max_bars=20)
 
-        with IQFeedHistoryListener(fire_ticks=True, filter_provider=filter_provider, column_mode=True):
+        with IQFeedHistoryListener(fire_ticks=True, filter_provider=filter_provider):
             e1.wait()
             e2.wait()
             e3.wait()

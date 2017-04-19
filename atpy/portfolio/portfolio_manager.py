@@ -31,7 +31,7 @@ class PortfolioManager(object, metaclass=events.GlobalRegister):
 
             self.orders.append(order)
 
-            return events.CompositeEvent([{'type': 'watch_symbol', 'data': order.symbol}, {'type': 'portfolio_update', 'data': self}])
+            return events.CompositeEvent([{'type': 'watch_ticks', 'data': order.symbol}, {'type': 'portfolio_update', 'data': self}])
 
     @property
     def symbols(self):

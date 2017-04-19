@@ -79,7 +79,7 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
 
     @events.listener
     def on_event(self, event):
-        if event['type'] == 'watch_symbol':
+        if event['type'] == 'watch_bars':
             if event['data'] not in self.watched_symbols:
                 self.conn.watch(event['data'])
                 self.watched_symbols.add(event['data'])
@@ -107,15 +107,17 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
         if isinstance(data, dict):
             result = dict()
 
-            result['Symbol'] = data.pop('symbol')
-            result['Time Stamp'] = data.pop('date') + data.pop('time')
-            result['High'] = data.pop('high_p')
-            result['Low'] = data.pop('low_p')
-            result['Open'] = data.pop('open_p')
-            result['Close'] = data.pop('close_p')
-            result['Total Volume'] = data.pop('tot_vlm')
-            result['Period Volume'] = data.pop('prd_vlm')
-            result['Number of Trades'] = data.pop('num_trds')
+            sf = self.key_suffix
+
+            result['Symbol' + sf] = data.pop('symbol')
+            result['Time Stamp' + sf] = data.pop('date') + data.pop('time')
+            result['High' + sf] = data.pop('high_p')
+            result['Low' + sf] = data.pop('low_p')
+            result['Open' + sf] = data.pop('open_p')
+            result['Close' + sf] = data.pop('close_p')
+            result['Total Volume' + sf] = data.pop('tot_vlm')
+            result['Period Volume' + sf] = data.pop('prd_vlm')
+            result['Number of Trades' + sf] = data.pop('num_trds')
         else:
             result = pd.DataFrame(data)
             result['symbol'] = result['symbol'].str.decode('ascii')

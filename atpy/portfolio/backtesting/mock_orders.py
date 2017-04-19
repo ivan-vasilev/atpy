@@ -6,15 +6,16 @@ import atpy.portfolio.order as orders
 
 class MockOrders(object, metaclass=events.GlobalRegister):
 
-    def __init__(self):
+    def __init__(self, watch_event='watch_ticks'):
         self._pending_orders = list()
         self._lock = threading.RLock()
+        self._watch_event = watch_event
 
     @events.after
     def process_order_request(self, order):
         with self._lock:
             self._pending_orders.append(order)
-            return {'type': 'watch_symbol', 'data': order.symbol}
+            return {'type': self._watch_event, 'data': order.symbol}
 
     @events.after
     def order_fulfilled(self, order):

@@ -51,7 +51,7 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener, metaclass=events.GlobalRegist
 
     @events.listener
     def on_event(self, event):
-        if event['type'] == 'watch_symbol':
+        if event['type'] == 'watch_ticks':
             if event['data'] not in self.watched_symbols:
                 self.conn.watch(event['data'])
                 self.watched_symbols.add(event['data'])

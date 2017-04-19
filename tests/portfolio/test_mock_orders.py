@@ -18,7 +18,7 @@ class TestMockOrders(unittest.TestCase):
     def test_market_order(self):
         events.use_global_event_bus()
 
-        with IQFeedLevel1Listener(column_mode=True):
+        with IQFeedLevel1Listener():
             mock_orders = MockOrders()
 
             e1 = threading.Event()
@@ -81,7 +81,7 @@ class TestMockOrders(unittest.TestCase):
         filter_provider += TicksFilter(ticker="AAPL", max_ticks=1)
         filter_provider += TicksFilter(ticker="IBM", max_ticks=1)
 
-        with IQFeedHistoryListener(fire_ticks=True, filter_provider=filter_provider, column_mode=True):
+        with IQFeedHistoryListener(fire_ticks=True, filter_provider=filter_provider):
             e3.wait()
             e1.wait()
             e2.wait()
@@ -101,8 +101,8 @@ class TestMockOrders(unittest.TestCase):
     def test_bar_market_order(self):
         events.use_global_event_bus()
 
-        with IQFeedBarDataListener(minibatch=2, column_mode=True) as listener:
-            mock_orders = MockOrders()
+        with IQFeedBarDataListener(minibatch=2) as listener:
+            mock_orders = MockOrders(watch_event='watch_bars')
 
             e1 = threading.Event()
             events.listener(lambda x: e1.set() if x['type'] == 'order_fulfilled' and x['data'].symbol == 'GOOG' else None)
@@ -168,7 +168,7 @@ class TestMockOrders(unittest.TestCase):
         filter_provider += BarsFilter(ticker="AAPL", interval_len=60, interval_type='s', max_bars=20)
         filter_provider += BarsFilter(ticker="IBM", interval_len=60, interval_type='s', max_bars=20)
 
-        with IQFeedHistoryListener(fire_ticks=True, filter_provider=filter_provider, column_mode=True):
+        with IQFeedHistoryListener(fire_ticks=True, filter_provider=filter_provider):
             e3.wait()
             e1.wait()
             e2.wait()
@@ -188,7 +188,7 @@ class TestMockOrders(unittest.TestCase):
     def test_limit_order(self):
         events.use_global_event_bus()
 
-        with IQFeedLevel1Listener(column_mode=True):
+        with IQFeedLevel1Listener():
             mock_orders = MockOrders()
 
             e1 = threading.Event()
@@ -228,7 +228,7 @@ class TestMockOrders(unittest.TestCase):
     def test_stop_market_order(self):
         events.use_global_event_bus()
 
-        with IQFeedLevel1Listener(column_mode=True):
+        with IQFeedLevel1Listener():
             mock_orders = MockOrders()
 
             e1 = threading.Event()
@@ -268,7 +268,7 @@ class TestMockOrders(unittest.TestCase):
     def test_stop_limit_order(self):
         events.use_global_event_bus()
 
-        with IQFeedLevel1Listener(column_mode=True):
+        with IQFeedLevel1Listener():
             mock_orders = MockOrders()
 
             e1 = threading.Event()
