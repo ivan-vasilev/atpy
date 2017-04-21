@@ -7,18 +7,17 @@ import threading
 
 class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegister):
 
-    def __init__(self, fire_bars=True, minibatch=None, mkt_snapshot_mb=None, key_suffix=''):
+    def __init__(self, fire_bars=True, minibatch=None, mkt_snapshot_minibatch=None, key_suffix=''):
         """
         :param fire_bars: raise event for each individual bar if True
         :param minibatch: size of the minibatch
-        :param mkt_snapshot_mb: fire events, containing latest prices 
+        :param mkt_snapshot_minibatch: fire events, containing latest prices 
         :param key_suffix: suffix to the fieldnames
         """
         super().__init__(name="Bar data listener")
 
         self.fire_bars = fire_bars
         self.minibatch = minibatch
-        self.mkt_snapshot_mb = mkt_snapshot_mb
         self._current_mkt_snapshot = dict()
         self.key_suffix = key_suffix
         self.conn = None
@@ -26,6 +25,12 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
         self.current_batch = None
         self.watched_symbols = set()
         self._lock = threading.RLock()
+
+        self.mkt_snapshot_minibatch = mkt_snapshot_minibatch
+
+        if mkt_snapshot_minibatch is not None:
+            self._unique_bars = set()
+            self._mb_mkt_snapshot = dict()
 
     def __enter__(self):
         launch_service()
@@ -81,8 +86,6 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
     def process_live_bar(self, bar_data: np.array) -> None:
         bd = np.copy(bar_data)[0]
 
-        self._current_mkt_snapshot[bd['symbol']] = bd
-
         self._on_bar(bd)
 
         if self.fire_bars:
@@ -92,8 +95,6 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
         bar_data = np.copy(bar_data)
         bd = bar_data[0] if len(bar_data) == 1 else bar_data
         adjust(bd, Fundamentals.get(bd['symbol'].decode('ascii'), self.streaming_conn))
-
-        self._current_mkt_snapshot[bd['symbol'].decode('ascii')] = bd
 
         if self.fire_bars:
             self.on_bar(self._process_data(iqfeed_to_dict(bar_data, key_suffix=self.key_suffix)))
@@ -130,6 +131,8 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
         return bar_dataframe
 
     def _on_bar(self, bar_data):
+        self._current_mkt_snapshot[bar_data['symbol']] = bar_data
+
         if self.minibatch is not None:
             with self._lock:
                 if self.current_batch is None:
@@ -145,8 +148,32 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
                     self.current_batch = None
                     self._current_mb_index = None
 
-        if self.mkt_snapshot_mb is not None:
-            pass
+        if self.mkt_snapshot_minibatch is not None:
+            with self._lock:
+                self._unique_bars.add(bar_data['date'] + bar_data['time'])
+                symbol = bar_data['symbol'].decode('ascii')
+                if symbol not in self._mb_mkt_snapshot:
+                    self._mb_mkt_snapshot[symbol] = list()
+
+                self._mb_mkt_snapshot[symbol].append(bar_data)
+
+                if len(self._unique_bars) == self.mkt_snapshot_minibatch:
+                    ts = pd.Series(data=list(self._unique_bars), name='Time Stamp' + self.key_suffix)
+                    ts.sort_values(inplace=True)
+                    ts = ts.to_frame()
+
+                    for symbol, signal in self._mb_mkt_snapshot.items():
+                        df = self._process_data(np.array(self._mb_mkt_snapshot[symbol], dtype=iq.BarConn.interval_data_type))
+                        df = pd.merge_ordered(df, ts, on='Time Stamp', how='outer', fill_method='ffill')
+                        df.fillna(method='backfill', inplace=True)
+
+                        self._mb_mkt_snapshot[symbol] = df
+
+                    batch = pd.Panel.from_dict(self._mb_mkt_snapshot)
+                    self.on_mb_market_snapshot(batch)
+
+                    self._mb_mkt_snapshot = dict()
+                    self._unique_bars = set()
 
     def _process_data(self, data):
         if isinstance(data, dict):
@@ -194,3 +221,7 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
     @events.after
     def on_market_snapshot(self, snapshot):
         return {'type': 'bar_market_snapshot', 'data': snapshot}
+
+    @events.after
+    def on_mb_market_snapshot(self, snapshot):
+        return {'type': 'mb_bar_market_snapshot', 'data': snapshot}
