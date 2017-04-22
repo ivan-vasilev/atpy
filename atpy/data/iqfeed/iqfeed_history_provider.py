@@ -1,15 +1,15 @@
 import datetime
 import pickle
+import typing
 
 import lmdb
 
 import atpy.data.iqfeed.util as iqfeedutil
 import pyevents.events as events
+import pyiqfeed
 from atpy.data.iqfeed.filters import *
-from atpy.data.iqfeed.util import *
-import typing
-import pandas as pd
 from atpy.data.iqfeed.iqfeed_level_1_provider import Fundamentals
+from atpy.data.iqfeed.util import *
 
 
 class TicksFilter(NamedTuple):
@@ -234,16 +234,22 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
 
     def produce(self):
         for f in self.filter_provider:
-            if isinstance(f.ticker, str):
-                self._produce_signal(f)
-            elif isinstance(f.ticker, list):
-                self._produce_signals(f)
+            if f is not None:
+                if isinstance(f.ticker, str):
+                    self._produce_signal(f)
+                elif isinstance(f.ticker, list):
+                    self._produce_signals(f)
+            else:
+                self.is_running = False
 
             if not self.is_running:
                 return
 
     def _produce_signal(self, f):
         data = self._request_data(f)
+        if data is None:
+            return
+
         batch = self._process_data(data, f)
 
         event_type = self._event_type(f)
@@ -274,50 +280,52 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
         for t in f.ticker:
             ft = f._replace(ticker=t)
             data = self._request_data(ft)
-            signals[t] = self._process_data(data, ft)
+            if data is not None:
+                signals[t] = self._process_data(data, ft)
 
-        col = 'Time Stamp' if 'Time Stamp' in list(signals.values())[0] else 'Date' if 'Date' in list(signals.values())[0] else None
-        if col is not None:
-            ts = pd.Series(name=col)
-            for _, s in signals.items():
-                s.drop_duplicates(subset=col, keep='last', inplace=True)
-                ts = ts.append(s[col])
+        if len(signals) > 0:
+            col = 'Time Stamp' if 'Time Stamp' in list(signals.values())[0] else 'Date' if 'Date' in list(signals.values())[0] else None
+            if col is not None:
+                ts = pd.Series(name=col)
+                for _, s in signals.items():
+                    s.drop_duplicates(subset=col, keep='last', inplace=True)
+                    ts = ts.append(s[col])
 
-            ts = ts.drop_duplicates()
-            ts.sort_values(inplace=True)
-            ts = ts.to_frame()
+                ts = ts.drop_duplicates()
+                ts.sort_values(inplace=True)
+                ts = ts.to_frame()
 
-            for symbol, signal in signals.items():
-                signals[symbol] = pd.merge_ordered(signal, ts, on=col, how='outer', fill_method='ffill')
+                for symbol, signal in signals.items():
+                    signals[symbol] = pd.merge_ordered(signal, ts, on=col, how='outer', fill_method='ffill')
 
-                if self.current_filter is not None and type(self.current_filter) == type(f) and self.current_batch is not None and symbol in self.current_batch:
-                    signals[symbol].fillna(value=self.current_batch[symbol, self.current_batch.shape[1] - 1], inplace=True)
+                    if self.current_filter is not None and type(self.current_filter) == type(f) and self.current_batch is not None and symbol in self.current_batch:
+                        signals[symbol].fillna(value=self.current_batch[symbol, self.current_batch.shape[1] - 1], inplace=True)
+                    else:
+                        signals[symbol].fillna(method='backfill', inplace=True)
+
+            batch = pd.Panel.from_dict(signals)
+
+            event_type = self._event_type(f)
+
+            if self.fire_ticks:
+                for i in range(batch.shape[1]):
+                    self.process_datum({'type': event_type, 'data': batch.iloc[:, i].to_dict()})
+
+            if self.minibatch is not None:
+                if self.current_minibatch is None or (self.current_filter is not None and type(self.current_filter) != type(f)):
+                    self.current_minibatch = batch.copy(deep=True)
                 else:
-                    signals[symbol].fillna(method='backfill', inplace=True)
+                    self.current_minibatch = pd.concat([self.current_minibatch, batch], axis=1)
 
-        batch = pd.Panel.from_dict(signals)
+                if self.minibatch <= self.current_minibatch.shape[1]:
+                    self.process_minibatch({'type': event_type + '_mb', 'data': self.current_minibatch.iloc[:, :self.minibatch]})
+                    self.current_minibatch = self.current_minibatch.iloc[:, self.minibatch:]
 
-        event_type = self._event_type(f)
+            if self.fire_batches:
+                self.process_batch({'type': event_type + '_batch', 'data': batch})
 
-        if self.fire_ticks:
-            for i in range(batch.shape[1]):
-                self.process_datum({'type': event_type, 'data': batch.iloc[:, i].to_dict()})
-
-        if self.minibatch is not None:
-            if self.current_minibatch is None or (self.current_filter is not None and type(self.current_filter) != type(f)):
-                self.current_minibatch = batch.copy(deep=True)
-            else:
-                self.current_minibatch = pd.concat([self.current_minibatch, batch], axis=1)
-
-            if self.minibatch <= self.current_minibatch.shape[1]:
-                self.process_minibatch({'type': event_type + '_mb', 'data': self.current_minibatch.iloc[:, :self.minibatch]})
-                self.current_minibatch = self.current_minibatch.iloc[:, self.minibatch:]
-
-        if self.fire_batches:
-            self.process_batch({'type': event_type + '_batch', 'data': batch})
-
-        self.current_filter = f
-        self.current_batch = batch
+            self.current_filter = f
+            self.current_batch = batch
 
     def _request_data(self, f):
         adjust_data = False
@@ -348,22 +356,25 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
         elif isinstance(f, BarsMonthlyFilter):
             method = self.conn.request_monthly_data
 
-        if self.db is not None:
-            with self.db.begin() as txn:
-                data = txn.get(bytearray(f.__str__(), encoding='ascii'))
+        try:
+            if self.db is not None:
+                with self.db.begin() as txn:
+                    data = txn.get(bytearray(f.__str__(), encoding='ascii'))
 
-            if data is None:
+                if data is None:
+                    data = method(*f)
+
+                    with self.db.begin(write=True) as txn:
+                        txn.put(bytearray(f.__str__(), encoding='ascii'), pickle.dumps(data))
+                else:
+                    data = pickle.loads(data)
+            else:
                 data = method(*f)
 
-                with self.db.begin(write=True) as txn:
-                    txn.put(bytearray(f.__str__(), encoding='ascii'), pickle.dumps(data))
-            else:
-                data = pickle.loads(data)
-        else:
-            data = method(*f)
-
-        if adjust_data:
-            adjust(data, Fundamentals.get(f.ticker, self.streaming_conn))
+            if adjust_data:
+                adjust(data, Fundamentals.get(f.ticker, self.streaming_conn))
+        except pyiqfeed.exceptions.NoDataError:
+            return None
 
         return data
 
@@ -429,3 +440,35 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
 
     def minibatch_provider(self):
         return IQFeedDataProvider(self.process_minibatch)
+
+
+class BarsInPeriodProvider(FilterProvider):
+    """
+    Generate a sequence of BarsInPeriod filters to obtain market history
+    """
+
+    def __init__(self, ticker: typing.Union[list, str], interval_len: int, interval_type: str, bgn_prd: datetime.datetime, delta: datetime.timedelta, bgn_flt: datetime.time=None, end_flt: datetime.time=None, ascend: bool=False, max_ticks: int=None, timeout: int=None):
+        self.ticker = ticker
+        self.interval_len = interval_len
+        self.interval_type = interval_type
+        self.bgn_prd = bgn_prd
+        self.delta = delta
+        self.bgn_flt = bgn_flt
+        self.end_flt = end_flt
+        self.ascend = ascend
+        self.max_ticks = max_ticks
+        self.timeout = timeout
+
+    def __iter__(self):
+        self._deltas = 0
+        return self
+
+    def __next__(self) -> NamedTuple:
+        self._deltas += 1
+        end_prd = self.bgn_prd + self._deltas * self.delta
+
+        if end_prd <= datetime.datetime.now():
+            bgn_prd = self.bgn_prd + (self._deltas - 1) * self.delta
+            return BarsInPeriodFilter(ticker=self.ticker, interval_len=self.interval_len, interval_type=self.interval_type, bgn_prd=bgn_prd, end_prd=end_prd, bgn_flt=self.bgn_flt, end_flt=self.end_flt, ascend=self.ascend, max_ticks=self.max_ticks, timeout=self.timeout)
+        else:
+            return None
