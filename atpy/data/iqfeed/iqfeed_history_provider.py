@@ -364,14 +364,15 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
                 if data is None:
                     data = method(*f)
 
-                    with self.db.begin(write=True) as txn:
-                        txn.put(bytearray(f.__str__(), encoding='ascii'), pickle.dumps(data))
+                    if data is not None:
+                        with self.db.begin(write=True) as txn:
+                            txn.put(bytearray(f.__str__(), encoding='ascii'), pickle.dumps(data))
                 else:
                     data = pickle.loads(data)
             else:
                 data = method(*f)
 
-            if adjust_data:
+            if adjust_data and data is not None:
                 adjust(data, Fundamentals.get(f.ticker, self.streaming_conn))
         except pyiqfeed.exceptions.NoDataError:
             return None
@@ -440,6 +441,36 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
 
     def minibatch_provider(self):
         return IQFeedDataProvider(self.process_minibatch)
+
+
+class TicksInPeriodProvider(FilterProvider):
+    """
+    Generate a sequence of TicksInPeriod filters to obtain market history
+    """
+
+    def __init__(self, ticker: typing.Union[list, str], bgn_prd: datetime.datetime, delta: datetime.timedelta, bgn_flt: datetime.time=None, end_flt: datetime.time=None, ascend: bool=False, max_ticks: int=None, timeout: int=None):
+        self.ticker = ticker
+        self.bgn_prd = bgn_prd
+        self.delta = delta
+        self.bgn_flt = bgn_flt
+        self.end_flt = end_flt
+        self.ascend = ascend
+        self.max_ticks = max_ticks
+        self.timeout = timeout
+
+    def __iter__(self):
+        self._deltas = 0
+        return self
+
+    def __next__(self) -> NamedTuple:
+        self._deltas += 1
+        end_prd = self.bgn_prd + self._deltas * self.delta
+
+        if end_prd <= datetime.datetime.now():
+            bgn_prd = self.bgn_prd + (self._deltas - 1) * self.delta
+            return TicksInPeriodFilter(ticker=self.ticker, bgn_prd=bgn_prd, end_prd=end_prd, bgn_flt=self.bgn_flt, end_flt=self.end_flt, ascend=self.ascend, max_ticks=self.max_ticks, timeout=self.timeout)
+        else:
+            return None
 
 
 class BarsInPeriodProvider(FilterProvider):
