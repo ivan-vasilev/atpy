@@ -1,5 +1,7 @@
 import unittest
 import shutil
+import cProfile
+
 
 from atpy.data.iqfeed.iqfeed_history_provider import *
 
@@ -222,7 +224,7 @@ class TestIQFeedHistory(unittest.TestCase):
         filter_provider += BarsInPeriodFilter(ticker=["IBM", "AAPL"], bgn_prd=datetime.datetime(2017, 3, 1), end_prd=datetime.datetime(2017, 3, 2), interval_len=60, ascend=True, interval_type='s', max_ticks=20)
 
         try:
-            with IQFeedHistoryListener(minibatch=4, fire_batches=True, fire_ticks=True, filter_provider=filter_provider, lmdb_path='/tmp/test_history_provider_test_bars_row_mode') as listener, listener.minibatch_provider() as provider:
+            with IQFeedHistoryListener(minibatch=4, fire_batches=True, fire_ticks=True, num_connections=2, filter_provider=filter_provider, lmdb_path='/tmp/test_history_provider_test_bars_row_mode') as listener, listener.minibatch_provider() as provider:
 
                 e1 = threading.Event()
 
@@ -451,6 +453,28 @@ class TestIQFeedHistory(unittest.TestCase):
                 e3.wait()
         finally:
             shutil.rmtree('/tmp/test_continuous_ticks')
+
+    def test_bars_performance(self):
+        now = datetime.datetime.now()
+
+        filter_provider = BarsInPeriodProvider(
+            ticker=['MMM', 'AXP', 'AAPL', 'BA', 'CAT', 'CVX', 'CSCO', 'KO', 'DO', 'XOM', 'GE', 'GS', 'HD', 'IBM', 'INTC', 'JNJ', 'JPM', 'MCD', 'MRK', 'MSFT', 'NKE', 'PFE', 'PG', 'TRV', 'UNH', 'UTX', 'VZ', 'V', 'WMT', 'DIS'],
+            bgn_prd=datetime.datetime(now.year - 1, 1, 1), delta=datetime.timedelta(days=100), interval_len=300, ascend=True, interval_type='s')
+
+        with IQFeedHistoryListener(fire_batches=True, fire_ticks=False, minibatch=128, num_connections=10, filter_provider=filter_provider, run_async=False) as listener:
+            def process_batch_listener(event):
+                pass
+
+            listener.process_batch += process_batch_listener
+
+            def process_minibatch_listener(event):
+                pass
+
+            listener.process_minibatch += process_minibatch_listener
+
+            listener.produce()
+
+            self.assertLess(datetime.datetime.now() - now, datetime.timedelta(seconds=120))
 
 
 if __name__ == '__main__':

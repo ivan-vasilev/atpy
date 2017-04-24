@@ -10,6 +10,8 @@ import pyiqfeed
 from atpy.data.iqfeed.filters import *
 from atpy.data.iqfeed.iqfeed_level_1_provider import Fundamentals
 from atpy.data.iqfeed.util import *
+from multiprocessing.pool import ThreadPool
+import logging
 
 
 class TicksFilter(NamedTuple):
@@ -169,11 +171,13 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
     IQFeed historical data listener. See the unit test on how to use
     """
 
-    def __init__(self, minibatch=None, fire_batches=False, fire_ticks=False, key_suffix='', filter_provider=DefaultFilterProvider(), lmdb_path=None):
+    def __init__(self, minibatch=None, fire_batches=False, fire_ticks=False, run_async=True, num_connections=10, key_suffix='', filter_provider=DefaultFilterProvider(), lmdb_path=None):
         """
         :param minibatch: size of the minibatch
         :param fire_batches: raise event for each batch
         :param fire_ticks: raise event for each tick
+        :param run_async: run asynchronous
+        :param num_connections: number of connections to use when requesting data
         :param key_suffix: suffix for field names
         :param filter_provider: news filter list
         :param lmdb_path: path to lmdb database. If not None, then the data is cached
@@ -181,6 +185,8 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
         self.minibatch = minibatch
         self.fire_batches = fire_batches
         self.fire_ticks = fire_ticks
+        self.run_async = run_async
+        self.num_connections = num_connections
         self.key_suffix = key_suffix
         self.current_minibatch = None
         self.current_batch = None
@@ -195,24 +201,36 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
 
     def __enter__(self):
         iqfeedutil.launch_service()
-        self.conn = iq.HistoryConn()
-        self.conn.connect()
+
+        if self.num_connections == 1:
+            self.conn = iq.HistoryConn()
+            self.conn.connect()
+        else:
+            self.conn = [iq.HistoryConn() for i in range(self.num_connections)]
+            for c in self.conn:
+                c.connect()
 
         # streaming conn for fundamental data
         self.streaming_conn = iq.QuoteConn()
         self.streaming_conn.connect()
 
-        self.producer_thread = threading.Thread(target=self.produce, daemon=True)
-        self.producer_thread.start()
+        if self.run_async:
+            self.producer_thread = threading.Thread(target=self.produce_async, daemon=True)
+            self.producer_thread.start()
 
-        self.is_running = True
+            self.is_running = True
 
         return self
 
     def __exit__(self, exception_type, exception_value, traceback):
         self.is_running = False
 
-        self.conn.disconnect()
+        if isinstance(self.conn, list):
+            for c in self.conn:
+                c.disconnect()
+        else:
+            self.conn.disconnect()
+
         self.conn = None
 
         self.streaming_conn.disconnect()
@@ -220,17 +238,33 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
 
     def __del__(self):
         if self.conn is not None:
-            self.conn.disconnect()
-            self.cfg = None
+            if isinstance(self.conn, list):
+                for c in self.conn:
+                    c.disconnect()
+            else:
+                self.conn.disconnect()
+
+            self.conn = None
 
         if self.streaming_conn is not None:
             self.streaming_conn.disconnect()
 
-    def __getattr__(self, name):
-        if self.conn is not None:
-            return getattr(self.conn, name)
-        else:
-            raise AttributeError
+    def produce_async(self):
+        for f in self.filter_provider:
+            try:
+                if f is not None:
+                    if isinstance(f.ticker, str):
+                        self._produce_signal(f)
+                    elif isinstance(f.ticker, list):
+                        self._produce_signals(f)
+                else:
+                    self.is_running = False
+            except Exception as err:
+                logging.getLogger(__name__).exception(err)
+                self.is_running = False
+
+            if not self.is_running:
+                return
 
     def produce(self):
         for f in self.filter_provider:
@@ -240,13 +274,10 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
                 elif isinstance(f.ticker, list):
                     self._produce_signals(f)
             else:
-                self.is_running = False
-
-            if not self.is_running:
                 return
 
     def _produce_signal(self, f):
-        data = self._request_data(f)
+        data = self._request_data(f, self.conn[0] if isinstance(self.conn, list) else self.conn)
         if data is None:
             return
 
@@ -256,17 +287,18 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
 
         if self.fire_ticks:
             for i in range(batch.shape[0]):
-                self.process_datum({'type': event_type, 'data': batch.iloc[i].to_dict()})
+                self.process_datum({'type': event_type, 'data': batch.iloc[i]})
 
         if self.minibatch is not None:
             if self.current_minibatch is None or (self.current_filter is not None and type(self.current_filter) != type(f)):
-                self.current_minibatch = batch.copy(deep=True)
+                self.current_minibatch = batch
             else:
                 self.current_minibatch = pd.concat([self.current_minibatch, batch], axis=0)
 
-            if self.minibatch <= self.current_minibatch.shape[0]:
-                self.process_minibatch({'type': event_type + '_mb', 'data': self.current_minibatch.iloc[:self.minibatch]})
-                self.current_minibatch = self.current_minibatch.iloc[self.minibatch:]
+            for i in range(self.minibatch, self.current_minibatch.shape[0] - self.current_minibatch.shape[0] % self.minibatch + 1, self.minibatch):
+                self.process_minibatch({'type': event_type + '_mb', 'data': self.current_minibatch.iloc[i - self.minibatch: i]})
+
+            self.current_minibatch = self.current_minibatch.iloc[i:]
 
         if self.fire_batches:
             self.process_batch({'type': event_type + '_batch', 'data': batch})
@@ -277,11 +309,27 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
     def _produce_signals(self, f):
         signals = dict()
 
-        for t in f.ticker:
-            ft = f._replace(ticker=t)
-            data = self._request_data(ft)
-            if data is not None:
-                signals[t] = self._process_data(data, ft)
+        if self.num_connections > 0:
+            pool = ThreadPool(self.num_connections)
+
+            def mp_worker(p):
+                try:
+                    sig, ft, conn = p
+                    data = self._request_data(ft, conn)
+                    if data is not None:
+                        sig[ft.ticker] = self._process_data(data, ft)
+                except Exception as err:
+                    logging.getLogger(__name__).exception(err)
+                    raise err
+
+            pool.map(mp_worker, ((signals, f._replace(ticker=t), self.conn[i % self.num_connections]) for i, t in enumerate(f.ticker)))
+            pool.close()
+            pool.join()
+        else:
+            for ft in [f._replace(ticker=t) for t in f.ticker]:
+                data = self._request_data(ft)
+                if data is not None:
+                    signals[ft.ticker] = self._process_data(data, ft)
 
         if len(signals) > 0:
             col = 'Time Stamp' if 'Time Stamp' in list(signals.values())[0] else 'Date' if 'Date' in list(signals.values())[0] else None
@@ -309,7 +357,7 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
 
             if self.fire_ticks:
                 for i in range(batch.shape[1]):
-                    self.process_datum({'type': event_type, 'data': batch.iloc[:, i].to_dict()})
+                    self.process_datum({'type': event_type, 'data': batch.iloc[:, i]})
 
             if self.minibatch is not None:
                 if self.current_minibatch is None or (self.current_filter is not None and type(self.current_filter) != type(f)):
@@ -317,9 +365,10 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
                 else:
                     self.current_minibatch = pd.concat([self.current_minibatch, batch], axis=1)
 
-                if self.minibatch <= self.current_minibatch.shape[1]:
-                    self.process_minibatch({'type': event_type + '_mb', 'data': self.current_minibatch.iloc[:, :self.minibatch]})
-                    self.current_minibatch = self.current_minibatch.iloc[:, self.minibatch:]
+                for i in range(self.minibatch, self.current_minibatch.shape[1] - self.current_minibatch.shape[1] % self.minibatch + 1, self.minibatch):
+                    self.process_minibatch({'type': event_type + '_mb', 'data': self.current_minibatch.iloc[: i - self.minibatch: i]})
+
+                self.current_minibatch = self.current_minibatch.iloc[:, i:]
 
             if self.fire_batches:
                 self.process_batch({'type': event_type + '_batch', 'data': batch})
@@ -327,34 +376,34 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
             self.current_filter = f
             self.current_batch = batch
 
-    def _request_data(self, f):
+    def _request_data(self, f, conn):
         adjust_data = False
 
         if isinstance(f, TicksFilter):
-            method = self.conn.request_ticks
+            method = conn.request_ticks
             adjust_data = True
         elif isinstance(f, TicksForDaysFilter):
-            method = self.conn.request_ticks_for_days
+            method = conn.request_ticks_for_days
             adjust_data = True
         elif isinstance(f, TicksInPeriodFilter):
-            method = self.conn.request_ticks_in_period
+            method = conn.request_ticks_in_period
             adjust_data = True
         elif isinstance(f, BarsFilter):
-            method = self.conn.request_bars
+            method = conn.request_bars
             adjust_data = True
         elif isinstance(f, BarsForDaysFilter):
-            method = self.conn.request_bars_for_days
+            method = conn.request_bars_for_days
         elif isinstance(f, BarsInPeriodFilter):
-            method = self.conn.request_bars_in_period
+            method = conn.request_bars_in_period
             adjust_data = True
         elif isinstance(f, BarsDailyFilter):
-            method = self.conn.request_daily_data
+            method = conn.request_daily_data
         elif isinstance(f, BarsDailyForDatesFilter):
-            method = self.conn.request_daily_data_for_dates
+            method = conn.request_daily_data_for_dates
         elif isinstance(f, BarsWeeklyFilter):
-            method = self.conn.request_weekly_data
+            method = conn.request_weekly_data
         elif isinstance(f, BarsMonthlyFilter):
-            method = self.conn.request_monthly_data
+            method = conn.request_monthly_data
 
         try:
             if self.db is not None:
@@ -464,10 +513,12 @@ class TicksInPeriodProvider(FilterProvider):
 
     def __next__(self) -> NamedTuple:
         self._deltas += 1
-        end_prd = self.bgn_prd + self._deltas * self.delta
+        bgn_prd = self.bgn_prd + (self._deltas - 1) * self.delta
+        now = datetime.datetime.now()
 
-        if end_prd <= datetime.datetime.now():
-            bgn_prd = self.bgn_prd + (self._deltas - 1) * self.delta
+        if bgn_prd < now:
+            end_prd = self.bgn_prd + self._deltas * self.delta
+            end_prd = end_prd if end_prd < now else now
             return TicksInPeriodFilter(ticker=self.ticker, bgn_prd=bgn_prd, end_prd=end_prd, bgn_flt=self.bgn_flt, end_flt=self.end_flt, ascend=self.ascend, max_ticks=self.max_ticks, timeout=self.timeout)
         else:
             return None
@@ -496,10 +547,13 @@ class BarsInPeriodProvider(FilterProvider):
 
     def __next__(self) -> NamedTuple:
         self._deltas += 1
-        end_prd = self.bgn_prd + self._deltas * self.delta
+        bgn_prd = self.bgn_prd + (self._deltas - 1) * self.delta
+        now = datetime.datetime.now()
 
-        if end_prd <= datetime.datetime.now():
-            bgn_prd = self.bgn_prd + (self._deltas - 1) * self.delta
+        if bgn_prd < now:
+            end_prd = self.bgn_prd + self._deltas * self.delta
+            end_prd = end_prd if end_prd < now else now
+
             return BarsInPeriodFilter(ticker=self.ticker, interval_len=self.interval_len, interval_type=self.interval_type, bgn_prd=bgn_prd, end_prd=end_prd, bgn_flt=self.bgn_flt, end_flt=self.end_flt, ascend=self.ascend, max_ticks=self.max_ticks, timeout=self.timeout)
         else:
             return None
