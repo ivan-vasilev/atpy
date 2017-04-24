@@ -344,7 +344,12 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
                 ts = ts.to_frame()
 
                 for symbol, signal in signals.items():
-                    signals[symbol] = pd.merge_ordered(signal, ts, on=col, how='outer', fill_method='ffill')
+                    signals[symbol] = pd.merge_ordered(signal, ts, on=col, how='outer')
+
+                    for c in [c for c in ['Period Volume', 'Number of Trades'] if c in signals[symbol].columns]:
+                        signals[symbol][c].fillna(value=0, inplace=True)
+
+                    signals[symbol].fillna(method='ffill', inplace=True)
 
                     if self.current_filter is not None and type(self.current_filter) == type(f) and self.current_batch is not None and symbol in self.current_batch:
                         signals[symbol].fillna(value=self.current_batch[symbol, self.current_batch.shape[1] - 1], inplace=True)
