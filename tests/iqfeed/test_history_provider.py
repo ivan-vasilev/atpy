@@ -1,6 +1,5 @@
 import unittest
 import shutil
-import cProfile
 
 
 from atpy.data.iqfeed.iqfeed_history_provider import *
