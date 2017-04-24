@@ -473,7 +473,7 @@ class TestIQFeedHistory(unittest.TestCase):
 
             listener.produce()
 
-            self.assertLess(datetime.datetime.now() - now, datetime.timedelta(seconds=120))
+            self.assertLess(datetime.datetime.now() - now, datetime.timedelta(seconds=90))
 
 
 if __name__ == '__main__':

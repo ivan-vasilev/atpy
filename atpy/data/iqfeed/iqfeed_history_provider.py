@@ -344,17 +344,31 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
                 ts = ts.to_frame()
 
                 for symbol, signal in signals.items():
-                    signals[symbol] = pd.merge_ordered(signal, ts, on=col, how='outer')
+                    df = pd.merge_ordered(signal, ts, on=col, how='outer')
+                    signals[symbol] = df
 
-                    for c in [c for c in ['Period Volume', 'Number of Trades'] if c in signals[symbol].columns]:
-                        signals[symbol][c].fillna(value=0, inplace=True)
+                    for c in [c for c in ['Period Volume', 'Number of Trades'] if c in df.columns]:
+                        df[c].fillna(0, inplace=True)
 
-                    signals[symbol].fillna(method='ffill', inplace=True)
+                    if 'Open' in df.columns:
+                        op = df['Open']
+
+                        op.fillna(method='ffill', inplace=True)
+
+                        if self.current_filter is not None and type(self.current_filter) == type(f) and self.current_batch is not None and symbol in self.current_batch:
+                            op.fillna(value=self.current_batch[symbol, self.current_batch.shape[1] - 1]['Open'], inplace=True)
+                        else:
+                            op.fillna(method='backfill', inplace=True)
+
+                        for c in [c for c in ['Close', 'High', 'Low'] if c in df.columns]:
+                            df[c].fillna(op, inplace=True)
+
+                    df.fillna(method='ffill', inplace=True)
 
                     if self.current_filter is not None and type(self.current_filter) == type(f) and self.current_batch is not None and symbol in self.current_batch:
-                        signals[symbol].fillna(value=self.current_batch[symbol, self.current_batch.shape[1] - 1], inplace=True)
+                        df.fillna(value=self.current_batch[symbol, self.current_batch.shape[1] - 1], inplace=True)
                     else:
-                        signals[symbol].fillna(method='backfill', inplace=True)
+                        df.fillna(method='backfill', inplace=True)
 
             batch = pd.Panel.from_dict(signals)
 
