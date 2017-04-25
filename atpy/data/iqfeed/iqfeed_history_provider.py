@@ -253,10 +253,8 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
         for f in self.filter_provider:
             try:
                 if f is not None:
-                    if isinstance(f.ticker, str):
-                        self._produce_signal(f)
-                    elif isinstance(f.ticker, list):
-                        self._produce_signals(f)
+                    d = self.request_data(f)
+                    self.fire_events(d, f)
                 else:
                     self.is_running = False
             except Exception as err:
@@ -269,120 +267,115 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
     def produce(self):
         for f in self.filter_provider:
             if f is not None:
-                if isinstance(f.ticker, str):
-                    self._produce_signal(f)
-                elif isinstance(f.ticker, list):
-                    self._produce_signals(f)
+                d = self.request_data(f)
+                self.fire_events(d, f)
             else:
                 return
 
-    def _produce_signal(self, f):
-        data = self._request_data(f, self.conn[0] if isinstance(self.conn, list) else self.conn)
-        if data is None:
-            return
+    def request_data(self, f):
+        if isinstance(f.ticker, str):
+            data = self._request_raw_symbol_data(f, self.conn[0] if isinstance(self.conn, list) else self.conn)
+            if data is None:
+                return
 
-        batch = self._process_data(data, f)
+            return self._process_data(data, f)
+        elif isinstance(f.ticker, list):
+            signals = dict()
 
-        event_type = self._event_type(f)
+            if self.num_connections > 0:
+                pool = ThreadPool(self.num_connections)
 
-        if self.fire_ticks:
-            for i in range(batch.shape[0]):
-                self.process_datum({'type': event_type, 'data': batch.iloc[i]})
+                def mp_worker(p):
+                    try:
+                        sig, ft, conn = p
+                        data = self._request_raw_symbol_data(ft, conn)
+                        if data is not None:
+                            sig[ft.ticker] = self._process_data(data, ft)
+                    except Exception as err:
+                        logging.getLogger(__name__).exception(err)
+                        raise err
 
-        if self.minibatch is not None:
-            if self.current_minibatch is None or (self.current_filter is not None and type(self.current_filter) != type(f)):
-                self.current_minibatch = batch
+                pool.map(mp_worker, ((signals, f._replace(ticker=t), self.conn[i % self.num_connections]) for i, t in enumerate(f.ticker)))
+                pool.close()
+                pool.join()
             else:
-                self.current_minibatch = pd.concat([self.current_minibatch, batch], axis=0)
-
-            for i in range(self.minibatch, self.current_minibatch.shape[0] - self.current_minibatch.shape[0] % self.minibatch + 1, self.minibatch):
-                self.process_minibatch({'type': event_type + '_mb', 'data': self.current_minibatch.iloc[i - self.minibatch: i]})
-
-            self.current_minibatch = self.current_minibatch.iloc[i:]
-
-        if self.fire_batches:
-            self.process_batch({'type': event_type + '_batch', 'data': batch})
-
-        self.current_filter = f
-        self.current_batch = batch
-
-    def _produce_signals(self, f):
-        signals = dict()
-
-        if self.num_connections > 0:
-            pool = ThreadPool(self.num_connections)
-
-            def mp_worker(p):
-                try:
-                    sig, ft, conn = p
-                    data = self._request_data(ft, conn)
+                for ft in [f._replace(ticker=t) for t in f.ticker]:
+                    data = self._request_raw_symbol_data(ft)
                     if data is not None:
-                        sig[ft.ticker] = self._process_data(data, ft)
-                except Exception as err:
-                    logging.getLogger(__name__).exception(err)
-                    raise err
+                        signals[ft.ticker] = self._process_data(data, ft)
 
-            pool.map(mp_worker, ((signals, f._replace(ticker=t), self.conn[i % self.num_connections]) for i, t in enumerate(f.ticker)))
-            pool.close()
-            pool.join()
-        else:
-            for ft in [f._replace(ticker=t) for t in f.ticker]:
-                data = self._request_data(ft)
-                if data is not None:
-                    signals[ft.ticker] = self._process_data(data, ft)
+            if len(signals) > 0:
+                col = 'Time Stamp' if 'Time Stamp' in list(signals.values())[0] else 'Date' if 'Date' in list(signals.values())[0] else None
+                if col is not None:
+                    ts = pd.Series(name=col)
+                    for _, s in signals.items():
+                        s.drop_duplicates(subset=col, keep='last', inplace=True)
+                        ts = ts.append(s[col])
 
-        if len(signals) > 0:
-            col = 'Time Stamp' if 'Time Stamp' in list(signals.values())[0] else 'Date' if 'Date' in list(signals.values())[0] else None
-            if col is not None:
-                ts = pd.Series(name=col)
-                for _, s in signals.items():
-                    s.drop_duplicates(subset=col, keep='last', inplace=True)
-                    ts = ts.append(s[col])
+                    ts = ts.drop_duplicates()
+                    ts.sort_values(inplace=True)
+                    ts = ts.to_frame()
 
-                ts = ts.drop_duplicates()
-                ts.sort_values(inplace=True)
-                ts = ts.to_frame()
+                    for symbol, signal in signals.items():
+                        df = pd.merge_ordered(signal, ts, on=col, how='outer')
+                        signals[symbol] = df
 
-                for symbol, signal in signals.items():
-                    df = pd.merge_ordered(signal, ts, on=col, how='outer')
-                    signals[symbol] = df
+                        for c in [c for c in ['Period Volume', 'Number of Trades'] if c in df.columns]:
+                            df[c].fillna(0, inplace=True)
 
-                    for c in [c for c in ['Period Volume', 'Number of Trades'] if c in df.columns]:
-                        df[c].fillna(0, inplace=True)
+                        if 'Open' in df.columns:
+                            op = df['Open']
 
-                    if 'Open' in df.columns:
-                        op = df['Open']
+                            op.fillna(method='ffill', inplace=True)
 
-                        op.fillna(method='ffill', inplace=True)
+                            if self.current_filter is not None and type(self.current_filter) == type(f) and self.current_batch is not None and symbol in self.current_batch:
+                                op.fillna(value=self.current_batch[symbol, self.current_batch.shape[1] - 1]['Open'], inplace=True)
+                            else:
+                                op.fillna(method='backfill', inplace=True)
+
+                            for c in [c for c in ['Close', 'High', 'Low'] if c in df.columns]:
+                                df[c].fillna(op, inplace=True)
+
+                        df.fillna(method='ffill', inplace=True)
 
                         if self.current_filter is not None and type(self.current_filter) == type(f) and self.current_batch is not None and symbol in self.current_batch:
-                            op.fillna(value=self.current_batch[symbol, self.current_batch.shape[1] - 1]['Open'], inplace=True)
+                            df.fillna(value=self.current_batch[symbol, self.current_batch.shape[1] - 1], inplace=True)
                         else:
-                            op.fillna(method='backfill', inplace=True)
+                            df.fillna(method='backfill', inplace=True)
 
-                        for c in [c for c in ['Close', 'High', 'Low'] if c in df.columns]:
-                            df[c].fillna(op, inplace=True)
+                return pd.Panel.from_dict(signals)
 
-                    df.fillna(method='ffill', inplace=True)
+    def fire_events(self, data, f):
+        event_type = self._event_type(f)
 
-                    if self.current_filter is not None and type(self.current_filter) == type(f) and self.current_batch is not None and symbol in self.current_batch:
-                        df.fillna(value=self.current_batch[symbol, self.current_batch.shape[1] - 1], inplace=True)
-                    else:
-                        df.fillna(method='backfill', inplace=True)
-
-            batch = pd.Panel.from_dict(signals)
-
-            event_type = self._event_type(f)
-
+        if isinstance(data, pd.DataFrame):
             if self.fire_ticks:
-                for i in range(batch.shape[1]):
-                    self.process_datum({'type': event_type, 'data': batch.iloc[:, i]})
+                for i in range(data.shape[0]):
+                    self.process_datum({'type': event_type, 'data': data.iloc[i]})
 
             if self.minibatch is not None:
                 if self.current_minibatch is None or (self.current_filter is not None and type(self.current_filter) != type(f)):
-                    self.current_minibatch = batch.copy(deep=True)
+                    self.current_minibatch = data
                 else:
-                    self.current_minibatch = pd.concat([self.current_minibatch, batch], axis=1)
+                    self.current_minibatch = pd.concat([self.current_minibatch, data], axis=0)
+
+                for i in range(self.minibatch, self.current_minibatch.shape[0] - self.current_minibatch.shape[0] % self.minibatch + 1, self.minibatch):
+                    self.process_minibatch({'type': event_type + '_mb', 'data': self.current_minibatch.iloc[i - self.minibatch: i]})
+
+                self.current_minibatch = self.current_minibatch.iloc[i:]
+
+            if self.fire_batches:
+                self.process_batch({'type': event_type + '_batch', 'data': data})
+        elif isinstance(data, pd.Panel):
+            if self.fire_ticks:
+                for i in range(data.shape[1]):
+                    self.process_datum({'type': event_type, 'data': data.iloc[:, i]})
+
+            if self.minibatch is not None:
+                if self.current_minibatch is None or (self.current_filter is not None and type(self.current_filter) != type(f)):
+                    self.current_minibatch = data.copy(deep=True)
+                else:
+                    self.current_minibatch = pd.concat([self.current_minibatch, data], axis=1)
 
                 for i in range(self.minibatch, self.current_minibatch.shape[1] - self.current_minibatch.shape[1] % self.minibatch + 1, self.minibatch):
                     self.process_minibatch({'type': event_type + '_mb', 'data': self.current_minibatch.iloc[:, i - self.minibatch: i]})
@@ -390,12 +383,9 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
                 self.current_minibatch = self.current_minibatch.iloc[:, i:]
 
             if self.fire_batches:
-                self.process_batch({'type': event_type + '_batch', 'data': batch})
+                self.process_batch({'type': event_type + '_batch', 'data': data})
 
-            self.current_filter = f
-            self.current_batch = batch
-
-    def _request_data(self, f, conn):
+    def _request_raw_symbol_data(self, f, conn):
         adjust_data = False
 
         if isinstance(f, TicksFilter):
@@ -449,13 +439,13 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
 
     def _process_data(self, data, data_filter):
         if isinstance(data_filter, TicksFilter) or isinstance(data_filter, TicksForDaysFilter) or isinstance(data_filter, TicksInPeriodFilter):
-            return self._process_ticks_data(data, data_filter)
+            return self._process_ticks(data, data_filter)
         elif isinstance(data_filter, BarsFilter) or isinstance(data_filter, BarsForDaysFilter) or isinstance(data_filter, BarsInPeriodFilter):
-            return self._process_bars_data(data, data_filter)
+            return self._process_bars(data, data_filter)
         elif isinstance(data_filter, BarsDailyFilter) or isinstance(data_filter, BarsDailyForDatesFilter) or isinstance(data_filter, BarsWeeklyFilter) or isinstance(data_filter, BarsMonthlyFilter):
-            return self._process_daily_data(data, data_filter)
+            return self._process_daily(data, data_filter)
 
-    def _process_ticks_data(self, data, data_filter):
+    def _process_ticks(self, data, data_filter):
         result = pd.DataFrame(data)
         sf = self.key_suffix
         result['Time Stamp' + sf] = data['date'] + data['time']
@@ -465,7 +455,7 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
 
         return result
 
-    def _process_bars_data(self, data, data_filter):
+    def _process_bars(self, data, data_filter):
         result = pd.DataFrame(data)
         sf = self.key_suffix
         result['Time Stamp' + sf] = data['date'] + data['time']
@@ -475,7 +465,7 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
 
         return result
 
-    def _process_daily_data(self, data, data_filter):
+    def _process_daily(self, data, data_filter):
         result = pd.DataFrame(data)
         sf = self.key_suffix
         result.rename_axis({"date": "Date" + sf, "high_p": "High" + sf, "low_p": "Low" + sf, "open_p": "Open" + sf, "close_p": "Close" + sf, "prd_vlm": "Period Volume" + sf, "open_int": "Open Interest" + sf}, axis="columns", copy=False, inplace=True)
