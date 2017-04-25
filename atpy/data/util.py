@@ -18,7 +18,7 @@ def _get_nasdaq_symbol_file(filename):
     r = Reader()
 
     ftp.retrbinary('RETR ' + filename, r)
-    return pd.read_csv(StringIO(r.data), sep="|")
+    return pd.read_csv(StringIO(r.data), sep="|")[:-1]
 
 
 def get_nasdaq_listed_companies():

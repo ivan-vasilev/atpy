@@ -17,8 +17,9 @@ class FilterProvider(metaclass=ABCMeta):
 class DefaultFilterProvider(FilterProvider):
     """Default filter provider, which contains a list of filters"""
 
-    def __init__(self):
+    def __init__(self, repeat=True):
         self._filters = list()
+        self._repeat = repeat
 
     def __iadd__(self, fn):
         self._filters.append(fn)
@@ -29,15 +30,12 @@ class DefaultFilterProvider(FilterProvider):
         return self
 
     def __iter__(self):
-        self.__counter = -1
+        self.__counter = 0
         return self
 
-    def _default_filter(self):
-        return None
-
     def __next__(self) -> FilterProvider:
-        if len(self._filters) == 0:
-            return self._default_filter()
+        if not self._repeat and self.__counter >= len(self._filters):
+            return None
         else:
             self.__counter += 1
             return self._filters[self.__counter % len(self._filters)]

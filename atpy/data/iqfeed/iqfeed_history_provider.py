@@ -284,7 +284,6 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
 
             if self.num_connections > 0:
                 pool = ThreadPool(self.num_connections)
-
                 def mp_worker(p):
                     try:
                         sig, ft, conn = p
