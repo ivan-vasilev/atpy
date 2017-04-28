@@ -35,7 +35,7 @@ class DefaultFilterProvider(FilterProvider):
 
     def __next__(self) -> FilterProvider:
         if not self._repeat and self.__counter >= len(self._filters):
-            return None
+            raise StopIteration
         else:
             self.__counter += 1
             return self._filters[self.__counter % len(self._filters)]

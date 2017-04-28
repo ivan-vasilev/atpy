@@ -12,6 +12,7 @@ from atpy.data.iqfeed.iqfeed_level_1_provider import Fundamentals
 from atpy.data.iqfeed.util import *
 from multiprocessing.pool import ThreadPool
 import logging
+import os
 
 
 class TicksFilter(NamedTuple):
@@ -171,7 +172,7 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
     IQFeed historical data listener. See the unit test on how to use
     """
 
-    def __init__(self, minibatch=None, fire_batches=False, fire_ticks=False, run_async=True, num_connections=10, key_suffix='', filter_provider=DefaultFilterProvider(), lmdb_path=None):
+    def __init__(self, minibatch=None, fire_batches=False, fire_ticks=False, run_async=True, num_connections=10, key_suffix='', filter_provider=None, use_lmdb=True):
         """
         :param minibatch: size of the minibatch
         :param fire_batches: raise event for each batch
@@ -180,7 +181,7 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
         :param num_connections: number of connections to use when requesting data
         :param key_suffix: suffix for field names
         :param filter_provider: news filter list
-        :param lmdb_path: path to lmdb database. If not None, then the data is cached
+        :param use_lmdb: use lmdb
         """
         self.minibatch = minibatch
         self.fire_batches = fire_batches
@@ -194,7 +195,8 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
         self.filter_provider = filter_provider
         self.fundamentals = dict()
 
-        self.db = lmdb.open(lmdb_path) if lmdb_path is not None else None
+        if use_lmdb is not None:
+            self.db = lmdb.open(os.path.join(os.getcwd(), 'data', 'cache', 'iqfeed_history'), map_size=100000000000)
 
         self.conn = None
         self.streaming_conn = None
@@ -250,29 +252,37 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
             self.streaming_conn.disconnect()
 
     def produce_async(self):
-        for f in self.filter_provider:
-            try:
+        if self.filter_provider is not None:
+            for f in self.filter_provider:
+                try:
+                    if f is not None:
+                        d = self.request_data(f)
+                        self.fire_events(d, f)
+                    else:
+                        self.is_running = False
+                except Exception as err:
+                    logging.getLogger(__name__).exception(err)
+                    self.is_running = False
+
+                if not self.is_running:
+                    return
+
+    def produce(self):
+        if self.filter_provider is not None:
+            for f in self.filter_provider:
                 if f is not None:
                     d = self.request_data(f)
                     self.fire_events(d, f)
                 else:
-                    self.is_running = False
-            except Exception as err:
-                logging.getLogger(__name__).exception(err)
-                self.is_running = False
+                    return
 
-            if not self.is_running:
-                return
-
-    def produce(self):
-        for f in self.filter_provider:
-            if f is not None:
-                d = self.request_data(f)
-                self.fire_events(d, f)
-            else:
-                return
-
-    def request_data(self, f):
+    def request_data(self, f, synchronize_timestamps=True):
+        """
+        request history data
+        :param f: filter tuple
+        :param synchronize_timestamps: whether to synchronize timestamps between different signals 
+        :return: 
+        """
         if isinstance(f.ticker, str):
             data = self._request_raw_symbol_data(f, self.conn[0] if isinstance(self.conn, list) else self.conn)
             if data is None:
@@ -303,7 +313,7 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
                     if data is not None:
                         signals[ft.ticker] = self._process_data(data, ft)
 
-            if len(signals) > 0:
+            if synchronize_timestamps and len(signals) > 0:
                 col = 'Time Stamp' if 'Time Stamp' in list(signals.values())[0] else 'Date' if 'Date' in list(signals.values())[0] else None
                 if col is not None:
                     ts = pd.Series(name=col)
@@ -343,6 +353,8 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
                             df.fillna(method='backfill', inplace=True)
 
                 return pd.Panel.from_dict(signals)
+            else:
+                return signals
 
     def fire_events(self, data, f):
         event_type = self._event_type(f)
@@ -386,6 +398,7 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
 
     def _request_raw_symbol_data(self, f, conn):
         adjust_data = False
+        cache_data = False
 
         if isinstance(f, TicksFilter):
             method = conn.request_ticks
@@ -396,6 +409,7 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
         elif isinstance(f, TicksInPeriodFilter):
             method = conn.request_ticks_in_period
             adjust_data = True
+            cache_data = True
         elif isinstance(f, BarsFilter):
             method = conn.request_bars
             adjust_data = True
@@ -404,17 +418,19 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
         elif isinstance(f, BarsInPeriodFilter):
             method = conn.request_bars_in_period
             adjust_data = True
+            cache_data = True
         elif isinstance(f, BarsDailyFilter):
             method = conn.request_daily_data
         elif isinstance(f, BarsDailyForDatesFilter):
             method = conn.request_daily_data_for_dates
+            cache_data = True
         elif isinstance(f, BarsWeeklyFilter):
             method = conn.request_weekly_data
         elif isinstance(f, BarsMonthlyFilter):
             method = conn.request_monthly_data
 
         try:
-            if self.db is not None:
+            if cache_data and self.db is not None:
                 with self.db.begin() as txn:
                     data = txn.get(bytearray(f.__str__(), encoding='ascii'))
 
@@ -529,7 +545,7 @@ class TicksInPeriodProvider(FilterProvider):
             end_prd = end_prd if end_prd < now else now
             return TicksInPeriodFilter(ticker=self.ticker, bgn_prd=bgn_prd, end_prd=end_prd, bgn_flt=self.bgn_flt, end_flt=self.end_flt, ascend=self.ascend, max_ticks=self.max_ticks, timeout=self.timeout)
         else:
-            return None
+            raise StopIteration
 
 
 class BarsInPeriodProvider(FilterProvider):
@@ -564,4 +580,4 @@ class BarsInPeriodProvider(FilterProvider):
 
             return BarsInPeriodFilter(ticker=self.ticker, interval_len=self.interval_len, interval_type=self.interval_type, bgn_prd=bgn_prd, end_prd=end_prd, bgn_flt=self.bgn_flt, end_flt=self.end_flt, ascend=self.ascend, max_ticks=self.max_ticks, timeout=self.timeout)
         else:
-            return None
+            raise StopIteration
