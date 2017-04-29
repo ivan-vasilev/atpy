@@ -172,7 +172,7 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
     IQFeed historical data listener. See the unit test on how to use
     """
 
-    def __init__(self, minibatch=None, fire_batches=False, fire_ticks=False, run_async=True, num_connections=10, key_suffix='', filter_provider=None, use_lmdb=True):
+    def __init__(self, minibatch=None, fire_batches=False, fire_ticks=False, run_async=True, num_connections=10, key_suffix='', filter_provider=None, lmdb_path=''):
         """
         :param minibatch: size of the minibatch
         :param fire_batches: raise event for each batch
@@ -181,7 +181,7 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
         :param num_connections: number of connections to use when requesting data
         :param key_suffix: suffix for field names
         :param filter_provider: news filter list
-        :param use_lmdb: use lmdb
+        :param lmdb_path: '' to use default path, None, not to use lmdb
         """
         self.minibatch = minibatch
         self.fire_batches = fire_batches
@@ -195,8 +195,10 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
         self.filter_provider = filter_provider
         self.fundamentals = dict()
 
-        if use_lmdb is not None:
-            self.db = lmdb.open(os.path.join(os.getcwd(), 'data', 'cache', 'iqfeed_history'), map_size=100000000000)
+        if lmdb_path == '':
+            self.db = lmdb.open(os.path.join(os.path.abspath('../' * (len(__name__.split('.')) - 2)), 'data', 'cache', 'history'), map_size=100000000000)
+        elif lmdb_path is not None:
+            self.db = lmdb.open(lmdb_path, map_size=100000000000)
 
         self.conn = None
         self.streaming_conn = None
@@ -286,6 +288,7 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
         if isinstance(f.ticker, str):
             data = self._request_raw_symbol_data(f, self.conn[0] if isinstance(self.conn, list) else self.conn)
             if data is None:
+                logging.getLogger(__name__).warning("No data found for filter: " + str(f))
                 return
 
             return self._process_data(data, f)
@@ -294,19 +297,35 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
 
             if self.num_connections > 0:
                 pool = ThreadPool(self.num_connections)
+                self._global_counter = 0
+                lock = threading.Lock()
+                no_data = set()
+
                 def mp_worker(p):
                     try:
-                        sig, ft, conn = p
+                        ft, conn = p
                         data = self._request_raw_symbol_data(ft, conn)
                         if data is not None:
-                            sig[ft.ticker] = self._process_data(data, ft)
+                            signals[ft.ticker] = self._process_data(data, ft)
+                        else:
+                            no_data.add(ft.ticker)
+
+                        with lock:
+                            self._global_counter += 1
+                            if self._global_counter % 200 == 0 or self._global_counter == len(f.ticker):
+                                logging.getLogger(__name__).info("Loaded " + str(self._global_counter) + " symbols")
+                                if len(no_data) > 0:
+                                    logging.getLogger(__name__).info("No data found for  " + str(no_data))
+                                    no_data.clear()
+
                     except Exception as err:
                         logging.getLogger(__name__).exception(err)
                         raise err
 
-                pool.map(mp_worker, ((signals, f._replace(ticker=t), self.conn[i % self.num_connections]) for i, t in enumerate(f.ticker)))
+                pool.map(mp_worker, ((f._replace(ticker=t), self.conn[i % self.num_connections]) for i, t in enumerate(f.ticker)))
                 pool.close()
                 pool.join()
+                del self._global_counter
             else:
                 for ft in [f._replace(ticker=t) for t in f.ticker]:
                     data = self._request_raw_symbol_data(ft)
@@ -447,7 +466,10 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
 
             if adjust_data and data is not None:
                 adjust(data, Fundamentals.get(f.ticker, self.streaming_conn))
-        except pyiqfeed.exceptions.NoDataError:
+        except pyiqfeed.exceptions.NoDataError as err:
+            with self.db.begin(write=True) as txn:
+                txn.put(bytearray(f.__str__(), encoding='ascii'), pickle.dumps(err))
+
             return None
 
         return data
@@ -521,10 +543,10 @@ class TicksInPeriodProvider(FilterProvider):
     Generate a sequence of TicksInPeriod filters to obtain market history
     """
 
-    def __init__(self, ticker: typing.Union[list, str], bgn_prd: datetime.datetime, delta: datetime.timedelta, bgn_flt: datetime.time=None, end_flt: datetime.time=None, ascend: bool=False, max_ticks: int=None, timeout: int=None):
+    def __init__(self, ticker: typing.Union[list, str], bgn_prd: datetime.date, delta_days: int=121, bgn_flt: datetime.time=None, end_flt: datetime.time=None, ascend: bool=False, max_ticks: int=None, timeout: int=None):
         self.ticker = ticker
-        self.bgn_prd = bgn_prd
-        self.delta = delta
+        self.bgn_prd = datetime.datetime(year=bgn_prd.year, month=bgn_prd.month, day=bgn_prd.day)
+        self.delta = datetime.timedelta(days=delta_days)
         self.bgn_flt = bgn_flt
         self.end_flt = end_flt
         self.ascend = ascend
@@ -553,12 +575,12 @@ class BarsInPeriodProvider(FilterProvider):
     Generate a sequence of BarsInPeriod filters to obtain market history
     """
 
-    def __init__(self, ticker: typing.Union[list, str], interval_len: int, interval_type: str, bgn_prd: datetime.datetime, delta: datetime.timedelta, bgn_flt: datetime.time=None, end_flt: datetime.time=None, ascend: bool=False, max_ticks: int=None, timeout: int=None):
+    def __init__(self, ticker: typing.Union[list, str], interval_len: int, interval_type: str, bgn_prd: datetime.date, delta_days: int=121, bgn_flt: datetime.time=None, end_flt: datetime.time=None, ascend: bool=False, max_ticks: int=None, timeout: int=None):
         self.ticker = ticker
         self.interval_len = interval_len
         self.interval_type = interval_type
-        self.bgn_prd = bgn_prd
-        self.delta = delta
+        self.bgn_prd = datetime.datetime(year=bgn_prd.year, month=bgn_prd.month, day=bgn_prd.day)
+        self.delta = datetime.timedelta(days=delta_days)
         self.bgn_flt = bgn_flt
         self.end_flt = end_flt
         self.ascend = ascend

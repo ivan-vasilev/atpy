@@ -1,10 +1,10 @@
-import pandas as pd
 from ftplib import FTP
 from io import StringIO
 from atpy.data.iqfeed.iqfeed_history_provider import *
 import typing
 import pickle
 import os
+import logging
 
 
 def _get_nasdaq_symbol_file(filename):
@@ -26,11 +26,15 @@ def _get_nasdaq_symbol_file(filename):
 
 
 def get_nasdaq_listed_companies():
-    return _get_nasdaq_symbol_file('nasdaqlisted.txt')
+    result = _get_nasdaq_symbol_file('nasdaqlisted.txt')
+    result['Symbol'] = result['Symbol'].str.replace('$', '-')
+    return result
 
 
 def get_non_nasdaq_listed_companies():
-    return _get_nasdaq_symbol_file('otherlisted.txt')
+    result = _get_nasdaq_symbol_file('otherlisted.txt')
+    result['ACT Symbol'] = result['ACT Symbol'].str.replace('$', '-')
+    return result
 
 
 def get_bar_mean_std(symbols: typing.Union[list, str]=None, interaval_len=10000, interval_type='d', skip_zeros=True, years_back=10):
@@ -44,6 +48,7 @@ def get_bar_mean_std(symbols: typing.Union[list, str]=None, interaval_len=10000,
     """
     if symbols is None:
         nd = get_nasdaq_listed_companies()
+        nd = nd[nd['Financial Status'] == 'N']
         non_nd = get_non_nasdaq_listed_companies()
         symbols = list(set(list(non_nd['ACT Symbol']) + list(nd['Symbol'])))
         symbols.sort()
@@ -51,7 +56,7 @@ def get_bar_mean_std(symbols: typing.Union[list, str]=None, interaval_len=10000,
     if isinstance(symbols, str):
         symbols = [symbols]
 
-    db = lmdb.open(os.path.join(os.getcwd(), 'data', 'cache', 'mean_std'))
+    db = lmdb.open(os.path.join(os.path.abspath('../' * (len(__name__.split('.')) - 2)), 'data', 'cache', 'mean_std'))
 
     mean_std = list()
 
@@ -95,7 +100,9 @@ def get_bar_mean_std(symbols: typing.Union[list, str]=None, interaval_len=10000,
 
             elif interval_type == 's':
                 # mean value
-                filter_provider = BarsInPeriodProvider(ticker=non_cached_symbols, interval_type=interval_type, interval_len=interaval_len, delta=datetime.timedelta(weeks=52 * years_back), bgn_prd=datetime.datetime.now() - datetime.timedelta(weeks=years_back * 52))
+                now = datetime.datetime.now()
+
+                filter_provider = BarsInPeriodProvider(ticker=non_cached_symbols, interval_type=interval_type, interval_len=interaval_len, bgn_prd=datetime.date(now.year - years_back, 1, 1), delta_days=122)
 
                 sums = dict()
 
@@ -118,8 +125,7 @@ def get_bar_mean_std(symbols: typing.Union[list, str]=None, interaval_len=10000,
                 means = {k: [v[0] / v[2], v[1] / v[2]] for k, v in sums.items()}
 
                 # standard deviation
-                filter_provider = BarsInPeriodProvider(ticker=non_cached_symbols, interval_type=interval_type, interval_len=interaval_len, delta=datetime.timedelta(weeks=52 * years_back),
-                                                       bgn_prd=datetime.datetime.now() - datetime.timedelta(weeks=years_back * 52))
+                filter_provider = BarsInPeriodProvider(ticker=non_cached_symbols, interval_type=interval_type, interval_len=interaval_len, bgn_prd=datetime.date(now.year - years_back, 1, 1), delta_days=122)
 
                 sums = dict()
 
@@ -153,3 +159,33 @@ def get_bar_mean_std(symbols: typing.Union[list, str]=None, interaval_len=10000,
     result.columns = ['Symbol', 'C-O-mean', 'C-O-std', 'H-L-mean', 'H-L-std']
 
     return result
+
+
+def create_bar_history_cache(interaval_len: int, symbols: typing.Union[list, str]=None, years_back=10):
+    """
+    get mean and std values for bar data
+    :param symbols: symbol or list of symbols
+    :param interaval_len: length of the interval (WORKS ONLY IF interval_type is 's')
+    :param years_back: number of years to use for the computation
+    """
+    if symbols is None:
+        nd = get_nasdaq_listed_companies()
+        nd = nd[nd['Financial Status'] == 'N']
+        non_nd = get_non_nasdaq_listed_companies()
+        symbols = list(set(list(non_nd['ACT Symbol']) + list(nd['Symbol'])))
+        symbols.sort()
+
+    if isinstance(symbols, str):
+        symbols = [symbols]
+
+    if len(symbols) > 0:
+        with IQFeedHistoryListener(run_async=False) as history:
+            filter_provider = BarsInPeriodProvider(ticker=symbols, interval_type='s', interval_len=interaval_len, bgn_prd=datetime.datetime(datetime.datetime.now().year - years_back, 1, 1), delta_days=121)
+
+            for i, f in enumerate(filter_provider):
+                history.request_data(f, synchronize_timestamps=False)
+                logging.getLogger(__name__).info("Cached " + str(i + 1) + " filters, " + str(interaval_len * (i + 1)) + "s")
+
+
+logging.basicConfig(level=logging.INFO)
+create_bar_history_cache(300, years_back=1)

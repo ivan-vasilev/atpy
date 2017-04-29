@@ -100,7 +100,7 @@ def adjust_dividend(data, dividend_amount, dividend_date):
 
 
 def adjust_split(data, split_factor, split_date):
-    if not np.isnan(split_factor):
+    if not np.isnan(split_factor) and split_factor > 0:
         if isinstance(data, np.ndarray):
             if 'open_p' in data[0].dtype.names:  # adjust bars
                 data['open_p'][data['date'] < split_date] *= split_factor
@@ -115,7 +115,7 @@ def adjust_split(data, split_factor, split_date):
                 data['last'][data['date'] < split_date] *= split_factor
                 data['last_sz'][data['date'] < split_date] *= int(1 / split_factor)
                 data['tot_vlm'][data['date'] < split_date] *= int(1 / split_factor)
-        elif not np.isnan(split_factor) and split_date > data['date']:
+        elif not np.isnan(split_factor) and split_factor > 0 and split_date > data['date']:
             if 'open_p' in data.dtype.names:  # adjust bars
                 data['open_p'] *= split_factor
                 data['close_p'] *= split_factor

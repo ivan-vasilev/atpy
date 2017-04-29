@@ -186,6 +186,7 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener, metaclass=events.GlobalRegist
 class Fundamentals(iq.SilentQuoteListener):
 
     fundamentals = dict()
+    lock = threading.RLock()
 
     @staticmethod
     def get(symbol: str, conn: iq.QuoteConn):
@@ -200,9 +201,10 @@ class Fundamentals(iq.SilentQuoteListener):
                     super().__init__("fundamental_listener")
 
                 def process_fundamentals(self, fund: np.array):
-                    Fundamentals.fundamentals[symbol] = iqfeed_to_dict(fund)
-                    if symbol in Fundamentals.threading_events:
-                        Fundamentals.threading_events[symbol].set()
+                    with Fundamentals.lock:
+                        Fundamentals.fundamentals[symbol] = iqfeed_to_dict(fund)
+                        if symbol in Fundamentals.threading_events:
+                            Fundamentals.threading_events[symbol].set()
 
             fl = FL()
 
