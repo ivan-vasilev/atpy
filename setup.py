@@ -25,7 +25,7 @@ setup(
     # https://packaging.python.org/en/latest/single_source_version.html
     version='0.0.0',
 
-    description='Algo trading experiments',
+    description='Algo trading configuration',
     long_description=long_description,
 
     # The project's main homepage.
@@ -55,17 +55,11 @@ setup(
 
         # Specify the Python versions you support here. In particular, ensure
         # that you indicate whether you support Python 2, Python 3 or both.
-        'Programming Language :: Python :: 2',
-        'Programming Language :: Python :: 2.6',
-        'Programming Language :: Python :: 2.7',
-        'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.3',
-        'Programming Language :: Python :: 3.4',
-        'Programming Language :: Python :: 3.5',
+        'Programming Language :: Python :: 3.6',
     ],
 
     # What does your project relate to?
-    keywords='algo trading alpha',
+    keywords='algorithmic trading alpha',
 
     # You can just specify the packages manually here if your project is
     # simple. Or you can use find_packages().

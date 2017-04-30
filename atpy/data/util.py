@@ -185,7 +185,3 @@ def create_bar_history_cache(interaval_len: int, symbols: typing.Union[list, str
             for i, f in enumerate(filter_provider):
                 history.request_data(f, synchronize_timestamps=False)
                 logging.getLogger(__name__).info("Cached " + str(i + 1) + " filters, " + str(interaval_len * (i + 1)) + "s")
-
-
-logging.basicConfig(level=logging.INFO)
-create_bar_history_cache(300, years_back=1)

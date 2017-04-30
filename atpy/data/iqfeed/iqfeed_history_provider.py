@@ -25,7 +25,7 @@ class TicksFilter(NamedTuple):
     ascend: bool
     timeout: int
 
-TicksFilter.__new__.__defaults__ = (False, None)
+TicksFilter.__new__.__defaults__ = (True, None)
 
 
 class TicksForDaysFilter(NamedTuple):
@@ -41,7 +41,7 @@ class TicksForDaysFilter(NamedTuple):
     max_ticks: int
     timeout: int
 
-TicksForDaysFilter.__new__.__defaults__ = (None, None, False, None, None)
+TicksForDaysFilter.__new__.__defaults__ = (None, None, True, None, None)
 
 
 class TicksInPeriodFilter(NamedTuple):
@@ -58,7 +58,7 @@ class TicksInPeriodFilter(NamedTuple):
     max_ticks: int
     timeout: int
 
-TicksInPeriodFilter.__new__.__defaults__ = (None, None, False, None, None)
+TicksInPeriodFilter.__new__.__defaults__ = (None, None, True, None, None)
 
 
 class BarsFilter(NamedTuple):
@@ -73,7 +73,7 @@ class BarsFilter(NamedTuple):
     ascend: bool
     timeout: int
 
-BarsFilter.__new__.__defaults__ = (False, None)
+BarsFilter.__new__.__defaults__ = (True, None)
 
 
 class BarsForDaysFilter(NamedTuple):
@@ -91,7 +91,7 @@ class BarsForDaysFilter(NamedTuple):
     max_bars: int
     timeout: int
 
-BarsForDaysFilter.__new__.__defaults__ = (None, None, False, None, None)
+BarsForDaysFilter.__new__.__defaults__ = (None, None, True, None, None)
 
 
 class BarsInPeriodFilter(NamedTuple):
@@ -110,7 +110,7 @@ class BarsInPeriodFilter(NamedTuple):
     max_ticks: int
     timeout: int
 
-BarsInPeriodFilter.__new__.__defaults__ = (None, None, False, None, None)
+BarsInPeriodFilter.__new__.__defaults__ = (None, None, True, None, None)
 
 
 class BarsDailyFilter(NamedTuple):
@@ -123,7 +123,7 @@ class BarsDailyFilter(NamedTuple):
     ascend: bool = False
     timeout: int = None
 
-BarsDailyFilter.__new__.__defaults__ = (False, None)
+BarsDailyFilter.__new__.__defaults__ = (True, None)
 
 
 class BarsDailyForDatesFilter(NamedTuple):
@@ -138,7 +138,7 @@ class BarsDailyForDatesFilter(NamedTuple):
     max_days: int = None
     timeout: int = None
 
-BarsDailyForDatesFilter.__new__.__defaults__ = (False, None, None)
+BarsDailyForDatesFilter.__new__.__defaults__ = (True, None, None)
 
 
 class BarsWeeklyFilter(NamedTuple):
@@ -151,7 +151,7 @@ class BarsWeeklyFilter(NamedTuple):
     ascend: bool
     timeout: int
 
-BarsWeeklyFilter.__new__.__defaults__ = (False, None)
+BarsWeeklyFilter.__new__.__defaults__ = (True, None)
 
 
 class BarsMonthlyFilter(NamedTuple):
@@ -164,7 +164,7 @@ class BarsMonthlyFilter(NamedTuple):
     ascend: bool
     timeout: int
 
-BarsMonthlyFilter.__new__.__defaults__ = (False, None)
+BarsMonthlyFilter.__new__.__defaults__ = (True, None)
 
 
 class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
@@ -461,6 +461,8 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
                             txn.put(bytearray(f.__str__(), encoding='ascii'), pickle.dumps(data))
                 else:
                     data = pickle.loads(data)
+                    if isinstance(data, pyiqfeed.exceptions.NoDataError):
+                        data = None
             else:
                 data = method(*f)
 
@@ -575,7 +577,7 @@ class BarsInPeriodProvider(FilterProvider):
     Generate a sequence of BarsInPeriod filters to obtain market history
     """
 
-    def __init__(self, ticker: typing.Union[list, str], interval_len: int, interval_type: str, bgn_prd: datetime.date, delta_days: int=121, bgn_flt: datetime.time=None, end_flt: datetime.time=None, ascend: bool=False, max_ticks: int=None, timeout: int=None):
+    def __init__(self, ticker: typing.Union[list, str], interval_len: int, interval_type: str, bgn_prd: datetime.date, delta_days: int=121, bgn_flt: datetime.time=None, end_flt: datetime.time=None, ascend: bool=True, max_ticks: int=None, timeout: int=None):
         self.ticker = ticker
         self.interval_len = interval_len
         self.interval_type = interval_type
