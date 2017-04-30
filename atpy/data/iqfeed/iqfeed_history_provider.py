@@ -194,6 +194,7 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
         self.current_filter = None
         self.filter_provider = filter_provider
         self.fundamentals = dict()
+        self._is_running = False
 
         if lmdb_path == '':
             self.db = lmdb.open(os.path.join(os.path.abspath('../' * (len(__name__.split('.')) - 2)), 'data', 'cache', 'history'), map_size=100000000000)
@@ -218,16 +219,10 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
         self.streaming_conn = iq.QuoteConn()
         self.streaming_conn.connect()
 
-        if self.run_async:
-            self.producer_thread = threading.Thread(target=self.produce_async, daemon=True)
-            self.producer_thread.start()
-
-            self.is_running = True
-
         return self
 
     def __exit__(self, exception_type, exception_value, traceback):
-        self.is_running = False
+        self._is_running = False
 
         if isinstance(self.conn, list):
             for c in self.conn:
@@ -253,30 +248,36 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
         if self.streaming_conn is not None:
             self.streaming_conn.disconnect()
 
-    def produce_async(self):
+    def start(self):
         if self.filter_provider is not None:
-            for f in self.filter_provider:
-                try:
+            if self.run_async:
+                def produce_async():
+                    for f in self.filter_provider:
+                        try:
+                            if f is not None:
+                                d = self.request_data(f)
+                                self.fire_events(d, f)
+                            else:
+                                self._is_running = False
+                        except Exception as err:
+                            logging.getLogger(__name__).exception(err)
+                            self._is_running = False
+
+                        if not self._is_running:
+                            return
+
+                self._is_running = True
+                threading.Thread(target=produce_async, daemon=True).start()
+            else:
+                for f in self.filter_provider:
                     if f is not None:
                         d = self.request_data(f)
                         self.fire_events(d, f)
                     else:
-                        self.is_running = False
-                except Exception as err:
-                    logging.getLogger(__name__).exception(err)
-                    self.is_running = False
+                        return
 
-                if not self.is_running:
-                    return
-
-    def produce(self):
-        if self.filter_provider is not None:
-            for f in self.filter_provider:
-                if f is not None:
-                    d = self.request_data(f)
-                    self.fire_events(d, f)
-                else:
-                    return
+    def stop(self):
+        self._is_running = False
 
     def request_data(self, f, synchronize_timestamps=True):
         """

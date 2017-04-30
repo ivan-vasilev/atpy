@@ -37,7 +37,7 @@ def get_non_nasdaq_listed_companies():
     return result
 
 
-def get_bar_mean_std(symbols: typing.Union[list, str]=None, interaval_len=10000, interval_type='d', skip_zeros=True, years_back=10):
+def get_bar_mean_std(symbols: typing.Union[list, str]=None, interaval_len=10000, interval_type='d', skip_zeros=True, years_back=10, lmdb_path=None):
     """
     get mean and std values for bar data
     :param symbols: symbol or list of symbols
@@ -45,6 +45,7 @@ def get_bar_mean_std(symbols: typing.Union[list, str]=None, interaval_len=10000,
     :param interval_type: 's' for seconds, 'd' for days, 'w' for weeks, 'm' for months
     :param skip_zeros: exclude zero values from the computation
     :param years_back: number of years to use for the computation
+    :paral lmdb_path: path to lmdb file
     """
     if symbols is None:
         nd = get_nasdaq_listed_companies()
@@ -56,7 +57,7 @@ def get_bar_mean_std(symbols: typing.Union[list, str]=None, interaval_len=10000,
     if isinstance(symbols, str):
         symbols = [symbols]
 
-    db = lmdb.open(os.path.join(os.path.abspath('../' * (len(__name__.split('.')) - 2)), 'data', 'cache', 'mean_std'))
+    db = lmdb.open(lmdb_path if lmdb_path is not None else os.path.join(os.path.abspath('../' * (len(__name__.split('.')) - 2)), 'data', 'cache', 'mean_std'))
 
     mean_std = list()
 

@@ -17,6 +17,7 @@ class TestIQFeedHistory(unittest.TestCase):
 
         try:
             with IQFeedHistoryListener(minibatch=4, fire_batches=True, fire_ticks=True, filter_provider=filter_provider, lmdb_path='/tmp/test_history_provider_test_ticks_column_mode') as listener, listener.minibatch_provider() as provider:
+                listener.start()
 
                 e1 = threading.Event()
 
@@ -69,6 +70,7 @@ class TestIQFeedHistory(unittest.TestCase):
         filter_provider += TicksFilter(ticker=["IBM", "AAPL"], max_ticks=100)
 
         with IQFeedHistoryListener(minibatch=4, fire_batches=True, fire_ticks=True, filter_provider=filter_provider) as listener, listener.minibatch_provider() as provider:
+            listener.start()
 
             e1 = threading.Event()
 
@@ -125,6 +127,7 @@ class TestIQFeedHistory(unittest.TestCase):
         filter_provider += BarsFilter(ticker="IBM", interval_len=60, interval_type='s', max_bars=20)
 
         with IQFeedHistoryListener(minibatch=4, fire_batches=True, fire_ticks=True, filter_provider=filter_provider) as listener, listener.minibatch_provider() as provider:
+            listener.start()
 
             e1 = threading.Event()
 
@@ -168,6 +171,7 @@ class TestIQFeedHistory(unittest.TestCase):
         filter_provider += BarsDailyFilter(ticker=["IBM", "AAPL"], num_days=20)
 
         with IQFeedHistoryListener(minibatch=4, fire_batches=True, fire_ticks=True, filter_provider=filter_provider) as listener, listener.minibatch_provider() as provider:
+            listener.start()
 
             e1 = threading.Event()
 
@@ -225,6 +229,7 @@ class TestIQFeedHistory(unittest.TestCase):
 
         try:
             with IQFeedHistoryListener(minibatch=4, fire_batches=True, fire_ticks=True, num_connections=2, filter_provider=filter_provider, lmdb_path='/tmp/test_history_provider_test_bars_row_mode') as listener, listener.minibatch_provider() as provider:
+                listener.start()
 
                 e1 = threading.Event()
 
@@ -283,6 +288,8 @@ class TestIQFeedHistory(unittest.TestCase):
 
         try:
             with IQFeedHistoryListener(fire_batches=True, fire_ticks=True, filter_provider=filter_provider, lmdb_path='/tmp/test_history_provider_test_bars_row_mode') as listener, listener.batch_provider() as provider:
+                listener.start()
+
                 e1 = threading.Event()
 
                 def process_bar(event):
@@ -310,6 +317,7 @@ class TestIQFeedHistory(unittest.TestCase):
         filter_provider += BarsDailyFilter(ticker="IBM", num_days=20)
 
         with IQFeedHistoryListener(minibatch=4, fire_batches=True, fire_ticks=True, filter_provider=filter_provider) as listener, listener.minibatch_provider() as provider:
+            listener.start()
 
             e1 = threading.Event()
 
@@ -355,6 +363,8 @@ class TestIQFeedHistory(unittest.TestCase):
 
         try:
             with IQFeedHistoryListener(fire_batches=True, fire_ticks=True, minibatch=10, filter_provider=filter_provider, lmdb_path='/tmp/test_continuous_bars') as listener, listener.batch_provider() as provider:
+                listener.start()
+
                 events_count = {'bars': 0, 'batches': 0, 'minibatches': 0}
 
                 e1 = threading.Event()
@@ -407,7 +417,9 @@ class TestIQFeedHistory(unittest.TestCase):
         filter_provider = TicksInPeriodProvider(ticker=['AAPL', 'GOOG'], bgn_prd=datetime.date(now.year, 1, 3), delta_days=1)
 
         try:
-            with IQFeedHistoryListener(fire_batches=True, fire_ticks=True, minibatch=10, filter_provider=filter_provider, lmdb_path='/tmp/test_continuous_ticks') as listener, listener.batch_provider() as provider:
+            with IQFeedHistoryListener(fire_batches=True, fire_ticks=True, minibatch=10, filter_provider=filter_provider, lmdb_path='/tmp/test_continuous_ticks') as listener:
+                listener.start()
+
                 events_count = {'ticks': 0, 'batches': 0, 'minibatches': 0}
 
                 e1 = threading.Event()
@@ -472,29 +484,26 @@ class TestIQFeedHistory(unittest.TestCase):
 
             listener.process_minibatch += process_minibatch_listener
 
-            listener.produce()
+            listener.start()
 
             self.assertLess(datetime.datetime.now() - now, datetime.timedelta(seconds=90))
 
     def test_bar_mean_std(self):
-        with IQFeedHistoryListener(run_async=False):
-            mean_std_m = get_bar_mean_std(['AAPL', 'IBM'], interval_type='m', years_back=2)
-            self.assertEqual(mean_std_m.shape, (2, 5))
+        try:
+            with IQFeedHistoryListener(run_async=False):
+                mean_std_m = get_bar_mean_std(['AAPL', 'IBM'], interval_type='m', years_back=2, lmdb_path='/tmp/test_bar_mean_std')
+                self.assertEqual(mean_std_m.shape, (2, 5))
 
-            mean_std_w = get_bar_mean_std(['AAPL', 'IBM'], interval_type='w', years_back=2)
-            self.assertEqual(mean_std_w.shape, (2, 5))
+                mean_std_w = get_bar_mean_std(['AAPL', 'IBM'], interval_type='w', years_back=2, lmdb_path='/tmp/test_bar_mean_std')
+                self.assertEqual(mean_std_w.shape, (2, 5))
 
-            mean_std_d = get_bar_mean_std(['AAPL', 'IBM'], interval_type='d', years_back=1)
-            self.assertEqual(mean_std_d.shape, (2, 5))
+                mean_std_d = get_bar_mean_std(['AAPL', 'IBM'], interval_type='d', years_back=1, lmdb_path='/tmp/test_bar_mean_std')
+                self.assertEqual(mean_std_d.shape, (2, 5))
 
-            mean_std_s = get_bar_mean_std(['AAPL', 'IBM'], interval_type='s', interaval_len=300, years_back=1)
-            self.assertEqual(mean_std_s.shape, (2, 5))
-
-    def test_test(self):
-        import os
-        import sys
-        x = os.path.dirname(sys.modules['package']).__file__
-        pass
+                mean_std_s = get_bar_mean_std(['AAPL', 'IBM'], interval_type='s', interaval_len=300, years_back=1, lmdb_path='/tmp/test_bar_mean_std')
+                self.assertEqual(mean_std_s.shape, (2, 5))
+        finally:
+            shutil.rmtree('/tmp/test_bar_mean_std')
 
 
 if __name__ == '__main__':
