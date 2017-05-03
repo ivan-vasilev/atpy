@@ -359,7 +359,7 @@ class TestIQFeedHistory(unittest.TestCase):
     def test_continuous_bars(self):
         now = datetime.datetime.now()
 
-        filter_provider = BarsInPeriodProvider(ticker=['AAPL', 'GOOG'], bgn_prd=datetime.date(now.year, 1, 1), delta_days=1, interval_len=3600, ascend=True, interval_type='s')
+        filter_provider = BarsInPeriodProvider(ticker=['AAPL', 'GOOG'], bgn_prd=datetime.date(now.year - 2, 1, 1), delta_days=10, interval_len=3600, ascend=True, interval_type='s')
 
         try:
             with IQFeedHistoryListener(fire_batches=True, fire_ticks=True, minibatch=10, filter_provider=filter_provider, lmdb_path='/tmp/test_continuous_bars') as listener, listener.batch_provider() as provider:

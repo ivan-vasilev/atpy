@@ -305,7 +305,7 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
         elif isinstance(f.ticker, list):
             signals = dict()
 
-            if self.num_connections > 0:
+            if self.num_connections > 1:
                 pool = ThreadPool(self.num_connections)
                 self._global_counter = 0
                 lock = threading.Lock()
@@ -325,7 +325,7 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
                             if self._global_counter % 200 == 0 or self._global_counter == len(f.ticker):
                                 logging.getLogger(__name__).info("Loaded " + str(self._global_counter) + " symbols")
                                 if len(no_data) > 0:
-                                    logging.getLogger(__name__).info("No data found for  " + str(no_data))
+                                    logging.getLogger(__name__).info("No data found for " + str(len(no_data)) + " symbols: " + str(no_data))
                                     no_data.clear()
 
                     except Exception as err:
@@ -342,48 +342,49 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
                     if data is not None:
                         signals[ft.ticker] = self._process_data(data, ft)
 
-            if synchronize_timestamps and len(signals) > 0:
-                col = 'Time Stamp' if 'Time Stamp' in list(signals.values())[0] else 'Date' if 'Date' in list(signals.values())[0] else None
-                if col is not None:
-                    ts = pd.Series(name=col)
-                    for _, s in signals.items():
-                        s.drop_duplicates(subset=col, keep='last', inplace=True)
-                        ts = ts.append(s[col])
+            if len(signals) > 0:
+                if synchronize_timestamps:
+                    col = 'Time Stamp' if 'Time Stamp' in list(signals.values())[0] else 'Date' if 'Date' in list(signals.values())[0] else None
+                    if col is not None:
+                        ts = pd.Series(name=col)
+                        for _, s in signals.items():
+                            s.drop_duplicates(subset=col, keep='last', inplace=True)
+                            ts = ts.append(s[col])
 
-                    ts = ts.drop_duplicates()
-                    ts.sort_values(inplace=True)
-                    ts = ts.to_frame()
+                        ts = ts.drop_duplicates()
+                        ts.sort_values(inplace=True)
+                        ts = ts.to_frame()
 
-                    for symbol, signal in signals.items():
-                        df = pd.merge_ordered(signal, ts, on=col, how='outer')
-                        signals[symbol] = df
+                        for symbol, signal in signals.items():
+                            df = pd.merge_ordered(signal, ts, on=col, how='outer')
+                            signals[symbol] = df
 
-                        for c in [c for c in ['Period Volume', 'Number of Trades'] if c in df.columns]:
-                            df[c].fillna(0, inplace=True)
+                            for c in [c for c in ['Period Volume', 'Number of Trades'] if c in df.columns]:
+                                df[c].fillna(0, inplace=True)
 
-                        if 'Open' in df.columns:
-                            op = df['Open']
+                            if 'Open' in df.columns:
+                                op = df['Open']
 
-                            op.fillna(method='ffill', inplace=True)
+                                op.fillna(method='ffill', inplace=True)
+
+                                if self.current_filter is not None and type(self.current_filter) == type(f) and self.current_batch is not None and symbol in self.current_batch:
+                                    op.fillna(value=self.current_batch[symbol, self.current_batch.shape[1] - 1]['Open'], inplace=True)
+                                else:
+                                    op.fillna(method='backfill', inplace=True)
+
+                                for c in [c for c in ['Close', 'High', 'Low'] if c in df.columns]:
+                                    df[c].fillna(op, inplace=True)
+
+                            df.fillna(method='ffill', inplace=True)
 
                             if self.current_filter is not None and type(self.current_filter) == type(f) and self.current_batch is not None and symbol in self.current_batch:
-                                op.fillna(value=self.current_batch[symbol, self.current_batch.shape[1] - 1]['Open'], inplace=True)
+                                df.fillna(value=self.current_batch[symbol, self.current_batch.shape[1] - 1], inplace=True)
                             else:
-                                op.fillna(method='backfill', inplace=True)
+                                df.fillna(method='backfill', inplace=True)
 
-                            for c in [c for c in ['Close', 'High', 'Low'] if c in df.columns]:
-                                df[c].fillna(op, inplace=True)
-
-                        df.fillna(method='ffill', inplace=True)
-
-                        if self.current_filter is not None and type(self.current_filter) == type(f) and self.current_batch is not None and symbol in self.current_batch:
-                            df.fillna(value=self.current_batch[symbol, self.current_batch.shape[1] - 1], inplace=True)
-                        else:
-                            df.fillna(method='backfill', inplace=True)
-
-                return pd.Panel.from_dict(signals)
-            else:
-                return signals
+                    return pd.Panel.from_dict(signals)
+                else:
+                    return signals
 
     def fire_events(self, data, f):
         event_type = self._event_type(f)
@@ -567,20 +568,33 @@ class TicksInPeriodProvider(FilterProvider):
         self.timeout = timeout
 
     def __iter__(self):
-        self._deltas = 0
+        self._deltas = -1
         return self
 
     def __next__(self) -> NamedTuple:
         self._deltas += 1
-        bgn_prd = self.bgn_prd + (self._deltas - 1) * self.delta
+
         now = datetime.datetime.now()
 
-        if bgn_prd < now:
-            end_prd = self.bgn_prd + self._deltas * self.delta
-            end_prd = end_prd if end_prd < now else now
-            return TicksInPeriodFilter(ticker=self.ticker, bgn_prd=bgn_prd, end_prd=end_prd, bgn_flt=self.bgn_flt, end_flt=self.end_flt, ascend=self.ascend, max_ticks=self.max_ticks, timeout=self.timeout)
+        if self.ascend:
+            bgn_prd = self.bgn_prd + self._deltas * self.delta
+            if bgn_prd < now:
+                end_prd = self.bgn_prd + (self._deltas + 1) * self.delta
+                end_prd = end_prd if end_prd < now else now
+                return TicksInPeriodFilter(ticker=self.ticker, bgn_prd=bgn_prd, end_prd=end_prd, bgn_flt=self.bgn_flt, end_flt=self.end_flt, ascend=self.ascend, max_ticks=self.max_ticks, timeout=self.timeout)
+            else:
+                raise StopIteration
         else:
-            raise StopIteration
+            if not hasattr(self, 'start'):
+                self.start = datetime.datetime(year=now.year, month=now.month, day=now.day + 1)
+
+            end_prd = self.start - self._deltas * self.delta
+
+            if end_prd > self.bgn_prd:
+                bgn_prd = max(self.start - (self._deltas + 1) * self.delta, self.bgn_prd)
+                return BarsInPeriodFilter(ticker=self.ticker, interval_len=self.interval_len, interval_type=self.interval_type, bgn_prd=bgn_prd, end_prd=end_prd, bgn_flt=self.bgn_flt, end_flt=self.end_flt, ascend=self.ascend, max_ticks=self.max_ticks, timeout=self.timeout)
+            else:
+                raise StopIteration
 
 
 class BarsInPeriodProvider(FilterProvider):
@@ -601,18 +615,33 @@ class BarsInPeriodProvider(FilterProvider):
         self.timeout = timeout
 
     def __iter__(self):
-        self._deltas = 0
+        self._deltas = -1
         return self
 
     def __next__(self) -> NamedTuple:
         self._deltas += 1
-        bgn_prd = self.bgn_prd + (self._deltas - 1) * self.delta
+
         now = datetime.datetime.now()
 
-        if bgn_prd < now:
-            end_prd = self.bgn_prd + self._deltas * self.delta
-            end_prd = end_prd if end_prd < now else now
+        if self.ascend:
+            bgn_prd = self.bgn_prd + self._deltas * self.delta
 
-            return BarsInPeriodFilter(ticker=self.ticker, interval_len=self.interval_len, interval_type=self.interval_type, bgn_prd=bgn_prd, end_prd=end_prd, bgn_flt=self.bgn_flt, end_flt=self.end_flt, ascend=self.ascend, max_ticks=self.max_ticks, timeout=self.timeout)
+            if bgn_prd < now:
+                end_prd = self.bgn_prd + (self._deltas + 1) * self.delta
+                end_prd = end_prd if end_prd < now else now
+
+                return BarsInPeriodFilter(ticker=self.ticker, interval_len=self.interval_len, interval_type=self.interval_type, bgn_prd=bgn_prd, end_prd=end_prd, bgn_flt=self.bgn_flt, end_flt=self.end_flt, ascend=self.ascend, max_ticks=self.max_ticks, timeout=self.timeout)
+            else:
+                raise StopIteration
         else:
-            raise StopIteration
+            if not hasattr(self, 'start'):
+                self.start = datetime.datetime(year=now.year, month=now.month, day=now.day + 1)
+
+            end_prd = self.start - self._deltas * self.delta
+
+            if end_prd > self.bgn_prd:
+                bgn_prd = max(self.start - (self._deltas + 1) * self.delta, self.bgn_prd)
+
+                return BarsInPeriodFilter(ticker=self.ticker, interval_len=self.interval_len, interval_type=self.interval_type, bgn_prd=bgn_prd, end_prd=end_prd, bgn_flt=self.bgn_flt, end_flt=self.end_flt, ascend=self.ascend, max_ticks=self.max_ticks, timeout=self.timeout)
+            else:
+                raise StopIteration
