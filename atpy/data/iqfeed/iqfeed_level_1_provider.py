@@ -189,7 +189,7 @@ class Fundamentals(iq.SilentQuoteListener):
     lock = threading.RLock()
 
     @staticmethod
-    def get(symbol: str, conn: iq.QuoteConn):
+    def get(symbol: str, conn: iq.QuoteConn=None):
         if symbol not in Fundamentals.fundamentals:
             if not hasattr(Fundamentals, 'threading_events'):
                 Fundamentals.threading_events = dict()
@@ -209,12 +209,21 @@ class Fundamentals(iq.SilentQuoteListener):
             fl = FL()
 
             try:
-                conn.add_listener(fl)
-                conn.watch(symbol)
+                if conn is None:
+                    _conn = iq.QuoteConn()
+                    _conn.connect()
+                else:
+                    _conn = conn
+
+                _conn.add_listener(fl)
+                _conn.watch(symbol)
                 Fundamentals.threading_events[symbol].wait()
             finally:
                 del Fundamentals.threading_events[symbol]
-                conn.remove_listener(fl)
-                conn.unwatch(symbol)
+                _conn.remove_listener(fl)
+                _conn.unwatch(symbol)
+
+                if conn is None:
+                    _conn.disconnect()
 
         return Fundamentals.fundamentals[symbol]

@@ -193,18 +193,20 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
         self.current_batch = None
         self.current_filter = None
         self.filter_provider = filter_provider
-        self.fundamentals = dict()
         self._is_running = False
-
-        if lmdb_path == '':
-            self.db = lmdb.open(os.path.join(os.path.abspath('../' * (len(__name__.split('.')) - 2)), 'data', 'cache', 'history'), map_size=100000000000)
-        elif lmdb_path is not None:
-            self.db = lmdb.open(lmdb_path, map_size=100000000000)
-
+        self._background_thread = None
+        self.lmdb_path = lmdb_path
         self.conn = None
         self.streaming_conn = None
 
     def __enter__(self):
+        if self.lmdb_path == '':
+            self.db = lmdb.open(os.path.join(os.path.abspath('../' * (len(__name__.split('.')) - 2)), 'data', 'cache', 'history'), map_size=100000000000)
+        elif self.lmdb_path is not None:
+            self.db = lmdb.open(self.lmdb_path, map_size=100000000000)
+        else:
+            self.db = None
+
         iqfeedutil.launch_service()
 
         if self.num_connections == 1:
@@ -222,7 +224,13 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
         return self
 
     def __exit__(self, exception_type, exception_value, traceback):
-        self._is_running = False
+        if self._background_thread is not None and self._background_thread.is_alive():
+            self._is_running = False
+            self._background_thread.join()
+        else:
+            self._is_running = False
+
+        self._background_thread = None
 
         if isinstance(self.conn, list):
             for c in self.conn:
@@ -267,7 +275,8 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
                             return
 
                 self._is_running = True
-                threading.Thread(target=produce_async, daemon=True).start()
+                self._background_thread = threading.Thread(target=produce_async, daemon=True)
+                self._background_thread.start()
             else:
                 for f in self.filter_provider:
                     if f is not None:
@@ -470,8 +479,9 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
             if adjust_data and data is not None:
                 adjust(data, Fundamentals.get(f.ticker, self.streaming_conn))
         except pyiqfeed.exceptions.NoDataError as err:
-            with self.db.begin(write=True) as txn:
-                txn.put(bytearray(f.__str__(), encoding='ascii'), pickle.dumps(err))
+            if self.db is not None:
+                with self.db.begin(write=True) as txn:
+                    txn.put(bytearray(f.__str__(), encoding='ascii'), pickle.dumps(err))
 
             return None
 

@@ -5,6 +5,7 @@ import typing
 import pickle
 import os
 import logging
+import hashlib
 
 
 def _get_nasdaq_symbol_file(filename):
@@ -27,14 +28,28 @@ def _get_nasdaq_symbol_file(filename):
 
 def get_nasdaq_listed_companies():
     result = _get_nasdaq_symbol_file('nasdaqlisted.txt')
-    result['Symbol'] = result['Symbol'].str.replace('$', '-')
-    return result
+    result = list(result['Symbol'].str.replace('$', '-'))
+    result.sort()
+
+    return pd.DataFrame(result)
 
 
 def get_non_nasdaq_listed_companies():
     result = _get_nasdaq_symbol_file('otherlisted.txt')
-    result['ACT Symbol'] = result['ACT Symbol'].str.replace('$', '-')
-    return result
+    result = list(result['ACT Symbol'].str.replace('$', '-'))
+    result.sort()
+
+    return pd.DataFrame(result)
+
+
+def get_us_listed_companies():
+    nd = get_nasdaq_listed_companies()
+    nd = nd[nd['Financial Status'] == 'N']
+    non_nd = get_non_nasdaq_listed_companies()
+    symbols = list(set(list(non_nd['ACT Symbol']) + list(nd['Symbol'])))
+    symbols.sort()
+
+    return pd.DataFrame(symbols)
 
 
 def get_bar_mean_std(symbols: typing.Union[list, str]=None, interaval_len=10000, interval_type='d', skip_zeros=True, years_back=10, lmdb_path=None):
@@ -170,18 +185,14 @@ def create_bar_history_cache(interaval_len: int, symbols: typing.Union[list, str
     :param years_back: number of years to use for the computation
     """
     if symbols is None:
-        nd = get_nasdaq_listed_companies()
-        nd = nd[nd['Financial Status'] == 'N']
-        non_nd = get_non_nasdaq_listed_companies()
-        symbols = list(set(list(non_nd['ACT Symbol']) + list(nd['Symbol'])))
-        symbols.sort()
+        symbols = get_us_listed_companies()
 
     if isinstance(symbols, str):
         symbols = [symbols]
 
     if len(symbols) > 0:
         with IQFeedHistoryListener(run_async=False) as history:
-            filter_provider = BarsInPeriodProvider(ticker=symbols, interval_type='s', interval_len=interaval_len, bgn_prd=datetime.datetime(datetime.datetime.now().year - years_back, 1, 1), delta_days=121)
+            filter_provider = BarsInPeriodProvider(ticker=symbols, interval_type='s', interval_len=interaval_len, bgn_prd=datetime.date(datetime.datetime.now().year - years_back, 1, 1), delta_days=121)
 
             for i, f in enumerate(filter_provider):
                 history.request_data(f, synchronize_timestamps=False)
