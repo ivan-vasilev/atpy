@@ -1,8 +1,12 @@
 import datetime
+import logging
+import os
 import pickle
 import typing
+from multiprocessing.pool import ThreadPool
 
 import lmdb
+import pandas as pd
 
 import atpy.data.iqfeed.util as iqfeedutil
 import pyevents.events as events
@@ -10,9 +14,6 @@ import pyiqfeed
 from atpy.data.iqfeed.filters import *
 from atpy.data.iqfeed.iqfeed_level_1_provider import Fundamentals
 from atpy.data.iqfeed.util import *
-from multiprocessing.pool import ThreadPool
-import logging
-import os
 
 
 class TicksFilter(NamedTuple):
@@ -263,7 +264,13 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
                     for f in self.filter_provider:
                         try:
                             if f is not None:
+                                logging.getLogger(__name__).info("Loading data for filter " + str(f))
+
                                 d = self.request_data(f)
+
+                                self.current_filter = f
+                                self.current_batch = d
+
                                 self.fire_events(d, f)
                             else:
                                 self._is_running = False
@@ -280,7 +287,13 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
             else:
                 for f in self.filter_provider:
                     if f is not None:
+                        logging.getLogger(__name__).info("Loading data for filter " + str(f))
+
                         d = self.request_data(f)
+
+                        self.current_filter = f
+                        self.current_batch = d
+
                         self.fire_events(d, f)
                     else:
                         return
@@ -355,7 +368,11 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
                         ts.sort_values(inplace=True)
                         ts = ts.to_frame()
 
+                        zero_values = list()
                         for symbol, signal in signals.items():
+                            if 0 in signal['Open'].values:
+                                logging.getLogger(__name__).warning(symbol + " contains 0 in the Open column before timestamp sync")
+
                             df = pd.merge_ordered(signal, ts, on=col, how='outer')
                             signals[symbol] = df
 
@@ -381,6 +398,13 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
                                 df.fillna(value=self.current_batch[symbol, self.current_batch.shape[1] - 1], inplace=True)
                             else:
                                 df.fillna(method='backfill', inplace=True)
+
+                            if 0 in df['Open'].values:
+                                logging.getLogger(__name__).warning(symbol + " contains 0 in the Open column after timestamp sync")
+                                zero_values.append(symbol)
+
+                        for s in zero_values:
+                            del signals[s]
 
                     return pd.Panel.from_dict(signals)
                 else:
@@ -478,7 +502,15 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
                 data = method(*f)
 
             if adjust_data and data is not None:
+                col = 'open_p' if 'open_p' in data[0].dtype.names else 'ask' if 'ask' in data[0].dtype.names else None
+
+                if col is not None and 0 in data[col]:
+                    logging.getLogger(__name__).warning(f.ticker + " contains 0 in the " + col + " column before adjust")
+
                 adjust(data, Fundamentals.get(f.ticker, self.streaming_conn))
+
+                if col is not None and 0 in data[col]:
+                    logging.getLogger(__name__).warning(f.ticker + " contains 0 in the " + col + " column before adjust")
         except pyiqfeed.exceptions.NoDataError as err:
             if self.db is not None:
                 with self.db.begin(write=True) as txn:

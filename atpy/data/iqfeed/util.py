@@ -1,9 +1,11 @@
-import numpy as np
-import pyiqfeed as iq
-from passwords import dtn_product_id, dtn_login, dtn_password
 import queue
 import threading
-import pandas as pd
+
+import numpy as np
+
+import pyiqfeed as iq
+from passwords import dtn_product_id, dtn_login, dtn_password
+
 
 def launch_service():
     """Check if IQFeed.exe is running and start if not"""
