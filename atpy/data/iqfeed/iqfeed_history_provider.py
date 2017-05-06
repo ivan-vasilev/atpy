@@ -263,22 +263,14 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
         if self.filter_provider is not None:
             if self.run_async:
                 def produce_async():
-                    for f in self.filter_provider:
-                        try:
-                            logging.getLogger(__name__).info("Loading data for filter " + str(f))
-
-                            d = self.request_data(f)
-
-                            self.current_filter = f
-                            self.current_batch = d
-
+                    try:
+                        for d, f in self.next_batch():
                             self.fire_events(d, f)
-                        except Exception as err:
-                            logging.getLogger(__name__).exception(err)
-                            self._is_running = False
-
-                        if not self._is_running:
-                            return
+                            if not self._is_running:
+                                return
+                    except Exception as err:
+                        logging.getLogger(__name__).exception(err)
+                        self._is_running = False
 
                     self._is_running = False
                     self.no_more_data()
@@ -321,7 +313,9 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
                 logging.getLogger(__name__).warning("No data found for filter: " + str(f))
                 return
 
-            return self._process_data(data, f)
+            data = self._process_data(data, f)
+            logging.getLogger(__name__).warning("Generated data: " + str(data))
+            return data
         elif isinstance(f.ticker, list):
             signals = dict()
 
@@ -413,7 +407,9 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
                         for s in zero_values:
                             del signals[s]
 
-                    return pd.Panel.from_dict(signals)
+                    result = pd.Panel.from_dict(signals)
+                    logging.getLogger(__name__).info("Generated data of shape: " + str(result.shape))
+                    return result
                 else:
                     return signals
 
