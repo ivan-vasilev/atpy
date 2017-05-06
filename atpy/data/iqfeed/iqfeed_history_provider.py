@@ -233,6 +233,8 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
 
         self._background_thread = None
 
+        self.no_more_data()
+
         if isinstance(self.conn, list):
             for c in self.conn:
                 c.disconnect()
@@ -263,17 +265,14 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
                 def produce_async():
                     for f in self.filter_provider:
                         try:
-                            if f is not None:
-                                logging.getLogger(__name__).info("Loading data for filter " + str(f))
+                            logging.getLogger(__name__).info("Loading data for filter " + str(f))
 
-                                d = self.request_data(f)
+                            d = self.request_data(f)
 
-                                self.current_filter = f
-                                self.current_batch = d
+                            self.current_filter = f
+                            self.current_batch = d
 
-                                self.fire_events(d, f)
-                            else:
-                                self._is_running = False
+                            self.fire_events(d, f)
                         except Exception as err:
                             logging.getLogger(__name__).exception(err)
                             self._is_running = False
@@ -281,22 +280,30 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
                         if not self._is_running:
                             return
 
+                    self._is_running = False
+                    self.no_more_data()
+
                 self._is_running = True
                 self._background_thread = threading.Thread(target=produce_async, daemon=True)
                 self._background_thread.start()
             else:
-                for f in self.filter_provider:
-                    if f is not None:
-                        logging.getLogger(__name__).info("Loading data for filter " + str(f))
+                for d, f in self.next_batch():
+                    self.fire_events(d, f)
 
-                        d = self.request_data(f)
+                self.no_more_data()
 
-                        self.current_filter = f
-                        self.current_batch = d
+    def next_batch(self):
+        for f in self.filter_provider:
+            logging.getLogger(__name__).info("Loading data for filter " + str(f))
 
-                        self.fire_events(d, f)
-                    else:
-                        return
+            d = self.request_data(f)
+
+            self.current_filter = f
+            self.current_batch = d
+
+            yield d, f
+
+        self.no_more_data()
 
     def stop(self):
         self._is_running = False
@@ -564,6 +571,10 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
             return 'bar'
         elif isinstance(data_filter, BarsDailyFilter) or isinstance(data_filter, BarsDailyForDatesFilter) or isinstance(data_filter, BarsWeeklyFilter) or isinstance(data_filter, BarsMonthlyFilter):
             return 'daily'
+
+    @events.after
+    def no_more_data(self):
+        return {'type': 'no_data'}
 
     @events.after
     def process_datum(self, data):
