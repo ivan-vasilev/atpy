@@ -32,6 +32,17 @@ def get_nasdaq_listed_companies():
     result = result[result['Test Issue'] == 'N']
 
     result = list(result['Symbol'].str.replace('$', '-'))
+
+    for i, s in enumerate(result):
+        try:
+            pos = s.index('.')
+        except:
+            pass
+        else:
+            s = s[:pos]
+
+        result[i] = s
+
     result.sort()
 
     return pd.DataFrame(result)
@@ -42,6 +53,17 @@ def get_non_nasdaq_listed_companies():
     result = result[result['Test Issue'] == 'N']
 
     result = list(result['ACT Symbol'].str.replace('$', '-'))
+
+    for i, s in enumerate(result):
+        try:
+            pos = s.index('.')
+        except:
+            pass
+        else:
+            s = s[:pos]
+
+        result[i] = s
+
     result.sort()
 
     return pd.DataFrame(result)
@@ -49,9 +71,8 @@ def get_non_nasdaq_listed_companies():
 
 def get_us_listed_companies():
     nd = get_nasdaq_listed_companies()
-    nd = nd[nd['Financial Status'] == 'N']
     non_nd = get_non_nasdaq_listed_companies()
-    symbols = list(set(list(non_nd['ACT Symbol']) + list(nd['Symbol'])))
+    symbols = list(set(list(non_nd[0]) + list(nd[0])))
     symbols.sort()
 
     return pd.DataFrame(symbols)
