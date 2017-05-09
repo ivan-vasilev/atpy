@@ -144,7 +144,7 @@ def get_bar_mean_std(symbols: typing.Union[list, str]=None, interaval_len=10000,
                 # mean value
                 now = datetime.datetime.now()
 
-                filter_provider = BarsInPeriodProvider(ticker=non_cached_symbols, interval_type=interval_type, interval_len=interaval_len, bgn_prd=datetime.date(now.year - years_back, 1, 1), delta_days=122)
+                filter_provider = BarsInPeriodProvider(ticker=non_cached_symbols, interval_type=interval_type, interval_len=interaval_len, bgn_prd=datetime.date(now.year - years_back, 1, 1), delta=datetime.timedelta(days=122))
 
                 sums = dict()
 
@@ -167,7 +167,7 @@ def get_bar_mean_std(symbols: typing.Union[list, str]=None, interaval_len=10000,
                 means = {k: [v[0] / v[2], v[1] / v[2]] for k, v in sums.items()}
 
                 # standard deviation
-                filter_provider = BarsInPeriodProvider(ticker=non_cached_symbols, interval_type=interval_type, interval_len=interaval_len, bgn_prd=datetime.date(now.year - years_back, 1, 1), delta_days=122)
+                filter_provider = BarsInPeriodProvider(ticker=non_cached_symbols, interval_type=interval_type, interval_len=interaval_len, bgn_prd=datetime.date(now.year - years_back, 1, 1), delta=datetime.timedelta(days=122))
 
                 sums = dict()
 
@@ -218,7 +218,7 @@ def create_bar_history_cache(interaval_len: int, symbols: typing.Union[list, str
 
     if len(symbols) > 0:
         with IQFeedHistoryListener(run_async=False) as history:
-            filter_provider = BarsInPeriodProvider(ticker=symbols, interval_type='s', interval_len=interaval_len, bgn_prd=datetime.date(datetime.datetime.now().year - years_back, 1, 1), delta_days=121)
+            filter_provider = BarsInPeriodProvider(ticker=symbols, interval_type='s', interval_len=interaval_len, bgn_prd=datetime.date(datetime.datetime.now().year - years_back, 1, 1), delta=datetime.timedelta(days=121))
 
             for i, f in enumerate(filter_provider):
                 history.request_data(f, synchronize_timestamps=False)

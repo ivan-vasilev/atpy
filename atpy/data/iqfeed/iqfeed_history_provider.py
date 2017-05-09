@@ -1,3 +1,4 @@
+import abc
 import datetime
 import logging
 import os
@@ -300,11 +301,12 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
     def stop(self):
         self._is_running = False
 
-    def request_data(self, f, synchronize_timestamps=True):
+    def request_data(self, f, synchronize_timestamps=True, exclude_nan_ratio=0.8):
         """
         request history data
         :param f: filter tuple
-        :param synchronize_timestamps: whether to synchronize timestamps between different signals 
+        :param synchronize_timestamps: whether to synchronize timestamps between different signals
+        :param exclude_nan_ratio: exclude stocks with more nans than the given ration (before synchronization)
         :return: 
         """
         if isinstance(f.ticker, str):
@@ -352,66 +354,85 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
                 del self._global_counter
             else:
                 for ft in [f._replace(ticker=t) for t in f.ticker]:
-                    data = self._request_raw_symbol_data(ft)
+                    data = self._request_raw_symbol_data(ft, self.conn)
                     if data is not None:
                         signals[ft.ticker] = self._process_data(data, ft)
 
-            if len(signals) > 0:
-                if synchronize_timestamps:
-                    col = 'Time Stamp' if 'Time Stamp' in list(signals.values())[0] else 'Date' if 'Date' in list(signals.values())[0] else None
-                    if col is not None:
-                        ts = pd.Series(name=col)
-                        for _, s in signals.items():
-                            s.drop_duplicates(subset=col, keep='last', inplace=True)
-                            ts = ts.append(s[col])
+            if synchronize_timestamps:
+                signals = self.synchronize_timestamps(signals, f, exclude_nan_ratio)
 
-                        ts = ts.drop_duplicates()
-                        ts.sort_values(inplace=True)
-                        ts = ts.to_frame()
+            return signals
 
-                        zero_values = list()
-                        for symbol, signal in signals.items():
-                            if 0 in signal['Open'].values:
-                                logging.getLogger(__name__).warning(symbol + " contains 0 in the Open column before timestamp sync")
+    def synchronize_timestamps(self, signals: map, f: NamedTuple, exclude_nan_ratio=0.8):
+        """
+        synchronize timestamps between historical signals
+        :param signals: map of dataframes for each equity
+        :param f: filter tuple
+        :param exclude_nan_ratio: exclude stocks with more nans than the given ration (before synchronization)
+        :return: 
+        """
 
-                            df = pd.merge_ordered(signal, ts, on=col, how='outer')
-                            signals[symbol] = df
+        if len(signals) <= 1:
+            return
 
-                            for c in [c for c in ['Period Volume', 'Number of Trades'] if c in df.columns]:
-                                df[c].fillna(0, inplace=True)
+        col = 'Time Stamp' if 'Time Stamp' in list(signals.values())[0] else 'Date' if 'Date' in list(signals.values())[0] else None
+        if col is not None:
+            ts = pd.Series(name=col)
+            for _, s in signals.items():
+                s.drop_duplicates(subset=col, keep='last', inplace=True)
+                ts = ts.append(s[col])
 
-                            if 'Open' in df.columns:
-                                op = df['Open']
+            ts = ts.drop_duplicates()
+            ts.sort_values(inplace=True)
+            ts = ts.to_frame()
 
-                                op.fillna(method='ffill' if f.ascend else 'backfill', inplace=True)
+            if exclude_nan_ratio is not None:
+                mean = np.mean(np.array([signal.shape[0] for signal in signals.values()]))
+                signals = {symbol: signal for symbol, signal in signals.items() if signal.shape[0] >= mean * exclude_nan_ratio}
 
-                                if self.current_filter is not None and type(self.current_filter) == type(f) and self.current_batch is not None and f.ascend is True and symbol in self.current_batch:
-                                    op.fillna(value=self.current_batch[symbol, self.current_batch.shape[1] - 1]['Open'], inplace=True)
-                                else:
-                                    op.fillna(method='backfill' if f.ascend else 'ffill', inplace=True)
+            zero_values = list()
+            for symbol, signal in signals.items():
+                if 0 in signal['Open'].values:
+                    logging.getLogger(__name__).warning(symbol + " contains 0 in the Open column before timestamp sync")
 
-                                for c in [c for c in ['Close', 'High', 'Low'] if c in df.columns]:
-                                    df[c].fillna(op, inplace=True)
+                df = pd.merge_ordered(signal, ts, on=col, how='outer')
+                signals[symbol] = df
 
-                            df.fillna(method='ffill' if f.ascend else 'backfill', inplace=True)
+                for c in [c for c in ['Period Volume', 'Number of Trades'] if c in df.columns]:
+                    df[c].fillna(0, inplace=True)
 
-                            if self.current_filter is not None and type(self.current_filter) == type(f) and self.current_batch is not None and f.ascend is True and symbol in self.current_batch:
-                                df.fillna(value=self.current_batch[symbol, self.current_batch.shape[1] - 1], inplace=True)
-                            else:
-                                df.fillna(method='backfill' if f.ascend else 'ffill', inplace=True)
+                ascend = True if df[col].ix[0] < df[col].ix[-1] else False
 
-                            if 0 in df['Open'].values:
-                                logging.getLogger(__name__).warning(symbol + " contains 0 in the Open column after timestamp sync")
-                                zero_values.append(symbol)
+                if 'Open' in df.columns:
+                    op = df['Open']
 
-                        for s in zero_values:
-                            del signals[s]
+                    op.fillna(method='ffill' if ascend else 'backfill', inplace=True)
 
-                    result = pd.Panel.from_dict(signals)
-                    logging.getLogger(__name__).info("Generated data of shape: " + str(result.shape))
-                    return result
+                    if self.current_filter is not None and type(self.current_filter) == type(f) and self.current_batch is not None and ascend is True and symbol in self.current_batch:
+                        op.fillna(value=self.current_batch[symbol, self.current_batch.shape[1] - 1]['Open'], inplace=True)
+                    else:
+                        op.fillna(method='backfill' if ascend else 'ffill', inplace=True)
+
+                    for c in [c for c in ['Close', 'High', 'Low'] if c in df.columns]:
+                        df[c].fillna(op, inplace=True)
+
+                df.fillna(method='ffill' if ascend else 'backfill', inplace=True)
+
+                if self.current_filter is not None and type(self.current_filter) == type(f) and self.current_batch is not None and ascend is True and symbol in self.current_batch:
+                    df.fillna(value=self.current_batch[symbol, self.current_batch.shape[1] - 1], inplace=True)
                 else:
-                    return signals
+                    df.fillna(method='backfill' if ascend else 'ffill', inplace=True)
+
+                if 0 in df['Open'].values:
+                    logging.getLogger(__name__).warning(symbol + " contains 0 in the Open column after timestamp sync")
+                    zero_values.append(symbol)
+
+            for s in zero_values:
+                del signals[s]
+
+        result = pd.Panel.from_dict(signals)
+        logging.getLogger(__name__).info("Generated data of shape: " + str(result.shape))
+        return result
 
     def fire_events(self, data, f):
         event_type = self._event_type(f)
@@ -563,9 +584,9 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
     def _event_type(data_filter):
         if isinstance(data_filter, TicksFilter) or isinstance(data_filter, TicksForDaysFilter) or isinstance(data_filter, TicksInPeriodFilter):
             return 'level_1_tick'
-        elif isinstance(data_filter, BarsFilter) or isinstance(data_filter, BarsForDaysFilter) or isinstance(data_filter, BarsInPeriodFilter):
+        elif isinstance(data_filter, BarsFilter) or isinstance(data_filter, BarsForDaysFilter) or isinstance(data_filter, BarsInPeriodFilter) or isinstance(data_filter, BarsDailyForDatesFilter):
             return 'bar'
-        elif isinstance(data_filter, BarsDailyFilter) or isinstance(data_filter, BarsDailyForDatesFilter) or isinstance(data_filter, BarsWeeklyFilter) or isinstance(data_filter, BarsMonthlyFilter):
+        elif isinstance(data_filter, BarsDailyFilter) or isinstance(data_filter, BarsWeeklyFilter) or isinstance(data_filter, BarsMonthlyFilter):
             return 'daily'
 
     @events.after
@@ -591,96 +612,90 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
         return IQFeedDataProvider(self.process_minibatch)
 
 
-class TicksInPeriodProvider(FilterProvider):
+class InPeriodProvider(FilterProvider, metaclass=ABCMeta):
+    """
+    Generate a sequence of InPeriod filters to obtain market history
+    """
+
+    def __init__(self, ticker: typing.Union[list, str], bgn_prd: datetime.date, delta: datetime.timedelta, ascend: bool=True, max_ticks: int=None, timeout: int=None):
+        self.ticker = ticker
+        self.bgn_prd = datetime.datetime(year=bgn_prd.year, month=bgn_prd.month, day=bgn_prd.day)
+        self.delta = delta
+        self.ascend = ascend
+        self.max_ticks = max_ticks
+        self.timeout = timeout
+
+    def __iter__(self):
+        self._deltas = -1
+        return self
+
+    def __next__(self) -> NamedTuple:
+        self._deltas += 1
+
+        now = datetime.datetime.now()
+
+        if self.ascend:
+            bgn_prd = self.bgn_prd + self._deltas * self.delta
+
+            if bgn_prd < now:
+                end_prd = self.bgn_prd + (self._deltas + 1) * self.delta
+                end_prd = end_prd if end_prd < now else now
+
+                return self._create_filter(bgn_prd, end_prd)
+            else:
+                raise StopIteration
+        else:
+            if not hasattr(self, 'start'):
+                self.start = datetime.datetime(year=now.year, month=now.month, day=now.day + 1)
+
+            end_prd = self.start - self._deltas * self.delta
+
+            if end_prd > self.bgn_prd:
+                bgn_prd = max(self.start - (self._deltas + 1) * self.delta, self.bgn_prd)
+
+                return self._create_filter(bgn_prd, end_prd)
+            else:
+                raise StopIteration
+
+    @abc.abstractmethod
+    def _create_filter(self, bgn_prd, end_prd) -> NamedTuple:
+        pass
+
+
+class TicksInPeriodProvider(InPeriodProvider):
     """
     Generate a sequence of TicksInPeriod filters to obtain market history
     """
 
-    def __init__(self, ticker: typing.Union[list, str], bgn_prd: datetime.date, delta_days: int=121, bgn_flt: datetime.time=None, end_flt: datetime.time=None, ascend: bool=False, max_ticks: int=None, timeout: int=None):
-        self.ticker = ticker
-        self.bgn_prd = datetime.datetime(year=bgn_prd.year, month=bgn_prd.month, day=bgn_prd.day)
-        self.delta = datetime.timedelta(days=delta_days)
+    def __init__(self, ticker: typing.Union[list, str], bgn_prd: datetime.date, delta: datetime.timedelta, bgn_flt: datetime.time=None, end_flt: datetime.time=None, ascend: bool=False, max_ticks: int=None, timeout: int=None):
+        super().__init__(ticker=ticker, bgn_prd=bgn_prd, delta=delta, ascend=ascend, max_ticks=max_ticks, timeout=timeout)
         self.bgn_flt = bgn_flt
         self.end_flt = end_flt
-        self.ascend = ascend
-        self.max_ticks = max_ticks
-        self.timeout = timeout
 
     def __iter__(self):
         self._deltas = -1
         return self
 
-    def __next__(self) -> NamedTuple:
-        self._deltas += 1
-
-        now = datetime.datetime.now()
-
-        if self.ascend:
-            bgn_prd = self.bgn_prd + self._deltas * self.delta
-            if bgn_prd < now:
-                end_prd = self.bgn_prd + (self._deltas + 1) * self.delta
-                end_prd = end_prd if end_prd < now else now
-                return TicksInPeriodFilter(ticker=self.ticker, bgn_prd=bgn_prd, end_prd=end_prd, bgn_flt=self.bgn_flt, end_flt=self.end_flt, ascend=self.ascend, max_ticks=self.max_ticks, timeout=self.timeout)
-            else:
-                raise StopIteration
-        else:
-            if not hasattr(self, 'start'):
-                self.start = datetime.datetime(year=now.year, month=now.month, day=now.day + 1)
-
-            end_prd = self.start - self._deltas * self.delta
-
-            if end_prd > self.bgn_prd:
-                bgn_prd = max(self.start - (self._deltas + 1) * self.delta, self.bgn_prd)
-                return BarsInPeriodFilter(ticker=self.ticker, interval_len=self.interval_len, interval_type=self.interval_type, bgn_prd=bgn_prd, end_prd=end_prd, bgn_flt=self.bgn_flt, end_flt=self.end_flt, ascend=self.ascend, max_ticks=self.max_ticks, timeout=self.timeout)
-            else:
-                raise StopIteration
+    def _create_filter(self, bgn_prd, end_prd) -> NamedTuple:
+        return TicksInPeriodFilter(ticker=self.ticker, bgn_prd=bgn_prd, end_prd=end_prd, bgn_flt=self.bgn_flt, end_flt=self.end_flt, ascend=self.ascend, max_ticks=self.max_ticks, timeout=self.timeout)
 
 
-class BarsInPeriodProvider(FilterProvider):
+class BarsInPeriodProvider(InPeriodProvider):
     """
     Generate a sequence of BarsInPeriod filters to obtain market history
     """
 
-    def __init__(self, ticker: typing.Union[list, str], interval_len: int, interval_type: str, bgn_prd: datetime.date, delta_days: int=121, bgn_flt: datetime.time=None, end_flt: datetime.time=None, ascend: bool=True, max_ticks: int=None, timeout: int=None):
-        self.ticker = ticker
+    def __init__(self, ticker: typing.Union[list, str], interval_len: int, interval_type: str, bgn_prd: datetime.date, delta: datetime.timedelta, bgn_flt: datetime.time=None, end_flt: datetime.time=None, ascend: bool=True, max_ticks: int=None, timeout: int=None):
+        super().__init__(ticker=ticker, bgn_prd=bgn_prd, delta=delta, ascend=ascend, max_ticks=max_ticks, timeout=timeout)
+
         self.interval_len = interval_len
         self.interval_type = interval_type
-        self.bgn_prd = datetime.datetime(year=bgn_prd.year, month=bgn_prd.month, day=bgn_prd.day)
-        self.delta = datetime.timedelta(days=delta_days)
         self.bgn_flt = bgn_flt
         self.end_flt = end_flt
-        self.ascend = ascend
-        self.max_ticks = max_ticks
-        self.timeout = timeout
 
     def __iter__(self):
         self._deltas = -1
         return self
 
-    def __next__(self) -> NamedTuple:
-        self._deltas += 1
-
-        now = datetime.datetime.now()
-
-        if self.ascend:
-            bgn_prd = self.bgn_prd + self._deltas * self.delta
-
-            if bgn_prd < now:
-                end_prd = self.bgn_prd + (self._deltas + 1) * self.delta
-                end_prd = end_prd if end_prd < now else now
-
-                return BarsInPeriodFilter(ticker=self.ticker, interval_len=self.interval_len, interval_type=self.interval_type, bgn_prd=bgn_prd, end_prd=end_prd, bgn_flt=self.bgn_flt, end_flt=self.end_flt, ascend=self.ascend, max_ticks=self.max_ticks, timeout=self.timeout)
-            else:
-                raise StopIteration
-        else:
-            if not hasattr(self, 'start'):
-                self.start = datetime.datetime(year=now.year, month=now.month, day=now.day + 1)
-
-            end_prd = self.start - self._deltas * self.delta
-
-            if end_prd > self.bgn_prd:
-                bgn_prd = max(self.start - (self._deltas + 1) * self.delta, self.bgn_prd)
-
-                return BarsInPeriodFilter(ticker=self.ticker, interval_len=self.interval_len, interval_type=self.interval_type, bgn_prd=bgn_prd, end_prd=end_prd, bgn_flt=self.bgn_flt, end_flt=self.end_flt, ascend=self.ascend, max_ticks=self.max_ticks, timeout=self.timeout)
-            else:
-                raise StopIteration
+    def _create_filter(self, bgn_prd, end_prd) -> NamedTuple:
+        return BarsInPeriodFilter(ticker=self.ticker, interval_len=self.interval_len, interval_type=self.interval_type, bgn_prd=bgn_prd, end_prd=end_prd, bgn_flt=self.bgn_flt, end_flt=self.end_flt, ascend=self.ascend, max_ticks=self.max_ticks, timeout=self.timeout)
