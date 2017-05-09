@@ -401,27 +401,25 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
                 for c in [c for c in ['Period Volume', 'Number of Trades'] if c in df.columns]:
                     df[c].fillna(0, inplace=True)
 
-                ascend = True if df[col].ix[0] < df[col].ix[-1] else False
-
                 if 'Open' in df.columns:
                     op = df['Open']
 
-                    op.fillna(method='ffill' if ascend else 'backfill', inplace=True)
+                    op.fillna(method='ffill' if f.ascend else 'backfill', inplace=True)
 
-                    if self.current_filter is not None and type(self.current_filter) == type(f) and self.current_batch is not None and ascend is True and symbol in self.current_batch:
+                    if self.current_filter is not None and type(self.current_filter) == type(f) and self.current_batch is not None and f.ascend is True and symbol in self.current_batch:
                         op.fillna(value=self.current_batch[symbol, self.current_batch.shape[1] - 1]['Open'], inplace=True)
                     else:
-                        op.fillna(method='backfill' if ascend else 'ffill', inplace=True)
+                        op.fillna(method='backfill' if f.ascend else 'ffill', inplace=True)
 
                     for c in [c for c in ['Close', 'High', 'Low'] if c in df.columns]:
                         df[c].fillna(op, inplace=True)
 
-                df.fillna(method='ffill' if ascend else 'backfill', inplace=True)
+                df.fillna(method='ffill' if f.ascend else 'backfill', inplace=True)
 
-                if self.current_filter is not None and type(self.current_filter) == type(f) and self.current_batch is not None and ascend is True and symbol in self.current_batch:
+                if self.current_filter is not None and type(self.current_filter) == type(f) and self.current_batch is not None and f.ascend is True and symbol in self.current_batch:
                     df.fillna(value=self.current_batch[symbol, self.current_batch.shape[1] - 1], inplace=True)
                 else:
-                    df.fillna(method='backfill' if ascend else 'ffill', inplace=True)
+                    df.fillna(method='backfill' if f.ascend else 'ffill', inplace=True)
 
                 if 0 in df['Open'].values:
                     logging.getLogger(__name__).warning(symbol + " contains 0 in the Open column after timestamp sync")
