@@ -301,7 +301,7 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
     def stop(self):
         self._is_running = False
 
-    def request_data(self, f, synchronize_timestamps=True, exclude_nan_ratio=0.8):
+    def request_data(self, f, synchronize_timestamps=True, exclude_nan_ratio=0.9):
         """
         request history data
         :param f: filter tuple
@@ -363,7 +363,7 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
 
             return signals
 
-    def synchronize_timestamps(self, signals: map, f: NamedTuple, exclude_nan_ratio=0.8):
+    def synchronize_timestamps(self, signals: map, f: NamedTuple, exclude_nan_ratio=None):
         """
         synchronize timestamps between historical signals
         :param signals: map of dataframes for each equity
@@ -396,7 +396,6 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
                     logging.getLogger(__name__).warning(symbol + " contains 0 in the Open column before timestamp sync")
 
                 df = pd.merge_ordered(signal, ts, on=col, how='outer')
-                signals[symbol] = df
 
                 for c in [c for c in ['Period Volume', 'Number of Trades'] if c in df.columns]:
                     df[c].fillna(0, inplace=True)
@@ -404,26 +403,31 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
                 if 'Open' in df.columns:
                     op = df['Open']
 
-                    op.fillna(method='ffill' if f.ascend else 'backfill', inplace=True)
+                    op.fillna(method='ffill', inplace=True)
 
                     if self.current_filter is not None and type(self.current_filter) == type(f) and self.current_batch is not None and f.ascend is True and symbol in self.current_batch:
                         op.fillna(value=self.current_batch[symbol, self.current_batch.shape[1] - 1]['Open'], inplace=True)
                     else:
-                        op.fillna(method='backfill' if f.ascend else 'ffill', inplace=True)
+                        op.fillna(method='backfill', inplace=True)
 
                     for c in [c for c in ['Close', 'High', 'Low'] if c in df.columns]:
                         df[c].fillna(op, inplace=True)
 
-                df.fillna(method='ffill' if f.ascend else 'backfill', inplace=True)
+                df.fillna(method='ffill', inplace=True)
 
                 if self.current_filter is not None and type(self.current_filter) == type(f) and self.current_batch is not None and f.ascend is True and symbol in self.current_batch:
                     df.fillna(value=self.current_batch[symbol, self.current_batch.shape[1] - 1], inplace=True)
                 else:
-                    df.fillna(method='backfill' if f.ascend else 'ffill', inplace=True)
+                    df.fillna(method='backfill', inplace=True)
 
                 if 0 in df['Open'].values:
                     logging.getLogger(__name__).warning(symbol + " contains 0 in the Open column after timestamp sync")
                     zero_values.append(symbol)
+
+                if not f.ascend:
+                    df = df.iloc[::-1]
+
+                signals[symbol] = df
 
             for s in zero_values:
                 del signals[s]

@@ -31,6 +31,17 @@ def get_nasdaq_listed_companies():
     result = result[result['Financial Status'] == 'N']
     result = result[result['Test Issue'] == 'N']
 
+    include_only = set()
+    include_only_index = list()
+    for i in range(result.shape[0]):
+        s = result.iloc[i]
+        if len(s['Symbol']) < 5 or s['Symbol'][:4] not in include_only:
+            include_only_index.append(True)
+            include_only.add(s['Symbol'])
+        else:
+            include_only_index.append(False)
+
+    result = result[include_only_index]
     result = list(result['Symbol'].str.replace('$', '-'))
 
     for i, s in enumerate(result):
