@@ -1,11 +1,9 @@
 import queue
 import threading
-
 import numpy as np
 
 import pyiqfeed as iq
 from passwords import dtn_product_id, dtn_login, dtn_password
-import pickle
 
 
 def launch_service():
@@ -168,9 +166,3 @@ class IQFeedDataProvider(object):
             if self._is_listening:
                 self._is_listening = False
                 self._producer -= self._populate_queue
-
-
-def data_provider_to_file(prefix: str, provider):
-    for i, d in enumerate(provider):
-        with open(prefix + '{0:03d}'.format(i + 1), 'wb') as f:
-            pickle.dump(d, f, pickle.HIGHEST_PROTOCOL)
