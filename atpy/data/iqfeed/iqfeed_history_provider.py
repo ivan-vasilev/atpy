@@ -330,23 +330,23 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
                 def mp_worker(p):
                     try:
                         ft, conn = p
-                        data = self._request_raw_symbol_data(ft, conn)
-                        if data is not None:
-                            signals[ft.ticker] = self._process_data(data, ft)
-                        else:
-                            no_data.add(ft.ticker)
-
-                        with lock:
-                            self._global_counter += 1
-                            if self._global_counter % 200 == 0 or self._global_counter == len(f.ticker):
-                                logging.getLogger(__name__).info("Loaded " + str(self._global_counter) + " symbols")
-                                if len(no_data) > 0:
-                                    logging.getLogger(__name__).info("No data found for " + str(len(no_data)) + " symbols: " + str(no_data))
-                                    no_data.clear()
-
+                        raw_data = self._request_raw_symbol_data(ft, conn)
                     except Exception as err:
+                        raw_data = None
                         logging.getLogger(__name__).exception(err)
-                        raise err
+
+                    if raw_data is not None:
+                        signals[ft.ticker] = self._process_data(raw_data, ft)
+                    else:
+                        no_data.add(ft.ticker)
+
+                    with lock:
+                        self._global_counter += 1
+                        if self._global_counter % 200 == 0 or self._global_counter == len(f.ticker):
+                            logging.getLogger(__name__).info("Loaded " + str(self._global_counter) + " symbols")
+                            if len(no_data) > 0:
+                                logging.getLogger(__name__).info("No data found for " + str(len(no_data)) + " symbols: " + str(no_data))
+                                no_data.clear()
 
                 pool.map(mp_worker, ((f._replace(ticker=t), self.conn[i % self.num_connections]) for i, t in enumerate(f.ticker)))
                 pool.close()
