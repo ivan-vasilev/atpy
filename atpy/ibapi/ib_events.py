@@ -13,7 +13,7 @@ class DefaultWrapper(EWrapper, metaclass=events.GlobalRegister):
     def __init__(self):
         EWrapper.__init__(self)
         self.next_valid_order_id = -1
-        self.pending_orders = dict()
+        self._pending_orders = dict()
 
     def nextValidId(self, orderId: int):
         self.next_valid_order_id = orderId
@@ -24,11 +24,16 @@ class DefaultWrapper(EWrapper, metaclass=events.GlobalRegister):
                     whyHeld: str):
 
         if status == 'Filled':
-            order = self.pending_orders[orderId]
-            del self.pending_orders[orderId]
-            order.uid = orderId
+            if orderId in self._pending_orders:
+                order = self._pending_orders[orderId]
+                del self._pending_orders[orderId]
+                order.uid = orderId
 
-            self.after_event({'type': 'order_fulfilled', 'data': order})
+            self.after_event({'type': 'order_fulfilled', 'data': orderId})
+
+    def error(self, reqId:int, errorCode:int, errorString:str):
+        super().error(reqId=reqId, errorCode=errorCode, errorString=errorString)
+        self.after_event({'type': 'ibapi_error', 'data': {'reqId': reqId, 'errorCode': errorCode, 'errorString': errorString}})
 
     @events.after
     def after_event(self, data):
@@ -94,6 +99,6 @@ class IBEvents(DefaultWrapper, DefaultClient, metaclass=events.GlobalRegister):
 
             iborder.totalQuantity = order.quantity
 
-            self.pending_orders[self.next_valid_order_id] = order
+            self._pending_orders[self.next_valid_order_id] = order
 
             self.placeOrder(self.next_valid_order_id, ibcontract, iborder)
