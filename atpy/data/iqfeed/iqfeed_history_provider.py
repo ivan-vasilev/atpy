@@ -345,7 +345,9 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
                         if self._global_counter % 200 == 0 or self._global_counter == len(f.ticker):
                             logging.getLogger(__name__).info("Loaded " + str(self._global_counter) + " symbols")
                             if len(no_data) > 0:
-                                logging.getLogger(__name__).info("No data found for " + str(len(no_data)) + " symbols: " + str(no_data))
+                                no_data_list = list(no_data)
+                                no_data_list.sort()
+                                logging.getLogger(__name__).info("No data found for " + str(len(no_data_list)) + " symbols: " + str(no_data_list))
                                 no_data.clear()
 
                 pool.map(mp_worker, ((f._replace(ticker=t), self.conn[i % self.num_connections]) for i, t in enumerate(f.ticker)))

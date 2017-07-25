@@ -43,4 +43,4 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
     now = datetime.datetime.now()
-    all_bars_to_file('5_min_all_symbols/df_', bgn_prd=datetime.date(now.year - 7, 1, 1), delta=datetime.timedelta(days=20), interval_len=300, ascend=True, interval_type='s')
+    all_bars_to_file('5_min_all_symbols_1_year/df_', bgn_prd=datetime.date(now.year - 1, 6, 1), delta=datetime.timedelta(days=20), interval_len=300, ascend=True, interval_type='s')
