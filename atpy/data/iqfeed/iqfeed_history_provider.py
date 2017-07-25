@@ -3,18 +3,20 @@ import datetime
 import logging
 import os
 import pickle
+import threading
 import typing
 from multiprocessing.pool import ThreadPool
 
 import lmdb
+import numpy as np
 import pandas as pd
 
-import atpy.data.iqfeed.util as iqfeedutil
 import pyevents.events as events
 import pyiqfeed
+import pyiqfeed as iq
 from atpy.data.iqfeed.filters import *
 from atpy.data.iqfeed.iqfeed_level_1_provider import Fundamentals
-from atpy.data.iqfeed.util import *
+from atpy.data.iqfeed.util import launch_service, adjust, IQFeedDataProvider
 
 
 class TicksFilter(NamedTuple):
@@ -209,7 +211,7 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
         else:
             self.db = None
 
-        iqfeedutil.launch_service()
+        launch_service()
 
         if self.num_connections == 1:
             self.conn = iq.HistoryConn()
@@ -315,9 +317,7 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
                 logging.getLogger(__name__).warning("No data found for filter: " + str(f))
                 return
 
-            data = self._process_data(data, f)
-            logging.getLogger(__name__).warning("Generated data: " + str(data))
-            return data
+            return self._process_data(data, f)
         elif isinstance(f.ticker, list):
             signals = dict()
 

@@ -1,12 +1,14 @@
 import datetime
-import lmdb
 import pickle
+import threading
 from typing import List
 
+import lmdb
+
 import atpy.data.iqfeed.util as iqfeedutil
-from atpy.data.iqfeed.filters import *
-from atpy.data.iqfeed.util import *
 import pyevents.events as events
+import pyiqfeed as iq
+from atpy.data.iqfeed.filters import *
 
 
 class NewsFilter(NamedTuple):
@@ -170,11 +172,11 @@ class IQFeedNewsListener(object, metaclass=events.GlobalRegister):
         return {'type': 'news_batch', 'data': data}
 
     def batch_provider(self):
-        return IQFeedDataProvider(self.process_batch)
+        return iqfeedutil.IQFeedDataProvider(self.process_batch)
 
     @events.after
     def process_minibatch(self, data):
         return {'type': 'news_minibatch', 'data': data}
 
     def minibatch_provider(self):
-        return IQFeedDataProvider(self.process_minibatch)
+        return iqfeedutil.IQFeedDataProvider(self.process_minibatch)

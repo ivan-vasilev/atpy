@@ -1,5 +1,6 @@
 import queue
 import threading
+
 import numpy as np
 
 import pyiqfeed as iq

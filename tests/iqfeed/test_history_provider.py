@@ -3,7 +3,7 @@ import shutil
 
 
 from atpy.data.iqfeed.iqfeed_history_provider import *
-from atpy.data.util import get_bar_mean_std
+from atpy.data.iqfeed.history_util import get_bar_mean_std
 
 
 class TestIQFeedHistory(unittest.TestCase):
