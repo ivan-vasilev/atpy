@@ -64,7 +64,7 @@ class IBEvents(DefaultWrapper, DefaultClient, metaclass=events.GlobalRegister):
     def __enter__(self):
         self.connect(self.ipaddress, self.portid, self.clientid)
 
-        thread = threading.Thread(target=self.run, daemon=True)
+        thread = threading.Thread(target=self.run)
         thread.start()
 
         setattr(self, "_thread", thread)
@@ -73,7 +73,7 @@ class IBEvents(DefaultWrapper, DefaultClient, metaclass=events.GlobalRegister):
 
     def __exit__(self, exception_type, exception_value, traceback):
         """Disconnect connection etc"""
-        self.disconnect()
+        self.done = True
 
     @events.listener
     def on_event(self, event):
