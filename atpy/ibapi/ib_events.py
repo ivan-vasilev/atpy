@@ -31,7 +31,9 @@ class DefaultWrapper(EWrapper, metaclass=events.GlobalRegister):
                 del self._pending_orders[orderId]
                 order.uid = orderId
 
-            self.after_event({'type': 'order_fulfilled', 'data': orderId})
+                self.after_event({'type': 'order_fulfilled', 'data': order})
+            else:
+                self.after_event({'type': 'order_fulfilled', 'data': orderId})
         elif status in ('Inactive', 'ApiCanceled', 'Cancelled') and orderId in self._pending_orders:
             del self._pending_orders[orderId]
 
@@ -85,7 +87,6 @@ class IBEvents(DefaultWrapper, DefaultClient, metaclass=events.GlobalRegister):
             ibcontract.secType = "STK"
             ibcontract.currency = "USD"
             ibcontract.exchange = "SMART"
-            ibcontract.primaryExch = "ISLAND"
 
             iborder = Order()
 
@@ -111,3 +112,5 @@ class IBEvents(DefaultWrapper, DefaultClient, metaclass=events.GlobalRegister):
             self._pending_orders[self.next_valid_order_id] = order
 
             self.placeOrder(self.next_valid_order_id, ibcontract, iborder)
+
+            self.next_valid_order_id += 1
