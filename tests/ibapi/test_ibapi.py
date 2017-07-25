@@ -19,11 +19,13 @@ class TestIBApi(unittest.TestCase):
 
         ibe = IBEvents("127.0.0.1", 4002, 0)
         with ibe:
-            o = MarketOrder(Type.BUY, 'GOOG', 1)
-
             e1 = threading.Event()
             events.listener(lambda x: e1.set() if x['type'] == 'order_fulfilled' and x['data'].symbol == 'GOOG' else None)
+            ibe.on_event({'type': 'order_request', 'data': MarketOrder(Type.BUY, 'GOOG', 1)})
 
-            ibe.on_event({'type': 'order_request', 'data': o})
+            e2 = threading.Event()
+            events.listener(lambda x: e1.set() if x['type'] == 'order_fulfilled' and x['data'].symbol == 'AAPL' else None)
+            ibe.on_event({'type': 'order_request', 'data': MarketOrder(Type.BUY, 'AAPL', 1)})
 
             e1.wait()
+            e2.wait()

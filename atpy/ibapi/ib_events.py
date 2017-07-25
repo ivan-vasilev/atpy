@@ -14,9 +14,11 @@ class DefaultWrapper(EWrapper, metaclass=events.GlobalRegister):
         EWrapper.__init__(self)
         self.next_valid_order_id = -1
         self._pending_orders = dict()
+        self._has_valid_id = threading.Event()
 
     def nextValidId(self, orderId: int):
         self.next_valid_order_id = orderId
+        self._has_valid_id.set()
 
     def orderStatus(self, orderId: int, status: str, filled: float,
                     remaining: float, avgFillPrice: float, permId: int,
@@ -30,6 +32,8 @@ class DefaultWrapper(EWrapper, metaclass=events.GlobalRegister):
                 order.uid = orderId
 
             self.after_event({'type': 'order_fulfilled', 'data': orderId})
+        elif status in ('Inactive', 'ApiCanceled', 'Cancelled') and orderId in self._pending_orders:
+            del self._pending_orders[orderId]
 
     def error(self, reqId:int, errorCode:int, errorString:str):
         super().error(reqId=reqId, errorCode=errorCode, errorString=errorString)
@@ -63,6 +67,8 @@ class IBEvents(DefaultWrapper, DefaultClient, metaclass=events.GlobalRegister):
 
         setattr(self, "_thread", thread)
 
+        self.reqIds(-1)
+
     def __exit__(self, exception_type, exception_value, traceback):
         """Disconnect connection etc"""
         self.disconnect()
@@ -79,6 +85,7 @@ class IBEvents(DefaultWrapper, DefaultClient, metaclass=events.GlobalRegister):
             ibcontract.secType = "STK"
             ibcontract.currency = "USD"
             ibcontract.exchange = "SMART"
+            ibcontract.primaryExch = "ISLAND"
 
             iborder = Order()
 
@@ -98,6 +105,8 @@ class IBEvents(DefaultWrapper, DefaultClient, metaclass=events.GlobalRegister):
                 order.auxPrice = order.stop_price
 
             iborder.totalQuantity = order.quantity
+
+            self._has_valid_id.wait()
 
             self._pending_orders[self.next_valid_order_id] = order
 
