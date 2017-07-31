@@ -7,7 +7,7 @@ import threading
 
 class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegister):
 
-    def __init__(self, fire_bars=True, minibatch=None, mkt_snapshot_minibatch=None, key_suffix=''):
+    def __init__(self, fire_bars=True, minibatch=None, mkt_snapshot_minibatch=None, mkt_snapshot=False, key_suffix=''):
         """
         :param fire_bars: raise event for each individual bar if True
         :param minibatch: size of the minibatch
@@ -27,6 +27,7 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
         self._lock = threading.RLock()
 
         self.mkt_snapshot_minibatch = mkt_snapshot_minibatch
+        self.mkt_snapshot = mkt_snapshot
 
         if mkt_snapshot_minibatch is not None:
             self._unique_bars = set()
@@ -175,6 +176,33 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
                     self._mb_mkt_snapshot = dict()
                     self._unique_bars = set()
 
+        if self.mkt_snapshot is not None:
+            with self._lock:
+                self._unique_bars.add(bar_data['date'] + bar_data['time'])
+                symbol = bar_data['symbol'].decode('ascii')
+                if symbol not in self._mb_mkt_snapshot:
+                    self._mb_mkt_snapshot[symbol] = list()
+
+                self._mb_mkt_snapshot[symbol].append(bar_data)
+
+                if len(self._unique_bars) == self.mkt_snapshot_minibatch:
+                    ts = pd.Series(data=list(self._unique_bars), name='Time Stamp' + self.key_suffix)
+                    ts.sort_values(inplace=True)
+                    ts = ts.to_frame()
+
+                    for symbol, signal in self._mb_mkt_snapshot.items():
+                        df = self._process_data(np.array(self._mb_mkt_snapshot[symbol], dtype=iq.BarConn.interval_data_type))
+                        df = pd.merge_ordered(df, ts, on='Time Stamp', how='outer', fill_method='ffill')
+                        df.fillna(method='backfill', inplace=True)
+
+                        self._mb_mkt_snapshot[symbol] = df
+
+                    batch = pd.Panel.from_dict(self._mb_mkt_snapshot)
+                    self.on_mb_market_snapshot(batch)
+
+                    self._mb_mkt_snapshot = dict()
+                    self._unique_bars = set()
+
     def _process_data(self, data):
         if isinstance(data, dict):
             result = dict()
@@ -195,6 +223,9 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
             result['symbol'] = result['symbol'].str.decode('ascii')
             sf = self.key_suffix
             result['Time Stamp' + sf] = data['date'] + data['time']
+
+            result.set_index('Time Stamp' + sf, inplace=True, drop=False)
+
             result.drop(['date', 'time'], axis=1, inplace=True)
             result.rename_axis({"symbol": "Symbol" + sf, "high_p": "High" + sf, "low_p": "Low" + sf, "open_p": "Open" + sf, "close_p": "Close" + sf, "tot_vlm": "Total Volume" + sf, "prd_vlm": "Period Volume" + sf, "num_trds": "Number of Trades" + sf}, axis="columns", copy=False, inplace=True)
 

@@ -379,14 +379,15 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
 
         col = 'Time Stamp' if 'Time Stamp' in list(signals.values())[0] else 'Date' if 'Date' in list(signals.values())[0] else None
         if col is not None:
-            ts = pd.Series(name=col)
+            ind = None
             for _, s in signals.items():
-                s.drop_duplicates(subset=col, keep='last', inplace=True)
-                ts = ts.append(s[col])
+                if ind is None:
+                    ind = s.index.copy(deep=True)
+                else:
+                    ind = ind.append(s.index)
 
-            ts = ts.drop_duplicates()
-            ts.sort_values(inplace=True)
-            ts = ts.to_frame()
+            ind = ind.drop_duplicates()
+            ind = ind.sort_values()
 
             if exclude_nan_ratio is not None:
                 mean = np.mean(np.array([signal.shape[0] for signal in signals.values()]))
@@ -397,7 +398,7 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
                 if 0 in signal['Open'].values:
                     logging.getLogger(__name__).warning(symbol + " contains 0 in the Open column before timestamp sync")
 
-                df = pd.merge_ordered(signal, ts, on=col, how='outer')
+                df = signal.reindex(ind, copy=False)
 
                 for c in [c for c in ['Period Volume', 'Number of Trades'] if c in df.columns]:
                     df[c].fillna(0, inplace=True)
@@ -564,12 +565,15 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
         result.rename_axis({"last": "Last" + sf, "last_sz": "Last Size" + sf, "tot_vlm": "Total Volume" + sf, "bid": "Bid" + sf, "ask": "Ask" + sf, "tick_id": "TickID" + sf, "last_type": "Basis For Last" + sf, "mkt_ctr": "Trade Market Center" + sf}, axis="columns", copy=False, inplace=True)
         result['Symbol'] = data_filter.ticker
 
+        result.set_index("TickID" + sf, inplace=True, drop=False)
+
         return result
 
     def _process_bars(self, data, data_filter):
         result = pd.DataFrame(data)
         sf = self.key_suffix
         result['Time Stamp' + sf] = data['date'] + data['time']
+        result.set_index('Time Stamp' + sf, inplace=True, drop=False)
         result.drop(['date', 'time'], axis=1, inplace=True)
         result.rename_axis({"high_p": "High" + sf, "low_p": "Low" + sf, "open_p": "Open" + sf, "close_p": "Close" + sf, "tot_vlm": "Total Volume" + sf, "prd_vlm": "Period Volume" + sf, "num_trds": "Number of Trades" + sf}, axis="columns", copy=False, inplace=True)
         result['Symbol'] = data_filter.ticker
@@ -581,6 +585,8 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
         sf = self.key_suffix
         result.rename_axis({"date": "Date" + sf, "high_p": "High" + sf, "low_p": "Low" + sf, "open_p": "Open" + sf, "close_p": "Close" + sf, "prd_vlm": "Period Volume" + sf, "open_int": "Open Interest" + sf}, axis="columns", copy=False, inplace=True)
         result['Symbol'] = data_filter.ticker
+
+        result.set_index('Date' + sf, inplace=True, drop=False)
 
         return result
 

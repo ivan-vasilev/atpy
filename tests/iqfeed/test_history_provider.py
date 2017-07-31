@@ -167,8 +167,9 @@ class TestIQFeedHistory(unittest.TestCase):
             e3.wait()
 
     def test_bars(self):
+        batch_len = 20
         filter_provider = DefaultFilterProvider()
-        filter_provider += BarsDailyFilter(ticker=["IBM", "AAPL"], num_days=20)
+        filter_provider += BarsFilter(ticker=["IBM", "AAPL"], interval_len=60, interval_type='s', max_bars=batch_len)
 
         with IQFeedHistoryListener(minibatch=4, fire_batches=True, fire_ticks=True, filter_provider=filter_provider) as listener, listener.minibatch_provider() as provider:
             listener.start()
@@ -178,8 +179,8 @@ class TestIQFeedHistory(unittest.TestCase):
             def process_bar(event):
                 data = event['data']
                 self.assertEqual(len(list(data.keys())), 2)
-                self.assertEqual(len(list(data['IBM'].keys())), 8)
-                self.assertEqual(len(list(data['AAPL'].keys())), 8)
+                self.assertEqual(len(list(data['IBM'].keys())), 9)
+                self.assertEqual(len(list(data['AAPL'].keys())), 9)
                 e1.set()
 
             listener.process_datum += process_bar
@@ -189,9 +190,14 @@ class TestIQFeedHistory(unittest.TestCase):
             def process_batch_listener_column(event):
                 batch = event['data']
                 self.assertEqual(len(batch), 2)
-                self.assertEqual(batch['AAPL'].shape, (20, 8))
-                self.assertEqual(batch['IBM'].shape, (20, 8))
-                self.assertEqual(len(list(batch['AAPL'][batch['IBM'].columns[0]])), 20)
+
+                self.assertGreaterEqual(batch['AAPL'].shape[0], batch_len)
+                self.assertGreaterEqual(batch['IBM'].shape[0], batch_len)
+
+                self.assertEqual(batch['AAPL'].shape[1], 9)
+                self.assertEqual(batch['IBM'].shape[1], 9)
+
+                self.assertGreaterEqual(len(list(batch['AAPL'][batch['IBM'].columns[0]])), batch_len)
                 e2.set()
 
             listener.process_batch += process_batch_listener_column
@@ -201,8 +207,8 @@ class TestIQFeedHistory(unittest.TestCase):
             def process_minibatch_listener_column(event):
                 batch = event['data']
                 self.assertEqual(len(batch), 2)
-                self.assertEqual(batch['AAPL'].shape, (4, 8))
-                self.assertEqual(batch['IBM'].shape, (4, 8))
+                self.assertEqual(batch['AAPL'].shape, (4, 9))
+                self.assertEqual(batch['IBM'].shape, (4, 9))
                 self.assertEqual(len(list(batch['AAPL'][batch['IBM'].columns[0]])), 4)
                 e3.set()
 
@@ -210,12 +216,12 @@ class TestIQFeedHistory(unittest.TestCase):
 
             for i, d in enumerate(provider):
                 self.assertEqual(len(d), 2)
-                self.assertEqual(d['AAPL'].shape, (4, 8))
-                self.assertEqual(d['IBM'].shape, (4, 8))
+                self.assertEqual(d['AAPL'].shape, (4, 9))
+                self.assertEqual(d['IBM'].shape, (4, 9))
                 self.assertEqual(len(list(d['AAPL'][d['IBM'].columns[0]])), 4)
 
-                self.assertEqual(d['IBM']['Date'].iloc[0], d['AAPL']['Date'].iloc[0])
-                self.assertNotEqual(d['IBM']['Date'].iloc[0], d['AAPL']['Date'].iloc[1])
+                self.assertEqual(d['IBM'].index[0], d['AAPL'].index[0])
+                self.assertNotEqual(d['IBM'].index[0], d['AAPL'].index[1])
 
                 if i == 1:
                     break
@@ -271,8 +277,8 @@ class TestIQFeedHistory(unittest.TestCase):
                     self.assertEqual(d['IBM'].shape, (4, 9))
                     self.assertEqual(len(list(d['AAPL'][d['IBM'].columns[0]])), 4)
 
-                    self.assertEqual(d['IBM']['Time Stamp'].iloc[0], d['AAPL']['Time Stamp'].iloc[0])
-                    self.assertNotEqual(d['IBM']['Time Stamp'].iloc[0], d['AAPL']['Time Stamp'].iloc[1])
+                    self.assertEqual(d['IBM'].index[0], d['AAPL'].index[0])
+                    self.assertNotEqual(d['IBM'].index[0], d['AAPL'].index[1])
 
                     if i == 1:
                         break
