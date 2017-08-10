@@ -6,7 +6,9 @@ import pickle
 import threading
 import typing
 from multiprocessing.pool import ThreadPool
+import collections
 
+import xarray
 import lmdb
 import numpy as np
 import pandas as pd
@@ -371,40 +373,38 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
         :param signals: map of dataframes for each equity
         :param f: filter tuple
         :param exclude_nan_ratio: exclude stocks with more nans than the given ration (before synchronization)
-        :return: 
+        :return:
         """
-
         if len(signals) <= 1:
             return
 
+        if exclude_nan_ratio is not None:
+            mean = np.mean(np.array([signal.shape[0] for signal in signals.values()]))
+            signals = {symbol: signal for symbol, signal in signals.items() if signal.shape[0] >= mean * exclude_nan_ratio}
+
         col = 'Time Stamp' if 'Time Stamp' in list(signals.values())[0] else 'Date' if 'Date' in list(signals.values())[0] else None
         if col is not None:
-            ind = None
-            for _, s in signals.items():
-                if ind is None:
-                    ind = s.index.copy(deep=True)
-                else:
-                    ind = ind.append(s.index)
+            signals = pd.concat(signals)
+            signals.index.set_names('Symbol', level=0, inplace=True)
 
-            ind = ind.drop_duplicates()
-            ind = ind.sort_values()
+            multi_index = pd.MultiIndex.from_product([signals['Symbol'].unique(), signals[col].unique()], names=['Symbol', col]).sort_values()
 
-            if exclude_nan_ratio is not None:
-                mean = np.mean(np.array([signal.shape[0] for signal in signals.values()]))
-                signals = {symbol: signal for symbol, signal in signals.items() if signal.shape[0] >= mean * exclude_nan_ratio}
+            signals = signals.reindex(multi_index)
 
             zero_values = list()
-            for symbol, signal in signals.items():
-                if 0 in signal['Open'].values:
+
+            for symbol in signals.index.get_level_values('Symbol').unique():
+                if 0 in signals.loc[symbol, 'Open'].values:
                     logging.getLogger(__name__).warning(symbol + " contains 0 in the Open column before timestamp sync")
 
-                df = signal.reindex(ind, copy=False)
+                signals.loc[symbol, 'Time Stamp'] = signals.index.levels[1]
+                signals.loc[symbol, 'Symbol'] = symbol
 
-                for c in [c for c in ['Period Volume', 'Number of Trades'] if c in df.columns]:
-                    df[c].fillna(0, inplace=True)
+                for c in [c for c in ['Period Volume', 'Number of Trades'] if c in signals.columns]:
+                    signals.loc[symbol, c].fillna(0, inplace=True)
 
-                if 'Open' in df.columns:
-                    op = df['Open']
+                if 'Open' in signals.columns:
+                    op = signals.loc[symbol, 'Open']
 
                     op.fillna(method='ffill', inplace=True)
 
@@ -413,31 +413,26 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
                     else:
                         op.fillna(method='backfill', inplace=True)
 
-                    for c in [c for c in ['Close', 'High', 'Low'] if c in df.columns]:
-                        df[c].fillna(op, inplace=True)
+                    for c in [c for c in ['Close', 'High', 'Low'] if c in signals.columns]:
+                        signals.loc[symbol, c].fillna(op, inplace=True)
 
-                df.fillna(method='ffill', inplace=True)
+                signals.loc[symbol].fillna(method='ffill', inplace=True)
 
                 if self.current_filter is not None and type(self.current_filter) == type(f) and self.current_batch is not None and f.ascend is True and symbol in self.current_batch:
-                    df.fillna(value=self.current_batch[symbol, self.current_batch.shape[1] - 1], inplace=True)
+                    signals.loc[symbol].fillna(value=self.current_batch[symbol, self.current_batch.shape[1] - 1], inplace=True)
                 else:
-                    df.fillna(method='backfill', inplace=True)
+                    signals.loc[symbol].fillna(method='backfill', inplace=True)
 
-                if 0 in df['Open'].values:
+                if 0 in signals.loc[symbol, 'Open'].values:
                     logging.getLogger(__name__).warning(symbol + " contains 0 in the Open column after timestamp sync")
                     zero_values.append(symbol)
 
-                if not f.ascend:
-                    df = df.iloc[::-1]
+            if not f.ascend:
+                signals.sort_index(level=['Symbol', col], inplace=True, ascending=False)
 
-                signals[symbol] = df
+        logging.getLogger(__name__).info("Generated data of shape: " + str(signals.shape))
 
-            for s in zero_values:
-                del signals[s]
-
-        result = pd.Panel.from_dict(signals)
-        logging.getLogger(__name__).info("Generated data of shape: " + str(result.shape))
-        return result
+        return signals
 
     def fire_events(self, data, f):
         event_type = self._event_type(f)
