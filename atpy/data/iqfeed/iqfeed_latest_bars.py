@@ -8,3 +8,9 @@ class IQFeedLatestBars(metaclass=events.GlobalRegister):
         self.max_ticks = max_ticks
         self.historical_symbols = historical_symbols
         self.streaming_symbols = streaming_symbols
+
+    @events.listener
+    def on_event(self, event):
+        if event['type'] == 'watch_bars':
+            data = event['data']
+

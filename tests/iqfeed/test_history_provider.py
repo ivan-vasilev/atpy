@@ -169,7 +169,7 @@ class TestIQFeedHistory(unittest.TestCase):
     def test_bars(self):
         batch_len = 20
         filter_provider = DefaultFilterProvider()
-        filter_provider += BarsFilter(ticker=["IBM", "AAPL"], interval_len=60, interval_type='s', max_bars=batch_len)
+        filter_provider += BarsFilter(ticker=["IBM", "AAPL", "GOOG"], interval_len=60, interval_type='s', max_bars=batch_len)
 
         with IQFeedHistoryListener(minibatch=4, fire_batches=True, fire_ticks=True, filter_provider=filter_provider) as listener, listener.minibatch_provider() as provider:
             listener.start()
