@@ -375,14 +375,14 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
         :param exclude_nan_ratio: exclude stocks with more nans than the given ration (before synchronization)
         :return:
         """
-        if len(signals) <= 1:
+        if len(signals) <= 1 or 'TickID' + self.key_suffix in iter(signals.values()).__next__():
             return
 
         if exclude_nan_ratio is not None:
             mean = np.mean(np.array([signal.shape[0] for signal in signals.values()]))
             signals = {symbol: signal for symbol, signal in signals.items() if signal.shape[0] >= mean * exclude_nan_ratio}
 
-        col = 'Time Stamp' if 'Time Stamp' in list(signals.values())[0] else 'Date' if 'Date' in list(signals.values())[0] else None
+        col = 'Time Stamp' + self.key_suffix if 'Time Stamp' + self.key_suffix in list(signals.values())[0] else 'Date' + self.key_suffix if 'Date' + self.key_suffix in list(signals.values())[0] else None
         if col is not None:
             signals = pd.concat(signals)
             signals.index.set_names('Symbol', level=0, inplace=True)
@@ -437,7 +437,7 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
     def fire_events(self, data, f):
         event_type = self._event_type(f)
 
-        if isinstance(data, pd.DataFrame):
+        if data.index.names[0] != 'Symbol':
             if self.fire_ticks:
                 for i in range(data.shape[0]):
                     self.process_datum({'type': event_type, 'data': data.iloc[i]})
@@ -455,10 +455,10 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
 
             if self.fire_batches:
                 self.process_batch({'type': event_type + '_batch', 'data': data})
-        elif isinstance(data, pd.Panel):
+        elif data.index.names[0] == 'Symbol':
             if self.fire_ticks:
                 for i in range(data.shape[1]):
-                    self.process_datum({'type': event_type, 'data': data.iloc[:, i]})
+                    self.process_datum({'type': event_type, 'data': data.groupby(level=0).nth(i)})
 
             if self.minibatch is not None:
                 if self.current_minibatch is None or (self.current_filter is not None and type(self.current_filter) != type(f)):
@@ -466,10 +466,10 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
                 else:
                     self.current_minibatch = pd.concat([self.current_minibatch, data], axis=1)
 
-                for i in range(self.minibatch, self.current_minibatch.shape[1] - self.current_minibatch.shape[1] % self.minibatch + 1, self.minibatch):
-                    self.process_minibatch({'type': event_type + '_mb', 'data': self.current_minibatch.iloc[:, i - self.minibatch: i]})
+                for i in range(self.minibatch, self.current_minibatch.index.levels[1].shape[0] - self.current_minibatch.index.levels[1].shape[0] % self.minibatch + 1, self.minibatch):
+                    self.process_minibatch({'type': event_type + '_mb', 'data': self.current_minibatch.loc[pd.IndexSlice[:, data.index.levels[1][i - self.minibatch: i]], :]})
 
-                self.current_minibatch = self.current_minibatch.iloc[:, i:]
+                self.current_minibatch = None if self.current_minibatch.index.levels[1].shape[0] - i == 0 else self.current_minibatch.groupby(level=0).tail(self.current_minibatch.index.levels[1].shape[0] - i)
 
             if self.fire_batches:
                 self.process_batch({'type': event_type + '_batch', 'data': data})

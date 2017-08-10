@@ -178,9 +178,9 @@ class TestIQFeedHistory(unittest.TestCase):
 
             def process_bar(event):
                 data = event['data']
-                self.assertEqual(len(list(data.keys())), 2)
-                self.assertEqual(len(list(data['IBM'].keys())), 9)
-                self.assertEqual(len(list(data['AAPL'].keys())), 9)
+                self.assertEqual(data.shape, (3, 9))
+                self.assertEqual(len(list(data.loc['IBM'].keys())), 9)
+                self.assertEqual(len(list(data.loc['AAPL'].keys())), 9)
                 e1.set()
 
             listener.process_datum += process_bar
@@ -189,10 +189,10 @@ class TestIQFeedHistory(unittest.TestCase):
 
             def process_batch_listener_column(event):
                 batch = event['data']
-                self.assertEqual(len(batch), 2)
+                self.assertEqual(len(batch.index.levels), 2)
+                self.assertEqual(len(batch.index.levels[0]), 3)
 
-                self.assertGreaterEqual(batch['AAPL'].shape[0], batch_len)
-                self.assertGreaterEqual(batch['IBM'].shape[0], batch_len)
+                self.assertGreaterEqual(batch.index.levels[1], batch_len)
 
                 self.assertEqual(batch['AAPL'].shape[1], 9)
                 self.assertEqual(batch['IBM'].shape[1], 9)
@@ -241,9 +241,9 @@ class TestIQFeedHistory(unittest.TestCase):
 
                 def process_bar(event):
                     data = event['data']
-                    self.assertEqual(len(list(data.keys())), 2)
-                    self.assertEqual(len(list(data['IBM'].keys())), 9)
-                    self.assertEqual(len(list(data['AAPL'].keys())), 9)
+                    self.assertEqual(data.shape, (3, 9))
+                    self.assertEqual(len(list(data.loc['IBM'].keys())), 9)
+                    self.assertEqual(len(list(data.loc['AAPL'].keys())), 9)
                     e1.set()
 
                 listener.process_datum += process_bar
