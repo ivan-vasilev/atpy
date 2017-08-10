@@ -25,10 +25,10 @@ class TestIQFeedBarData(unittest.TestCase):
             # test market snapshot
             e3 = threading.Event()
 
-            listener.on_market_snapshot += lambda event: [self.assertEqual(event['data'].shape, (2, 9)), e3.set()]
+            listener.on_market_snapshot += lambda event: [self.assertEqual(event['data'].shape[1], 9), e3.set()]
 
-            # mkt_snapshot = events.after(lambda: {'type': 'request_market_snapshot_bars'})
-            # mkt_snapshot += listener.on_event
+            mkt_snapshot = events.after(lambda: {'type': 'request_market_snapshot_bars'})
+            mkt_snapshot += listener.on_event
 
             watch_bars = events.after(lambda: {'type': 'watch_bars', 'data': {'symbol': ['GOOG', 'IBM'], 'interval_len': 300, 'interval_type': 's', 'update': 1}})
             watch_bars += listener.on_event
@@ -37,26 +37,19 @@ class TestIQFeedBarData(unittest.TestCase):
             for e in e1.values():
                 e.wait()
 
+            mkt_snapshot()
+
             e3.wait()
 
     def test_listener(self):
-        with IQFeedBarDataListener(minibatch=2) as listener:
-            q = queue.Queue()
-
+        with IQFeedBarDataListener() as listener:
             e1 = threading.Event()
 
             listener.on_bar += lambda event: [self.assertEqual(event['data']['Symbol'], 'SPY'), e1.set()]
 
-            listener.on_bar_batch += lambda event: q.put(event['data'])
-
             listener.watch(symbol='SPY', interval_len=5, interval_type='s', update=1, lookback_bars=10)
 
             e1.wait()
-
-            for d in [q.get(), q.get()]:
-                self.assertEqual(d.shape, (2, 9))
-                self.assertEqual(d['Symbol'][0], 'SPY')
-                self.assertNotEqual(d['Time Stamp'][0], d['Time Stamp'][1])
 
 if __name__ == '__main__':
     unittest.main()

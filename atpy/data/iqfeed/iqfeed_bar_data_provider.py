@@ -72,24 +72,26 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
             self.watched_symbols.remove(bad_symbol)
 
     def process_latest_bar_update(self, bar_data: np.array) -> None:
-        bar_data = np.copy(bar_data)
-
-        bd = bar_data[0] if len(bar_data) == 1 else bar_data
+        data = None
 
         if self.fire_bars:
+            data = self._process_data(iqfeed_to_dict(bar_data, key_suffix=self.key_suffix))
             self.on_latest_bar_update(self._process_data(iqfeed_to_dict(np.copy(bar_data), key_suffix=self.key_suffix)))
 
         if self.mkt_snapshot_depth > 0:
-            self._update_mkt_snapshot(bd)
+            data = data if data is not None else self._process_data(iqfeed_to_dict(bar_data, key_suffix=self.key_suffix))
+            self._update_mkt_snapshot(data)
 
     def process_live_bar(self, bar_data: np.array) -> None:
-        bd = np.copy(bar_data)[0]
+        data = None
 
         if self.fire_bars:
-            self.on_bar(self._process_data(iqfeed_to_dict(bar_data, key_suffix=self.key_suffix)))
+            data = self._process_data(iqfeed_to_dict(bar_data, key_suffix=self.key_suffix))
+            self.on_bar(data)
 
         if self.mkt_snapshot_depth > 0:
-            self._update_mkt_snapshot(bd)
+            data = data if data is not None else self._process_data(iqfeed_to_dict(bar_data, key_suffix=self.key_suffix))
+            self._update_mkt_snapshot(data)
 
     def process_history_bar(self, bar_data: np.array) -> None:
         bar_data = np.copy(bar_data)
@@ -102,9 +104,7 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
             self.on_bar(data)
 
         if self.mkt_snapshot_depth > 0 is not None:
-            if data is None:
-                data = self._process_data(iqfeed_to_dict(bar_data, key_suffix=self.key_suffix))
-
+            data = data if data is not None else self._process_data(iqfeed_to_dict(bar_data, key_suffix=self.key_suffix))
             self._update_mkt_snapshot(data)
 
     @events.listener
