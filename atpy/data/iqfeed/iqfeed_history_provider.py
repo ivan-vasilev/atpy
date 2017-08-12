@@ -464,6 +464,7 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
                     self.current_minibatch = data.copy(deep=True)
                 else:
                     self.current_minibatch = pd.concat([self.current_minibatch, data], axis=0)
+                    self.current_minibatch.sort_index(inplace=True, ascending=f.ascend)
 
                 for i in range(self.minibatch, self.current_minibatch.index.levels[1].shape[0] - self.current_minibatch.index.levels[1].shape[0] % self.minibatch + 1, self.minibatch):
                     self.process_minibatch({'type': event_type + '_mb', 'data': self.current_minibatch.loc[pd.IndexSlice[:, data.index.levels[1][i - self.minibatch: i]], :]})
