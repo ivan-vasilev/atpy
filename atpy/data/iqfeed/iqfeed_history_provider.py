@@ -6,9 +6,7 @@ import pickle
 import threading
 import typing
 from multiprocessing.pool import ThreadPool
-import collections
 
-import xarray
 import lmdb
 import numpy as np
 import pandas as pd
@@ -178,7 +176,7 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
     IQFeed historical data listener. See the unit test on how to use
     """
 
-    def __init__(self, minibatch=None, fire_batches=False, fire_ticks=False, run_async=True, num_connections=10, key_suffix='', filter_provider=None, lmdb_path=''):
+    def __init__(self, minibatch=None, fire_batches=False, fire_ticks=False, run_async=True, num_connections=10, key_suffix='', filter_provider=None, lmdb_path='', exclude_nan_ratio=0.9):
         """
         :param minibatch: size of the minibatch
         :param fire_batches: raise event for each batch
@@ -188,6 +186,7 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
         :param key_suffix: suffix for field names
         :param filter_provider: news filter list
         :param lmdb_path: '' to use default path, None, not to use lmdb
+        :param exclude_nan_ratio: exclude stocks with more nans than the given ration (before synchronization)
         """
         self.minibatch = minibatch
         self.fire_batches = fire_batches
@@ -202,6 +201,7 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
         self._is_running = False
         self._background_thread = None
         self.lmdb_path = lmdb_path
+        self.exclude_nan_ratio = exclude_nan_ratio
         self.conn = None
         self.streaming_conn = None
 
@@ -305,13 +305,12 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
     def stop(self):
         self._is_running = False
 
-    def request_data(self, f, synchronize_timestamps=True, exclude_nan_ratio=0.9):
+    def request_data(self, f, synchronize_timestamps=True):
         """
         request history data
         :param f: filter tuple
         :param synchronize_timestamps: whether to synchronize timestamps between different signals
-        :param exclude_nan_ratio: exclude stocks with more nans than the given ration (before synchronization)
-        :return: 
+        :return:
         """
         if isinstance(f.ticker, str):
             data = self._request_raw_symbol_data(f, self.conn[0] if isinstance(self.conn, list) else self.conn)
@@ -363,7 +362,7 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
                         signals[ft.ticker] = self._process_data(data, ft)
 
             if synchronize_timestamps:
-                signals = self.synchronize_timestamps(signals, f, exclude_nan_ratio)
+                signals = self.synchronize_timestamps(signals, f, self.exclude_nan_ratio)
 
             return signals
 
@@ -464,7 +463,7 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
                 if self.current_minibatch is None or (self.current_filter is not None and type(self.current_filter) != type(f)):
                     self.current_minibatch = data.copy(deep=True)
                 else:
-                    self.current_minibatch = pd.concat([self.current_minibatch, data], axis=1)
+                    self.current_minibatch = pd.concat([self.current_minibatch, data], axis=0)
 
                 for i in range(self.minibatch, self.current_minibatch.index.levels[1].shape[0] - self.current_minibatch.index.levels[1].shape[0] % self.minibatch + 1, self.minibatch):
                     self.process_minibatch({'type': event_type + '_mb', 'data': self.current_minibatch.loc[pd.IndexSlice[:, data.index.levels[1][i - self.minibatch: i]], :]})

@@ -192,12 +192,12 @@ class TestIQFeedHistory(unittest.TestCase):
                 self.assertEqual(len(batch.index.levels), 2)
                 self.assertEqual(len(batch.index.levels[0]), 3)
 
-                self.assertGreaterEqual(batch.index.levels[1], batch_len)
+                self.assertGreaterEqual(len(batch.index.levels[1]), batch_len)
 
-                self.assertEqual(batch['AAPL'].shape[1], 9)
-                self.assertEqual(batch['IBM'].shape[1], 9)
+                self.assertEqual(batch.loc['AAPL'].shape[1], 9)
+                self.assertEqual(batch.loc['IBM'].shape[1], 9)
 
-                self.assertGreaterEqual(len(list(batch['AAPL'][batch['IBM'].columns[0]])), batch_len)
+                self.assertGreaterEqual(len(batch.loc['AAPL'][batch.loc['IBM'].columns[0]]), batch_len)
                 e2.set()
 
             listener.process_batch += process_batch_listener_column
@@ -206,22 +206,22 @@ class TestIQFeedHistory(unittest.TestCase):
 
             def process_minibatch_listener_column(event):
                 batch = event['data']
-                self.assertEqual(len(batch), 2)
-                self.assertEqual(batch['AAPL'].shape, (4, 9))
-                self.assertEqual(batch['IBM'].shape, (4, 9))
-                self.assertEqual(len(list(batch['AAPL'][batch['IBM'].columns[0]])), 4)
+                self.assertEqual(len(batch.index.levels), 2)
+                self.assertEqual(batch.loc['AAPL'].shape, (4, 9))
+                self.assertEqual(batch.loc['IBM'].shape, (4, 9))
+                self.assertEqual(len(batch.loc['AAPL'][batch.loc['IBM'].columns[0]]), 4)
                 e3.set()
 
             listener.process_minibatch += process_minibatch_listener_column
 
             for i, d in enumerate(provider):
-                self.assertEqual(len(d), 2)
-                self.assertEqual(d['AAPL'].shape, (4, 9))
-                self.assertEqual(d['IBM'].shape, (4, 9))
-                self.assertEqual(len(list(d['AAPL'][d['IBM'].columns[0]])), 4)
+                self.assertEqual(len(d.index.levels), 2)
+                self.assertEqual(d.loc['AAPL'].shape, (4, 9))
+                self.assertEqual(d.loc['IBM'].shape, (4, 9))
+                self.assertEqual(len(d.loc['AAPL'][d.loc['IBM'].columns[0]]), 4)
 
-                self.assertEqual(d['IBM'].index[0], d['AAPL'].index[0])
-                self.assertNotEqual(d['IBM'].index[0], d['AAPL'].index[1])
+                self.assertEqual(d.loc['IBM'].index[0], d.loc['AAPL'].index[0])
+                self.assertNotEqual(d.loc['IBM'].index[0], d.loc['AAPL'].index[1])
 
                 if i == 1:
                     break
@@ -241,7 +241,7 @@ class TestIQFeedHistory(unittest.TestCase):
 
                 def process_bar(event):
                     data = event['data']
-                    self.assertEqual(data.shape, (3, 9))
+                    self.assertEqual(data.shape, (2, 9))
                     self.assertEqual(len(list(data.loc['IBM'].keys())), 9)
                     self.assertEqual(len(list(data.loc['AAPL'].keys())), 9)
                     e1.set()
@@ -252,9 +252,9 @@ class TestIQFeedHistory(unittest.TestCase):
 
                 def process_batch_listener_column(event):
                     batch = event['data']
-                    self.assertEqual(len(batch), 2)
-                    self.assertEqual(batch['AAPL'].shape[1], 9)
-                    self.assertEqual(batch['IBM'].shape[1], 9)
+                    self.assertEqual(len(batch.index.levels), 2)
+                    self.assertEqual(batch.loc['AAPL'].shape[1], 9)
+                    self.assertEqual(batch.loc['IBM'].shape[1], 9)
                     e2.set()
 
                 listener.process_batch += process_batch_listener_column
@@ -263,22 +263,22 @@ class TestIQFeedHistory(unittest.TestCase):
 
                 def process_minibatch_listener_column(event):
                     batch = event['data']
-                    self.assertEqual(len(batch), 2)
-                    self.assertEqual(batch['AAPL'].shape, (4, 9))
-                    self.assertEqual(batch['IBM'].shape, (4, 9))
-                    self.assertEqual(len(list(batch['AAPL'][batch['IBM'].columns[0]])), 4)
+                    self.assertEqual(len(batch.index.levels), 2)
+                    self.assertEqual(batch.loc['AAPL'].shape, (4, 9))
+                    self.assertEqual(batch.loc['IBM'].shape, (4, 9))
+                    self.assertEqual(len(list(batch.loc['AAPL'][batch.loc['IBM'].columns[0]])), 4)
                     e3.set()
 
                 listener.process_minibatch += process_minibatch_listener_column
 
                 for i, d in enumerate(provider):
-                    self.assertEqual(len(d), 2)
-                    self.assertEqual(d['AAPL'].shape, (4, 9))
-                    self.assertEqual(d['IBM'].shape, (4, 9))
-                    self.assertEqual(len(list(d['AAPL'][d['IBM'].columns[0]])), 4)
+                    self.assertEqual(len(d.index.levels), 2)
+                    self.assertEqual(d.loc['AAPL'].shape, (4, 9))
+                    self.assertEqual(d.loc['IBM'].shape, (4, 9))
+                    self.assertEqual(len(list(d.loc['AAPL'][d.loc['IBM'].columns[0]])), 4)
 
-                    self.assertEqual(d['IBM'].index[0], d['AAPL'].index[0])
-                    self.assertNotEqual(d['IBM'].index[0], d['AAPL'].index[1])
+                    self.assertEqual(d.loc['IBM'].index[0], d.loc['AAPL'].index[0])
+                    self.assertNotEqual(d.loc['IBM'].index[0], d.loc['AAPL'].index[1])
 
                     if i == 1:
                         break
@@ -368,7 +368,7 @@ class TestIQFeedHistory(unittest.TestCase):
         filter_provider = BarsInPeriodProvider(ticker=['AAPL', 'GOOG'], bgn_prd=datetime.date(now.year - 2, 1, 1), delta=datetime.timedelta(days=10), interval_len=3600, ascend=True, interval_type='s')
 
         try:
-            with IQFeedHistoryListener(fire_batches=True, fire_ticks=True, minibatch=10, filter_provider=filter_provider, lmdb_path='/tmp/test_continuous_bars') as listener, listener.batch_provider() as provider:
+            with IQFeedHistoryListener(fire_batches=True, fire_ticks=True, minibatch=10, filter_provider=filter_provider, lmdb_path='/tmp/test_continuous_bars', exclude_nan_ratio=None) as listener:
                 listener.start()
 
                 events_count = {'bars': 0, 'batches': 0, 'minibatches': 0}
@@ -389,8 +389,7 @@ class TestIQFeedHistory(unittest.TestCase):
 
                 def process_batch_listener(event):
                     try:
-                        self.assertTrue(len(event['data']) > 0)
-                        self.assertEqual(len(event['data'].shape), 3)
+                        self.assertEqual(len(event['data'].index.levels[0]), 2)
                     finally:
                         events_count['batches'] += 1
                         if events_count['batches'] >= 2:
@@ -402,8 +401,9 @@ class TestIQFeedHistory(unittest.TestCase):
 
                 def process_minibatch_listener(event):
                     try:
-                        self.assertTrue(len(event['data']) > 0)
-                        self.assertEqual(event['data'].shape[1:], (10, 9))
+                        self.assertTrue(len(event['data'].index.levels[0]) > 0)
+                        self.assertEqual(event['data'].loc['AAPL'].shape, (10, 9))
+                        self.assertEqual(event['data'].loc['GOOG'].shape, (10, 9))
                     finally:
                         events_count['minibatches'] += 1
                         if events_count['minibatches'] >= 2:
