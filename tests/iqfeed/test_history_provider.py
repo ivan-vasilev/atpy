@@ -402,8 +402,11 @@ class TestIQFeedHistory(unittest.TestCase):
                 def process_minibatch_listener(event):
                     try:
                         self.assertTrue(len(event['data'].index.levels[0]) > 0)
-                        self.assertLEqual(event['data'].loc['AAPL'].shape, (10, 9))
-                        self.assertEqual(event['data'].loc['GOOG'].shape, (10, 9))
+                        self.assertEqual(event['data'].loc['AAPL'].shape[1], 9)
+                        self.assertEqual(event['data'].loc['GOOG'].shape[1], 9)
+                        self.assertLessEqual(event['data'].loc['AAPL'].shape[0], 10)
+                        self.assertLessEqual(event['data'].loc['GOOG'].shape[0], 10)
+
                     finally:
                         events_count['minibatches'] += 1
                         if events_count['minibatches'] >= 2:
