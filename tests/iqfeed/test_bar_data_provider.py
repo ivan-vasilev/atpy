@@ -9,7 +9,7 @@ class TestIQFeedBarData(unittest.TestCase):
     """
 
     def test_provider(self):
-        with IQFeedBarDataListener(mkt_snapshot_depth=3) as listener:
+        with IQFeedBarDataListener(mkt_snapshot_depth=3, interval_len=300) as listener:
             # test bars
             e1 = {'GOOG': threading.Event(), 'IBM': threading.Event()}
             counters = {'GOOG': 0, 'IBM': 0}
@@ -30,7 +30,7 @@ class TestIQFeedBarData(unittest.TestCase):
             mkt_snapshot = events.after(lambda: {'type': 'request_market_snapshot_bars'})
             mkt_snapshot += listener.on_event
 
-            watch_bars = events.after(lambda: {'type': 'watch_bars', 'data': {'symbol': ['GOOG', 'IBM'], 'interval_len': 300, 'interval_type': 's', 'update': 1}})
+            watch_bars = events.after(lambda: {'type': 'watch_bars', 'data': {'symbol': ['GOOG', 'IBM'], 'update': 1}})
             watch_bars += listener.on_event
             watch_bars()
 
@@ -42,7 +42,7 @@ class TestIQFeedBarData(unittest.TestCase):
             e3.wait()
 
     def test_listener(self):
-        with IQFeedBarDataListener() as listener:
+        with IQFeedBarDataListener(interval_len=300) as listener:
             e1 = threading.Event()
 
             listener.on_bar += lambda event: [self.assertEqual(event['data']['Symbol'], 'SPY'), e1.set()]

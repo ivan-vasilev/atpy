@@ -31,28 +31,32 @@ class MockOrders(object, metaclass=events.GlobalRegister):
             self.process_bar_data(event['data'])
 
     def process_tick_data(self, data):
-        matching_orders = [o for o in self._pending_orders if o.symbol == data['Symbol']]
-        for order in matching_orders:
-            if order.order_type == orders.Type.BUY:
-                if 'TickID' in data:
-                    order.add_position(data['Last Size'], data['Ask'])
-                else:
-                    order.add_position(data['Ask Size'] if data['Ask Size'] > 0 else data['Most Recent Trade Size'], data['Ask'] if data['Ask Size'] > 0 else data['Most Recent Trade'])
-            elif order.order_type == orders.Type.SELL:
-                if 'TickID' in data:
-                    order.add_position(data['Last Size'], data['Bid'])
-                else:
-                    order.add_position(data['Bid Size'] if data['Bid Size'] > 0 else data['Most Recent Trade Size'], data['Bid'] if data['Bid Size'] > 0 else data['Most Recent Trade'])
+        with self._lock:
+            matching_orders = [o for o in self._pending_orders if o.symbol == data['Symbol']]
+            for order in matching_orders:
+                if order.order_type == orders.Type.BUY:
+                    if 'TickID' in data:
+                        order.add_position(data['Last Size'], data['Ask'])
+                    else:
+                        order.add_position(data['Ask Size'] if data['Ask Size'] > 0 else data['Most Recent Trade Size'], data['Ask'] if data['Ask Size'] > 0 else data['Most Recent Trade'])
+                elif order.order_type == orders.Type.SELL:
+                    if 'TickID' in data:
+                        order.add_position(data['Last Size'], data['Bid'])
+                    else:
+                        order.add_position(data['Bid Size'] if data['Bid Size'] > 0 else data['Most Recent Trade Size'], data['Bid'] if data['Bid Size'] > 0 else data['Most Recent Trade'])
 
-            if order.fulfill_time is not None:
-                self._pending_orders.remove(order)
-                self.order_fulfilled(order)
+                if order.fulfill_time is not None:
+                    self._pending_orders.remove(order)
+                    self.order_fulfilled(order)
 
     def process_bar_data(self, data):
-        matching_orders = [o for o in self._pending_orders if o.symbol == data['Symbol']]
-        for order in matching_orders:
-            order.add_position(data['Period Volume'], data['Close'])
+        with self._lock:
+            matching_orders = [o for o in self._pending_orders if o.symbol == data['Symbol']]
 
-            if order.fulfill_time is not None:
-                self._pending_orders.remove(order)
-                self.order_fulfilled(order)
+            for order in matching_orders:
+                order.add_position(data['Period Volume'], data['Close'])
+
+                if order.fulfill_time is not None:
+                    self._pending_orders.remove(order)
+                    self.order_fulfilled(order)
+

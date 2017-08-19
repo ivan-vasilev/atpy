@@ -171,39 +171,26 @@ class BarsMonthlyFilter(NamedTuple):
 BarsMonthlyFilter.__new__.__defaults__ = (True, None)
 
 
-class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
+class IQFeedHistoryProvider(object):
     """
-    IQFeed historical data listener. See the unit test on how to use
+    IQFeed historical data provider. See the unit test on how to use
     """
 
-    def __init__(self, minibatch=None, fire_batches=False, fire_ticks=False, run_async=True, num_connections=10, key_suffix='', filter_provider=None, lmdb_path='', exclude_nan_ratio=0.9):
+    def __init__(self, num_connections=10, key_suffix='', lmdb_path='', exclude_nan_ratio=0.9):
         """
-        :param minibatch: size of the minibatch
-        :param fire_batches: raise event for each batch
-        :param fire_ticks: raise event for each tick
-        :param run_async: run asynchronous
         :param num_connections: number of connections to use when requesting data
         :param key_suffix: suffix for field names
-        :param filter_provider: news filter list
         :param lmdb_path: '' to use default path, None, not to use lmdb
         :param exclude_nan_ratio: exclude stocks with more nans than the given ration (before synchronization)
         """
-        self.minibatch = minibatch
-        self.fire_batches = fire_batches
-        self.fire_ticks = fire_ticks
-        self.run_async = run_async
         self.num_connections = num_connections
         self.key_suffix = key_suffix
-        self.current_minibatch = None
-        self.current_batch = None
-        self.current_filter = None
-        self.filter_provider = filter_provider
-        self._is_running = False
-        self._background_thread = None
         self.lmdb_path = lmdb_path
         self.exclude_nan_ratio = exclude_nan_ratio
         self.conn = None
         self.streaming_conn = None
+        self.current_batch = None
+        self.current_filter = None
 
     def __enter__(self):
         if self.lmdb_path == '':
@@ -230,16 +217,6 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
         return self
 
     def __exit__(self, exception_type, exception_value, traceback):
-        if self._background_thread is not None and self._background_thread.is_alive():
-            self._is_running = False
-            self._background_thread.join()
-        else:
-            self._is_running = False
-
-        self._background_thread = None
-
-        self.no_more_data()
-
         if isinstance(self.conn, list):
             for c in self.conn:
                 c.disconnect()
@@ -263,47 +240,6 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
 
         if self.streaming_conn is not None:
             self.streaming_conn.disconnect()
-
-    def start(self):
-        if self.filter_provider is not None:
-            if self.run_async:
-                def produce_async():
-                    try:
-                        for d, f in self.next_batch():
-                            self.fire_events(d, f)
-                            if not self._is_running:
-                                return
-                    except Exception as err:
-                        logging.getLogger(__name__).exception(err)
-                        self._is_running = False
-
-                    self._is_running = False
-                    self.no_more_data()
-
-                self._is_running = True
-                self._background_thread = threading.Thread(target=produce_async, daemon=True)
-                self._background_thread.start()
-            else:
-                for d, f in self.next_batch():
-                    self.fire_events(d, f)
-
-                self.no_more_data()
-
-    def next_batch(self):
-        for f in self.filter_provider:
-            logging.getLogger(__name__).info("Loading data for filter " + str(f))
-
-            d = self.request_data(f)
-
-            self.current_filter = f
-            self.current_batch = d
-
-            yield d, f
-
-        self.no_more_data()
-
-    def stop(self):
-        self._is_running = False
 
     def request_data(self, f, synchronize_timestamps=True):
         """
@@ -433,47 +369,6 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
 
         return signals
 
-    def fire_events(self, data, f):
-        event_type = self._event_type(f)
-
-        if data.index.names[0] != 'Symbol':
-            if self.fire_ticks:
-                for i in range(data.shape[0]):
-                    self.process_datum({'type': event_type, 'data': data.iloc[i]})
-
-            if self.minibatch is not None:
-                if self.current_minibatch is None or (self.current_filter is not None and type(self.current_filter) != type(f)):
-                    self.current_minibatch = data
-                else:
-                    self.current_minibatch = pd.concat([self.current_minibatch, data], axis=0)
-
-                for i in range(self.minibatch, self.current_minibatch.shape[0] - self.current_minibatch.shape[0] % self.minibatch + 1, self.minibatch):
-                    self.process_minibatch({'type': event_type + '_mb', 'data': self.current_minibatch.iloc[i - self.minibatch: i]})
-
-                self.current_minibatch = self.current_minibatch.iloc[i:]
-
-            if self.fire_batches:
-                self.process_batch({'type': event_type + '_batch', 'data': data})
-        elif data.index.names[0] == 'Symbol':
-            if self.fire_ticks:
-                for i in range(data.shape[1]):
-                    self.process_datum({'type': event_type, 'data': data.groupby(level=0).nth(i)})
-
-            if self.minibatch is not None:
-                if self.current_minibatch is None or (self.current_filter is not None and type(self.current_filter) != type(f)):
-                    self.current_minibatch = data.copy(deep=True)
-                else:
-                    self.current_minibatch = pd.concat([self.current_minibatch, data], axis=0)
-                    self.current_minibatch.sort_index(inplace=True, ascending=f.ascend)
-
-                for i in range(self.minibatch, self.current_minibatch.index.levels[1].shape[0] - self.current_minibatch.index.levels[1].shape[0] % self.minibatch + 1, self.minibatch):
-                    self.process_minibatch({'type': event_type + '_mb', 'data': self.current_minibatch.loc[pd.IndexSlice[:, data.index.levels[1][i - self.minibatch: i]], :]})
-
-                self.current_minibatch = None if self.current_minibatch.index.levels[1].shape[0] - i == 0 else self.current_minibatch.groupby(level=0).tail(self.current_minibatch.index.levels[1].shape[0] - i)
-
-            if self.fire_batches:
-                self.process_batch({'type': event_type + '_batch', 'data': data})
-
     def _request_raw_symbol_data(self, f, conn):
         adjust_data = False
         cache_data = False
@@ -584,6 +479,139 @@ class IQFeedHistoryListener(object, metaclass=events.GlobalRegister):
         result.set_index('Date' + sf, inplace=True, drop=False)
 
         return result
+
+    @staticmethod
+    def _event_type(data_filter):
+        if isinstance(data_filter, TicksFilter) or isinstance(data_filter, TicksForDaysFilter) or isinstance(data_filter, TicksInPeriodFilter):
+            return 'level_1_tick'
+        elif isinstance(data_filter, BarsFilter) or isinstance(data_filter, BarsForDaysFilter) or isinstance(data_filter, BarsInPeriodFilter) or isinstance(data_filter, BarsDailyForDatesFilter):
+            return 'bar'
+        elif isinstance(data_filter, BarsDailyFilter) or isinstance(data_filter, BarsWeeklyFilter) or isinstance(data_filter, BarsMonthlyFilter):
+            return 'daily'
+
+
+class IQFeedHistoryListener(IQFeedHistoryProvider, metaclass=events.GlobalRegister):
+    """
+    IQFeed historical data listener. See the unit test on how to use
+    """
+
+    def __init__(self, minibatch=None, fire_batches=False, fire_ticks=False, run_async=True, num_connections=10, key_suffix='', filter_provider=None, lmdb_path='', exclude_nan_ratio=0.9):
+        """
+        :param minibatch: size of the minibatch
+        :param fire_batches: raise event for each batch
+        :param fire_ticks: raise event for each tick
+        :param run_async: run asynchronous
+        :param num_connections: number of connections to use when requesting data
+        :param key_suffix: suffix for field names
+        :param filter_provider: news filter list
+        :param lmdb_path: '' to use default path, None, not to use lmdb
+        :param exclude_nan_ratio: exclude stocks with more nans than the given ration (before synchronization)
+        """
+        super().__init__(num_connections=num_connections, key_suffix=key_suffix, lmdb_path=lmdb_path, exclude_nan_ratio=exclude_nan_ratio)
+
+        self.minibatch = minibatch
+        self.fire_batches = fire_batches
+        self.fire_ticks = fire_ticks
+        self.run_async = run_async
+        self.current_minibatch = None
+        self.filter_provider = filter_provider
+        self._is_running = False
+        self._background_thread = None
+        self.conn = None
+        self.streaming_conn = None
+
+    def __exit__(self, exception_type, exception_value, traceback):
+        if self._background_thread is not None and self._background_thread.is_alive():
+            self._is_running = False
+            self._background_thread.join()
+        else:
+            self._is_running = False
+
+        self._background_thread = None
+
+        self.no_more_data()
+
+    def start(self):
+        if self.filter_provider is not None:
+            if self.run_async:
+                def produce_async():
+                    try:
+                        for d, f in self.next_batch():
+                            self.fire_events(d, f)
+                            if not self._is_running:
+                                return
+                    except Exception as err:
+                        logging.getLogger(__name__).exception(err)
+                        self._is_running = False
+
+                    self._is_running = False
+                    self.no_more_data()
+
+                self._is_running = True
+                self._background_thread = threading.Thread(target=produce_async, daemon=True)
+                self._background_thread.start()
+            else:
+                for d, f in self.next_batch():
+                    self.fire_events(d, f)
+
+                self.no_more_data()
+
+    def next_batch(self):
+        for f in self.filter_provider:
+            logging.getLogger(__name__).info("Loading data for filter " + str(f))
+
+            d = self.request_data(f)
+
+            self.current_filter = f
+            self.current_batch = d
+
+            yield d, f
+
+        self.no_more_data()
+
+    def stop(self):
+        self._is_running = False
+
+    def fire_events(self, data, f):
+        event_type = self._event_type(f)
+
+        if data.index.names[0] != 'Symbol':
+            if self.fire_ticks:
+                for i in range(data.shape[0]):
+                    self.process_datum({'type': event_type, 'data': data.iloc[i]})
+
+            if self.minibatch is not None:
+                if self.current_minibatch is None or (self.current_filter is not None and type(self.current_filter) != type(f)):
+                    self.current_minibatch = data
+                else:
+                    self.current_minibatch = pd.concat([self.current_minibatch, data], axis=0)
+
+                for i in range(self.minibatch, self.current_minibatch.shape[0] - self.current_minibatch.shape[0] % self.minibatch + 1, self.minibatch):
+                    self.process_minibatch({'type': event_type + '_mb', 'data': self.current_minibatch.iloc[i - self.minibatch: i]})
+
+                self.current_minibatch = self.current_minibatch.iloc[i:]
+
+            if self.fire_batches:
+                self.process_batch({'type': event_type + '_batch', 'data': data})
+        elif data.index.names[0] == 'Symbol':
+            if self.fire_ticks:
+                for i in range(data.shape[1]):
+                    self.process_datum({'type': event_type, 'data': data.groupby(level=0).nth(i)})
+
+            if self.minibatch is not None:
+                if self.current_minibatch is None or (self.current_filter is not None and type(self.current_filter) != type(f)):
+                    self.current_minibatch = data.copy(deep=True)
+                else:
+                    self.current_minibatch = pd.concat([self.current_minibatch, data], axis=0)
+                    self.current_minibatch.sort_index(inplace=True, ascending=f.ascend)
+
+                for i in range(self.minibatch, self.current_minibatch.index.levels[1].shape[0] - self.current_minibatch.index.levels[1].shape[0] % self.minibatch + 1, self.minibatch):
+                    self.process_minibatch({'type': event_type + '_mb', 'data': self.current_minibatch.loc[pd.IndexSlice[:, data.index.levels[1][i - self.minibatch: i]], :]})
+
+                self.current_minibatch = None if self.current_minibatch.index.levels[1].shape[0] - i == 0 else self.current_minibatch.groupby(level=0).tail(self.current_minibatch.index.levels[1].shape[0] - i)
+
+            if self.fire_batches:
+                self.process_batch({'type': event_type + '_batch', 'data': data})
 
     @staticmethod
     def _event_type(data_filter):
