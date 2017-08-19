@@ -474,26 +474,33 @@ class TestIQFeedHistory(unittest.TestCase):
             shutil.rmtree('/tmp/test_continuous_ticks')
 
     def test_bars_performance(self):
-        now = datetime.datetime.now()
-
         filter_provider = BarsInPeriodProvider(
             ticker=['MMM', 'AXP', 'AAPL', 'BA', 'CAT', 'CVX', 'CSCO', 'KO', 'DO', 'XOM', 'GE', 'GS', 'HD', 'IBM', 'INTC', 'JNJ', 'JPM', 'MCD', 'MRK', 'MSFT', 'NKE', 'PFE', 'PG', 'TRV', 'UNH', 'UTX', 'VZ', 'V', 'WMT', 'DIS'],
-            bgn_prd=datetime.date(now.year - 1, 1, 1), delta=datetime.timedelta(days=100), interval_len=300, ascend=True, interval_type='s')
+            bgn_prd=datetime.date(datetime.datetime.now().year - 1, 1, 1), delta=datetime.timedelta(days=100), interval_len=300, ascend=True, interval_type='s')
 
         with IQFeedHistoryListener(fire_batches=True, fire_ticks=False, minibatch=128, num_connections=10, filter_provider=filter_provider, run_async=False) as listener:
+            e1 = threading.Event()
+
             def process_batch_listener(event):
-                pass
+                e1.set()
 
             listener.process_batch += process_batch_listener
 
+            e2 = threading.Event()
+
             def process_minibatch_listener(event):
-                pass
+                e2.set()
 
             listener.process_minibatch += process_minibatch_listener
 
+            now = datetime.datetime.now()
+
             listener.start()
 
-            self.assertLess(datetime.datetime.now() - now, datetime.timedelta(seconds=90))
+            e1.wait()
+            e2.wait()
+
+            self.assertLess(datetime.datetime.now() - now, datetime.timedelta(seconds=60))
 
     def test_bar_mean_std(self):
         try:
