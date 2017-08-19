@@ -7,7 +7,7 @@ import threading
 
 class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegister):
 
-    def __init__(self, fire_bars=True, mkt_snapshot_depth=0, key_suffix=''):
+    def __init__(self, interval_len, interval_type='s', fire_bars=True, mkt_snapshot_depth=0, key_suffix=''):
         """
         :param fire_bars: raise event for each individual bar if True
         :param mkt_snapshot_depth: construct and maintain dataframe representing the current market snapshot with depth. If 0, then don't construct, otherwise construct for the past periods
@@ -20,6 +20,8 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
         self.conn = None
         self.streaming_conn = None
         self.current_batch = None
+        self.interval_len = interval_len
+        self.interval_type = interval_type
         self.watched_symbols = set()
         self._lock = threading.RLock()
 
@@ -111,19 +113,33 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
     def on_event(self, event):
         if event['type'] == 'watch_bars':
             data = event['data']
-            if isinstance(data['symbol'], list):
+            if isinstance(data, str):
+                data_copy = {'symbol': data, 'interval_type': self.interval_type, 'interval_len': self.interval_len}
+                if self.mkt_snapshot_depth > 0:
+                    data_copy['lookback_bars'] = self.mkt_snapshot_depth
+
+                self.conn.watch(**data_copy)
+                self.watched_symbols.add(data)
+            elif isinstance(data['symbol'], list):
                 data_copy = data.copy()
                 for s in data_copy['symbol']:
                     if s not in self.watched_symbols:
                         data_copy['symbol'] = s
+                        data_copy['interval_type'] = self.interval_type
+                        data_copy['interval_len'] = self.interval_len
+
                         if self.mkt_snapshot_depth > 0:
                             data_copy['lookback_bars'] = self.mkt_snapshot_depth
 
                         self.conn.watch(**data_copy)
                         self.watched_symbols.add(s)
             elif data['symbol'] not in self.watched_symbols:
-                self.conn.watch(**data)
-                self.watched_symbols.add(data['symbol'])
+                data_copy = data.copy()
+                data_copy['interval_type'] = self.interval_type
+                data_copy['interval_len'] = self.interval_len
+
+                self.conn.watch(**data_copy)
+                self.watched_symbols.add(data_copy['symbol'])
         elif event['type'] == 'request_market_snapshot_bars':
             self.on_market_snapshot(self._mkt_snapshot)
 
@@ -133,37 +149,50 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
                 if self._mkt_snapshot is None:
                     self._mkt_snapshot = pd.Series(data).to_frame().T
                     self._mkt_snapshot.set_index(['Symbol', 'Time Stamp'], append=False, inplace=True, drop=False)
-                elif (data['Symbol'], data['Time Stamp']) in self._mkt_snapshot.index:
-                    self._mkt_snapshot.loc[data['Symbol']].loc[data['Time Stamp']] = pd.Series(data)
+                elif isinstance(data, dict) and (data['Symbol'], data['Time Stamp']) in self._mkt_snapshot.index:
+                    self._mkt_snapshot.loc[data['Symbol'], data['Time Stamp']] = data
                 else:
-                    mkts = self._mkt_snapshot
-
                     to_concat = pd.Series(data).to_frame().T
                     to_concat.set_index(['Symbol', 'Time Stamp'], append=False, inplace=True, drop=False)
 
-                    mkts = pd.concat([mkts, to_concat])
+                    self._mkt_snapshot.update(to_concat)
+                    to_concat = to_concat[~to_concat.index.isin(self._mkt_snapshot.index)]
 
-                    multi_index = pd.MultiIndex.from_product([mkts.index.levels[0].unique(), mkts.index.levels[1].unique()], names=['Symbol', 'Time Stamp']).sort_values()
+                    self._mkt_snapshot = self._merge_snapshots(self._mkt_snapshot, to_concat)
 
-                    mkts = self._mkt_snapshot = mkts.reindex(multi_index)
+    def _merge_snapshots(self, s1, s2):
+        if s1.empty and not s2.empty:
+            return s2
+        elif s2.empty and not s1.empty:
+            return s1
+        elif s1.empty and s2.empty:
+            return
 
-                    for symbol in mkts.index.get_level_values('Symbol').unique():
-                        mkts.loc[symbol, 'Time Stamp'] = mkts.index.levels[1]
-                        mkts.loc[symbol, 'Symbol'] = symbol
+        s = pd.concat([s1, s2])
 
-                        for c in [c for c in ['Period Volume', 'Number of Trades'] if c in mkts.columns]:
-                            mkts.loc[symbol, c].fillna(0, inplace=True)
+        multi_index = pd.MultiIndex.from_product([s.index.levels[0].unique(), s.index.levels[1].unique()], names=['Symbol', 'Time Stamp']).sort_values()
 
-                        if 'Open' in mkts.columns:
-                            op = mkts.loc[symbol, 'Open']
-                            op.fillna(method='ffill', inplace=True)
+        s = self._mkt_snapshot = s.reindex(multi_index)
 
-                            for c in [c for c in ['Close', 'High', 'Low'] if c in mkts.columns]:
-                                mkts.loc[symbol, c].fillna(op, inplace=True)
+        for symbol in s.index.get_level_values('Symbol').unique():
+            s.loc[symbol, 'Time Stamp'] = s.index.levels[1]
+            s.loc[symbol, 'Symbol'] = symbol
 
-                        mkts.loc[symbol].fillna(method='ffill', inplace=True)
+            for c in [c for c in ['Period Volume', 'Number of Trades'] if c in s.columns]:
+                s.loc[symbol, c].fillna(0, inplace=True)
 
-                        mkts.loc[symbol].fillna(method='backfill', inplace=True)
+            if 'Open' in s.columns:
+                op = s.loc[symbol, 'Open']
+                op.fillna(method='ffill', inplace=True)
+
+                for c in [c for c in ['Close', 'High', 'Low'] if c in s.columns]:
+                    s.loc[symbol, c].fillna(op, inplace=True)
+
+            s.loc[symbol].fillna(method='ffill', inplace=True)
+
+            s.loc[symbol].fillna(method='backfill', inplace=True)
+
+        return s
 
     def _process_data(self, data):
         if isinstance(data, dict):

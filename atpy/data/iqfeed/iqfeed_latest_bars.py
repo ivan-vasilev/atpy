@@ -1,16 +1,54 @@
 import pyevents.events as events
+from atpy.data.iqfeed.iqfeed_bar_data_provider import IQFeedBarDataListener
+import threading
+from atpy.data.iqfeed.iqfeed_history_provider import IQFeedHistoryProvider, BarsFilter
 
 
-class IQFeedLatestBars(metaclass=events.GlobalRegister):
-    def __init__(self, interval_type: str, interval_len: int, max_ticks: int, historical_symbols: list = None, streaming_symbols: list = None):
-        self.interval_type = interval_type
-        self.interval_len = interval_len
-        self.max_ticks = max_ticks
-        self.historical_symbols = historical_symbols
-        self.streaming_symbols = streaming_symbols
+class IQFeedLatestBars(IQFeedBarDataListener):
+    def __enter__(self):
+        super().__enter__()
+
+        self.history = IQFeedHistoryProvider(num_connections=5, key_suffix=self.key_suffix)
+        self.history.__enter__()
+
+        self.symbols = list()
+
+        self._is_running = True
+
+        def generate_data():
+            while self._is_running:
+                self._merge_history()
+
+        threading.Thread(target=generate_data, daemon=True).start()
+
+        return self
+
+    def _merge_history(self):
+        result = self.history.request_data(BarsFilter(self.symbols, self.interval_len, self.interval_type, self.mkt_snapshot_depth), synchronize_timestamps=True)
+        with self._lock:
+            if self._mkt_snapshot is not None:
+                ind = result[~result.index.isin(self._mkt_snapshot.index)]
+                self._mkt_snapshot = self._merge_snapshots(self._mkt_snapshot, ind)
+            else:
+                self._mkt_snapshot = result
+
+    def __exit__(self, exception_type, exception_value, traceback):
+        super().__exit__(exception_type, exception_value, traceback)
+
+        self._is_running = False
+
+        self.history.__exit__(exception_type, exception_value, traceback)
 
     @events.listener
     def on_event(self, event):
-        if event['type'] == 'watch_bars':
+        super().on_event(event)
+
+        if event['type'] == 'watch_history_bars':
             data = event['data']
 
+            with self._lock:
+                if isinstance(data, list):
+                    for s in [s for s in data if s not in self.symbols]:
+                        self.symbols.append(s)
+                elif isinstance(data, str) and data not in self.symbols:
+                    self.symbols.append(data)

@@ -101,7 +101,7 @@ class TestMockOrders(unittest.TestCase):
     def test_bar_market_order(self):
         events.use_global_event_bus()
 
-        with IQFeedBarDataListener(minibatch=2) as listener:
+        with IQFeedBarDataListener(interval_len=300, fire_bars=True, mkt_snapshot_depth=10):
             mock_orders = MockOrders(watch_event='watch_bars')
 
             e1 = threading.Event()
@@ -120,10 +120,6 @@ class TestMockOrders(unittest.TestCase):
             events.listener(lambda x: e3.set() if x['type'] == 'order_fulfilled' and x['data'].symbol == 'IBM' else None)
             o3 = MarketOrder(Type.SELL, 'IBM', 1)
             mock_orders.on_event({'type': 'order_request', 'data': o3})
-
-            listener.watch(symbol='GOOG', interval_len=5, interval_type='s', update=1, lookback_bars=10)
-            listener.watch(symbol='AAPL', interval_len=5, interval_type='s', update=1, lookback_bars=10)
-            listener.watch(symbol='IBM', interval_len=5, interval_type='s', update=1, lookback_bars=10)
 
             e3.wait()
             e1.wait()
