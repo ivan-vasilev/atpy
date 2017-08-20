@@ -76,7 +76,7 @@ class TestIQFeedBarData(unittest.TestCase):
             def on_market_snapshot(event):
                 self.assertEqual(event['data'].shape[1], 9)
                 e2.set()
-                if len(event['data'].index.levels[0]) == 4:
+                if len(event['data'].index.levels[0]) >= len(ticker):
                     e3.set()
 
             listener.on_market_snapshot += on_market_snapshot
