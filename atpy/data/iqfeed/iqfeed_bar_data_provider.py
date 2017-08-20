@@ -150,7 +150,8 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
                     self._mkt_snapshot = pd.Series(data).to_frame().T
                     self._mkt_snapshot.set_index(['Symbol', 'Time Stamp'], append=False, inplace=True, drop=False)
                 elif isinstance(data, dict) and (data['Symbol'], data['Time Stamp']) in self._mkt_snapshot.index:
-                    self._mkt_snapshot.loc[data['Symbol'], data['Time Stamp']] = data
+                    for k, v in [(k, v) for k, v in data.items() if k not in ['Symbol', 'Time Stamp']]:
+                        self._mkt_snapshot.loc[data['Symbol']].loc[data['Time Stamp'], k] = v
                 else:
                     to_concat = pd.Series(data).to_frame().T
                     to_concat.set_index(['Symbol', 'Time Stamp'], append=False, inplace=True, drop=False)
