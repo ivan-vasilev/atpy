@@ -140,6 +140,15 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
 
                 self.conn.watch(**data_copy)
                 self.watched_symbols.add(data_copy['symbol'])
+
+            with self._lock:
+                if self._mkt_snapshot is not None:
+                    symbols = list(self.watched_symbols)
+                    symbols.sort()
+
+                    multi_index = pd.MultiIndex.from_product([symbols, s.index.levels[1].unique()], names=['Symbol', 'Time Stamp']).sort_values()
+                    self._mkt_snapshot = self._reindex_and_fill(self._mkt_snapshot, multi_index)
+
         elif event['type'] == 'request_market_snapshot_bars':
             self.on_market_snapshot(self._mkt_snapshot)
 
@@ -151,9 +160,17 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
                 if self._mkt_snapshot is None:
                     self._mkt_snapshot = pd.Series(data).to_frame().T
                     self._mkt_snapshot.set_index(['Symbol', 'Time Stamp'], append=False, inplace=True, drop=False)
+
+                    symbols = list(self.watched_symbols)
+                    symbols.sort()
+
+                    multi_index = pd.MultiIndex.from_product([symbols, self._mkt_snapshot.index.levels[1].unique()], names=['Symbol', 'Time Stamp']).sort_values()
+                    self._mkt_snapshot = self._reindex_and_fill(self._mkt_snapshot, multi_index)
                 elif isinstance(data, dict) and (data['Symbol'], data['Time Stamp']) in self._mkt_snapshot.index:
                     self._mkt_snapshot.loc[data['Symbol'], data['Time Stamp']] = pd.Series(data)
                 else:
+                    expand = data['Time Stamp'] > self._mkt_snapshot.index.levels[1][len(self._mkt_snapshot.index.levels[1]) - 1]
+
                     to_concat = pd.Series(data).to_frame().T
                     to_concat.set_index(['Symbol', 'Time Stamp'], append=False, inplace=True, drop=False)
 
@@ -162,7 +179,11 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
 
                     self._mkt_snapshot = self._merge_snapshots(self._mkt_snapshot, to_concat)
 
-    def _merge_snapshots(self, s1, s2):
+                    if expand:
+                        self._mkt_snapshot = self._expand(self._mkt_snapshot, self.mkt_snapshot_depth * 100)
+
+    @staticmethod
+    def _merge_snapshots(s1, s2):
         if s1.empty and not s2.empty:
             return s2
         elif s2.empty and not s1.empty:
@@ -174,27 +195,43 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
 
         multi_index = pd.MultiIndex.from_product([s.index.levels[0].unique(), s.index.levels[1].unique()], names=['Symbol', 'Time Stamp']).sort_values()
 
-        s = self._mkt_snapshot = s.reindex(multi_index)
+        return IQFeedBarDataListener._reindex_and_fill(s, multi_index)
 
-        for symbol in s.index.get_level_values('Symbol').unique():
-            s.loc[symbol, 'Time Stamp'] = s.index.levels[1]
-            s.loc[symbol, 'Symbol'] = symbol
+    @staticmethod
+    def _reindex_and_fill(df, index):
+        df = df.reindex(index)
 
-            for c in [c for c in ['Period Volume', 'Number of Trades'] if c in s.columns]:
-                s.loc[symbol, c].fillna(0, inplace=True)
+        for symbol in df.index.get_level_values('Symbol').unique():
+            df.loc[symbol, 'Time Stamp'] = df.index.levels[1]
+            df.loc[symbol, 'Symbol'] = symbol
 
-            if 'Open' in s.columns:
-                op = s.loc[symbol, 'Open']
+            for c in [c for c in ['Period Volume', 'Number of Trades'] if c in df.columns]:
+                df.loc[symbol, c].fillna(0, inplace=True)
+
+            if 'Open' in df.columns:
+                op = df.loc[symbol, 'Open']
                 op.fillna(method='ffill', inplace=True)
 
-                for c in [c for c in ['Close', 'High', 'Low'] if c in s.columns]:
-                    s.loc[symbol, c].fillna(op, inplace=True)
+                for c in [c for c in ['Close', 'High', 'Low'] if c in df.columns]:
+                    df.loc[symbol, c].fillna(op, inplace=True)
 
-            s.loc[symbol].fillna(method='ffill', inplace=True)
+            df.loc[symbol].fillna(method='ffill', inplace=True)
 
-            s.loc[symbol].fillna(method='backfill', inplace=True)
+            df.loc[symbol].fillna(method='backfill', inplace=True)
 
-        return s
+        return df
+
+    @staticmethod
+    def _expand(df, steps):
+        if len(df.index.levels[1]) < 2:
+            return df
+
+        diff = df.index.levels[1][1] - df.index.levels[1][0]
+        new_index = df.index.levels[1].append(pd.date_range(df.index.levels[1][len(df.index.levels[1]) - 1] + diff, periods=steps, freq=diff))
+
+        multi_index = pd.MultiIndex.from_product([df.index.levels[0], new_index], names=['Symbol', 'Time Stamp']).sort_values()
+
+        return df.reindex(multi_index)
 
     def _process_data(self, data):
         if isinstance(data, dict):

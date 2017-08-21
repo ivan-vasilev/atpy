@@ -1,6 +1,7 @@
 import unittest
 
 from atpy.data.iqfeed.iqfeed_latest_bars import *
+import pandas as pd
 
 
 class TestIQFeedBarData(unittest.TestCase):
@@ -55,15 +56,23 @@ class TestIQFeedBarData(unittest.TestCase):
 
     def test_2(self):
         with IQFeedLatestBars(mkt_snapshot_depth=3, interval_len=300) as listener:
+            df = pd.read_csv('/home/hok/Downloads/all_stocks_1yr.csv')
+
             # test bars
-            ticker = ['MMM', 'AXP', 'AAPL', 'BA', 'CAT', 'CVX', 'CSCO', 'KO', 'DO', 'XOM', 'GE', 'GS', 'HD', 'IBM', 'INTC', 'JNJ', 'JPM', 'MCD', 'MRK', 'MSFT', 'NKE', 'PFE', 'PG', 'TRV', 'UNH', 'UTX', 'VZ', 'V', 'WMT', 'DIS']
+            ticker = df['Name'].unique()
+            ticker.sort()
+            ticker = list(ticker[:-5])
+            # ticker = ['MMM', 'AXP', 'AAPL', 'BA', 'CAT', 'CVX', 'CSCO', 'KO', 'DO', 'XOM', 'GE', 'GS', 'HD', 'IBM', 'INTC', 'JNJ', 'JPM', 'MCD', 'MRK', 'MSFT', 'NKE', 'PFE', 'PG', 'TRV', 'UNH', 'UTX', 'VZ', 'V', 'WMT', 'DIS']
 
             e1 = {t: threading.Event() for t in ticker}
             counters = {t: 0 for t in ticker}
+            counters['Total'] = 0
 
             def bar_listener(event):
                 self.assertTrue(event['data']['Symbol'] in ticker)
                 counters[event['data']['Symbol']] += 1
+                counters['Total'] += 1
+                print(counters['Total'])
                 if counters[event['data']['Symbol']] >= listener.mkt_snapshot_depth:
                     e1[event['data']['Symbol']].set()
 
@@ -75,6 +84,7 @@ class TestIQFeedBarData(unittest.TestCase):
 
             def on_market_snapshot(event):
                 self.assertEqual(event['data'].shape[1], 9)
+                print(event['data'].index)
                 e2.set()
                 if len(event['data'].index.levels[0]) >= len(ticker):
                     e3.set()
@@ -95,7 +105,9 @@ class TestIQFeedBarData(unittest.TestCase):
             for e in e1.values():
                 e.wait()
 
-            mkt_snapshot()
+            print('SNAPSHOTS')
+            while True:
+                mkt_snapshot()
 
             e2.wait()
             e3.wait()

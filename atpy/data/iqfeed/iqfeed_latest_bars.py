@@ -27,8 +27,9 @@ class IQFeedLatestBars(IQFeedBarDataListener):
         result = self.history.request_data(BarsFilter(self.symbols, self.interval_len, self.interval_type, self.mkt_snapshot_depth), synchronize_timestamps=True)
         with self._lock:
             if self._mkt_snapshot is not None:
-                ind = result[~result.index.isin(self._mkt_snapshot.index)]
-                self._mkt_snapshot = self._merge_snapshots(self._mkt_snapshot, ind)
+                if not result.index.isin(self._mkt_snapshot.index).all():
+                    ind = result[~result.index.isin(self._mkt_snapshot.index)]
+                    self._mkt_snapshot = self._merge_snapshots(self._mkt_snapshot, ind)
             else:
                 self._mkt_snapshot = result
 
