@@ -19,7 +19,7 @@ class IQFeedLatestBars(IQFeedBarDataListener):
             while self._is_running:
                 self._merge_history()
 
-        # threading.Thread(target=generate_data, daemon=True).start()
+        threading.Thread(target=generate_data, daemon=True).start()
 
         return self
 

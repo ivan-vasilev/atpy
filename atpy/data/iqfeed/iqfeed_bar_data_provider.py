@@ -197,32 +197,24 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
         elif s1.empty and s2.empty:
             return
 
-        s = pd.concat([s1, s2])
-
-        multi_index = pd.MultiIndex.from_product([s.index.levels[0].unique(), s.index.levels[1].unique()], names=['Symbol', 'Time Stamp']).sort_values()
-
-        return IQFeedBarDataListener._reindex_and_fill(s, multi_index)
+        return pd.concat([s1, s2]).sort_index()
 
     @staticmethod
     def _reindex_and_fill(df, index):
         df = df.reindex(index)
-        df['Symbol'] = [v[0] for v in df.index.values]
-        df['Time Stamp'] = [v[1] for v in df.index.values]
+        df.drop(['Symbol', 'Time Stamp'], axis=1, inplace=True)
+        df.reset_index(inplace=True)
+        df.set_index(index, inplace=True)
 
-        for symbol in df.index.get_level_values('Symbol').unique():
-            for c in [c for c in ['Period Volume', 'Number of Trades'] if c in df.columns]:
-                df.loc[symbol, c].fillna(0, inplace=True)
+        for c in [c for c in ['Period Volume', 'Number of Trades'] if c in df.columns]:
+            df[c].fillna(0, inplace=True)
 
-            if 'Open' in df.columns:
-                op = df.loc[symbol, 'Open']
-                op.fillna(method='ffill', inplace=True)
+        if 'Open' in df.columns:
+            df['Open'] = df.groupby(level=0)['Open'].fillna(method='ffill')
+            op = df['Open']
 
-                for c in [c for c in ['Close', 'High', 'Low'] if c in df.columns]:
-                    df.loc[symbol, c].fillna(op, inplace=True)
-
-            df.loc[symbol].fillna(method='ffill', inplace=True)
-
-            df.loc[symbol].fillna(method='backfill', inplace=True)
+            for c in [c for c in ['Close', 'High', 'Low'] if c in df.columns]:
+                df[c].fillna(op, inplace=True)
 
         return df
 
