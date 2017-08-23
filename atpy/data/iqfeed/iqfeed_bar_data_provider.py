@@ -153,6 +153,8 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
             with self._lock:
                 snapshot = self._mkt_snapshot.dropna()
                 snapshot.set_index(['Symbol', 'Time Stamp'], inplace=True)
+                snapshot.reset_index(inplace=True)
+                snapshot.set_index(['Symbol', 'Time Stamp'], drop=False, inplace=True)
 
                 if 'normalize' in event and event['normalize'] is True:
                     multi_index = pd.MultiIndex.from_product([snapshot.index.levels[0].unique(), snapshot.index.levels[1].unique()], names=['Symbol', 'Time Stamp']).sort_values()
