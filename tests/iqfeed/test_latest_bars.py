@@ -61,8 +61,7 @@ class TestIQFeedBarData(unittest.TestCase):
             # test bars
             ticker = df['Name'].unique()
             ticker.sort()
-            ticker = list(ticker[:-5])
-            # ticker = ['MMM', 'AXP', 'AAPL', 'BA', 'CAT', 'CVX', 'CSCO', 'KO', 'DO', 'XOM', 'GE', 'GS', 'HD', 'IBM', 'INTC', 'JNJ', 'JPM', 'MCD', 'MRK', 'MSFT', 'NKE', 'PFE', 'PG', 'TRV', 'UNH', 'UTX', 'VZ', 'V', 'WMT', 'DIS']
+            ticker = list(ticker[:2])
 
             e1 = {t: threading.Event() for t in ticker}
             counters = {t: 0 for t in ticker}
@@ -105,9 +104,8 @@ class TestIQFeedBarData(unittest.TestCase):
             for e in e1.values():
                 e.wait()
 
-            print('SNAPSHOTS')
-            while True:
-                mkt_snapshot()
+            # while True:
+            mkt_snapshot()
 
             e2.wait()
             e3.wait()

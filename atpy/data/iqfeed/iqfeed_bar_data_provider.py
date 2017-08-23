@@ -150,13 +150,19 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
                     self._mkt_snapshot = self._reindex_and_fill(self._mkt_snapshot, multi_index)
 
         elif event['type'] == 'request_market_snapshot_bars':
-            self.on_market_snapshot(self._mkt_snapshot)
+            with self._lock:
+                snapshot = self._mkt_snapshot.dropna()
+                snapshot.set_index(['Symbol', 'Time Stamp'], inplace=True)
+
+                if 'normalize' in event and event['normalize'] is True:
+                    multi_index = pd.MultiIndex.from_product([snapshot.index.levels[0].unique(), snapshot.index.levels[1].unique()], names=['Symbol', 'Time Stamp']).sort_values()
+                    snapshot = IQFeedBarDataListener._reindex_and_fill(snapshot, multi_index)
+
+            self.on_market_snapshot(snapshot)
 
     def _update_mkt_snapshot(self, data):
         if self.mkt_snapshot_depth is not None:
             with self._lock:
-                data['Time Stamp'] = pd.Timestamp(data['Time Stamp'])
-
                 if self._mkt_snapshot is None:
                     self._mkt_snapshot = pd.Series(data).to_frame().T
                     self._mkt_snapshot.set_index(['Symbol', 'Time Stamp'], append=False, inplace=True, drop=False)
@@ -200,11 +206,10 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
     @staticmethod
     def _reindex_and_fill(df, index):
         df = df.reindex(index)
+        df['Symbol'] = [v[0] for v in df.index.values]
+        df['Time Stamp'] = [v[1] for v in df.index.values]
 
         for symbol in df.index.get_level_values('Symbol').unique():
-            df.loc[symbol, 'Time Stamp'] = df.index.levels[1]
-            df.loc[symbol, 'Symbol'] = symbol
-
             for c in [c for c in ['Period Volume', 'Number of Trades'] if c in df.columns]:
                 df.loc[symbol, c].fillna(0, inplace=True)
 
@@ -231,7 +236,9 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
 
         multi_index = pd.MultiIndex.from_product([df.index.levels[0], new_index], names=['Symbol', 'Time Stamp']).sort_values()
 
-        return df.reindex(multi_index)
+        result = df.reindex(multi_index)
+
+        return result
 
     def _process_data(self, data):
         if isinstance(data, dict):
