@@ -61,7 +61,7 @@ class TestIQFeedBarData(unittest.TestCase):
             # test bars
             ticker = df['Name'].unique()
             ticker.sort()
-            ticker = list(ticker[:500])
+            ticker = list(ticker[:5])
 
             e1 = {t: threading.Event() for t in ticker}
             counters = {t: 0 for t in ticker}
@@ -105,7 +105,7 @@ class TestIQFeedBarData(unittest.TestCase):
                 e.wait()
 
             # while True:
-            mkt_snapshot()
+            # mkt_snapshot()
 
             e2.wait()
             e3.wait()
