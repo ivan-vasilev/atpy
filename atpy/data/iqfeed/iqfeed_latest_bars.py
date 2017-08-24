@@ -8,7 +8,7 @@ class IQFeedLatestBars(IQFeedBarDataListener):
     def __enter__(self):
         super().__enter__()
 
-        self.history = IQFeedHistoryProvider(num_connections=5, key_suffix=self.key_suffix)
+        self.history = IQFeedHistoryProvider(num_connections=2, key_suffix=self.key_suffix)
         self.history.__enter__()
 
         self.symbols = list()
