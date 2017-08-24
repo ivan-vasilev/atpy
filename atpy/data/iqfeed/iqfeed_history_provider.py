@@ -325,6 +325,15 @@ class IQFeedHistoryProvider(object):
             multi_index = pd.MultiIndex.from_product([signals['Symbol'].unique(), signals[col].unique()], names=['Symbol', col]).sort_values()
 
             signals = signals.reindex(multi_index)
+            signals.drop(['Symbol', col], axis=1, inplace=True)
+            signals.reset_index(inplace=True)
+            signals.set_index(multi_index, inplace=True)
+
+            for c in [c for c in ['Period Volume', 'Number of Trades'] if c in signals.columns]:
+                signals[c].fillna(0, inplace=True)
+
+            if 'Open' in signals.columns:
+                signals['Open'] = signals.groupby(level=0)['Open'].fillna(method='ffill')
 
             zero_values = list()
 
@@ -332,35 +341,29 @@ class IQFeedHistoryProvider(object):
                 if 0 in signals.loc[symbol, 'Open'].values:
                     logging.getLogger(__name__).warning(symbol + " contains 0 in the Open column before timestamp sync")
 
-                signals.loc[symbol, 'Time Stamp'] = signals.index.levels[1]
-                signals.loc[symbol, 'Symbol'] = symbol
-
-                for c in [c for c in ['Period Volume', 'Number of Trades'] if c in signals.columns]:
-                    signals.loc[symbol, c].fillna(0, inplace=True)
-
                 if 'Open' in signals.columns:
                     op = signals.loc[symbol, 'Open']
 
-                    op.fillna(method='ffill', inplace=True)
-
                     if self.current_filter is not None and type(self.current_filter) == type(f) and self.current_batch is not None and f.ascend is True and symbol in self.current_batch:
                         op.fillna(value=self.current_batch[symbol, self.current_batch.shape[1] - 1]['Open'], inplace=True)
-                    else:
-                        op.fillna(method='backfill', inplace=True)
-
-                    for c in [c for c in ['Close', 'High', 'Low'] if c in signals.columns]:
-                        signals.loc[symbol, c].fillna(op, inplace=True)
-
-                signals.loc[symbol].fillna(method='ffill', inplace=True)
 
                 if self.current_filter is not None and type(self.current_filter) == type(f) and self.current_batch is not None and f.ascend is True and symbol in self.current_batch:
                     signals.loc[symbol].fillna(value=self.current_batch[symbol, self.current_batch.shape[1] - 1], inplace=True)
-                else:
-                    signals.loc[symbol].fillna(method='backfill', inplace=True)
 
                 if 0 in signals.loc[symbol, 'Open'].values:
                     logging.getLogger(__name__).warning(symbol + " contains 0 in the Open column after timestamp sync")
                     zero_values.append(symbol)
+
+            if 'Open' in signals.columns:
+                signals['Open'] = signals.groupby(level=0)['Open'].fillna(method='backfill')
+                op = signals['Open']
+
+                for c in [c for c in ['Close', 'High', 'Low'] if c in signals.columns]:
+                    signals[c].fillna(op, inplace=True)
+
+            signals = signals.groupby(level=0).fillna(method='ffill')
+
+            signals = signals.groupby(level=0).fillna(method='backfill')
 
             if not f.ascend:
                 signals.sort_index(level=['Symbol', col], inplace=True, ascending=False)

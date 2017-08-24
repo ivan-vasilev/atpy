@@ -218,6 +218,10 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
             for c in [c for c in ['Close', 'High', 'Low'] if c in df.columns]:
                 df[c].fillna(op, inplace=True)
 
+        df = df.groupby(level=0).fillna(method='ffill')
+
+        df = df.groupby(level=0).fillna(method='backfill')
+
         return df
 
     @staticmethod
