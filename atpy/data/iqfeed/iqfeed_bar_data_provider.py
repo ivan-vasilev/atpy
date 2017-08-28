@@ -160,6 +160,8 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
                     multi_index = pd.MultiIndex.from_product([snapshot.index.levels[0].unique(), snapshot.index.levels[1].unique()], names=['Symbol', 'Time Stamp']).sort_values()
                     snapshot = IQFeedBarDataListener._reindex_and_fill(snapshot, multi_index)
 
+                snapshot = snapshot.groupby(level=0).tail(self.mkt_snapshot_depth)
+
             self.on_market_snapshot(snapshot)
 
     def _update_mkt_snapshot(self, data):
@@ -188,7 +190,7 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
                     self._mkt_snapshot = self._merge_snapshots(self._mkt_snapshot, to_concat)
 
                     if expand:
-                        self._mkt_snapshot = self._expand(self._mkt_snapshot, self.mkt_snapshot_depth * 100)
+                        self._mkt_snapshot = self._expand(self._mkt_snapshot, min(1000, self.mkt_snapshot_depth * 10), self.mkt_snapshot_depth)
 
     @staticmethod
     def _merge_snapshots(s1, s2):
@@ -225,7 +227,7 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
         return df
 
     @staticmethod
-    def _expand(df, steps):
+    def _expand(df, steps, max_length=None):
         if len(df.index.levels[1]) < 2:
             return df
 
@@ -235,6 +237,9 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
         multi_index = pd.MultiIndex.from_product([df.index.levels[0], new_index], names=['Symbol', 'Time Stamp']).sort_values()
 
         result = df.reindex(multi_index)
+
+        if max_length is not None:
+            result = df.groupby(level=0).tail(max_length)
 
         return result
 
