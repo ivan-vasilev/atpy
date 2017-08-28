@@ -3,6 +3,7 @@ from ibapi.client import EClient
 from ibapi.order import Order
 from ibapi.contract import Contract
 
+import pandas as pd
 import pyevents.events as events
 import atpy.portfolio.order as orders
 import threading
@@ -15,6 +16,8 @@ class DefaultWrapper(EWrapper, metaclass=events.GlobalRegister):
         self.next_valid_order_id = -1
         self._pending_orders = dict()
         self._has_valid_id = threading.Event()
+        self._lock = threading.RLock()
+        self._positions = None
 
     def nextValidId(self, orderId: int):
         self.next_valid_order_id = orderId
@@ -36,6 +39,28 @@ class DefaultWrapper(EWrapper, metaclass=events.GlobalRegister):
                 self.after_event({'type': 'order_fulfilled', 'data': orderId})
         elif status in ('Inactive', 'ApiCanceled', 'Cancelled') and orderId in self._pending_orders:
             del self._pending_orders[orderId]
+
+    def position(self, account: str, contract: Contract, position: float, avgCost: float):
+        """This event returns real-time positions for all accounts in
+        response to the reqPositions() method."""
+
+        with self._lock:
+            if self._positions is None:
+                self._positions = {k: list() for k in list(contract.__dict__.keys()) + ['position', 'avgCost']}
+
+            for k, v in {**contract.__dict__, **{'position': position, 'avgCost' : avgCost}}.items():
+                self._positions[k].append(v)
+
+    def positionEnd(self):
+        """This is called once all position data for a given request are
+        received and functions as an end marker for the position() data. """
+
+        with self._lock:
+            data = None if self._positions is None else pd.DataFrame.from_dict(self._positions)
+            self._positions = None
+
+        if data is not None:
+            self.after_event({'type': 'ibapi_positions', 'data': data})
 
     def error(self, reqId:int, errorCode:int, errorString:str):
         super().error(reqId=reqId, errorCode=errorCode, errorString=errorString)
@@ -79,6 +104,8 @@ class IBEvents(DefaultWrapper, DefaultClient, metaclass=events.GlobalRegister):
     def on_event(self, event):
         if event['type'] == 'order_request':
             self.process_order_request(event['data'])
+        elif event['type'] == 'positions_request':
+            self.reqPositions()
 
     def process_order_request(self, order):
         with self.lock:
@@ -114,3 +141,8 @@ class IBEvents(DefaultWrapper, DefaultClient, metaclass=events.GlobalRegister):
             self.placeOrder(self.next_valid_order_id, ibcontract, iborder)
 
             self.next_valid_order_id += 1
+
+    def reqPositions(self):
+        with self.lock:
+            if self._positions is None:
+                super().reqPositions()
