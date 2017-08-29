@@ -8,7 +8,7 @@ class IQFeedLatestBars(IQFeedBarDataListener):
     def __enter__(self):
         super().__enter__()
 
-        self.history = IQFeedHistoryProvider(num_connections=2, key_suffix=self.key_suffix)
+        self.history = IQFeedHistoryProvider(num_connections=2, key_suffix=self.key_suffix, lmdb_path=None)
         self.history.__enter__()
 
         self.symbols = list()
@@ -23,7 +23,18 @@ class IQFeedLatestBars(IQFeedBarDataListener):
 
         return self
 
+    def __exit__(self, exception_type, exception_value, traceback):
+        super().__exit__(exception_type, exception_value, traceback)
+
+        self._is_running = False
+
+        self.history.__exit__(exception_type, exception_value, traceback)
+
     def _merge_history(self):
+        with self._lock:
+            if len(self.symbols) == 0:
+                return
+
         result = self.history.request_data(BarsFilter(self.symbols, self.interval_len, self.interval_type, self.mkt_snapshot_depth), synchronize_timestamps=True)
         with self._lock:
             if self._mkt_snapshot is not None:
@@ -32,13 +43,6 @@ class IQFeedLatestBars(IQFeedBarDataListener):
                     self._mkt_snapshot = self._merge_snapshots(self._mkt_snapshot, ind)
             else:
                 self._mkt_snapshot = result
-
-    def __exit__(self, exception_type, exception_value, traceback):
-        super().__exit__(exception_type, exception_value, traceback)
-
-        self._is_running = False
-
-        self.history.__exit__(exception_type, exception_value, traceback)
 
     @events.listener
     def on_event(self, event):
