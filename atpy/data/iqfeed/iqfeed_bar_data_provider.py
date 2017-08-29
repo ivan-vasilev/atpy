@@ -112,57 +112,52 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
     @events.listener
     def on_event(self, event):
         if event['type'] == 'watch_bars':
-            data = event['data']
-            if isinstance(data, str):
-                data_copy = {'symbol': data, 'interval_type': self.interval_type, 'interval_len': self.interval_len}
-                if self.mkt_snapshot_depth > 0:
-                    data_copy['lookback_bars'] = self.mkt_snapshot_depth
-
-                self.conn.watch(**data_copy)
-                self.watched_symbols.add(data)
-            elif isinstance(data['symbol'], list):
-                data_copy = data.copy()
-                for s in data_copy['symbol']:
-                    if s not in self.watched_symbols:
-                        data_copy['symbol'] = s
-                        data_copy['interval_type'] = self.interval_type
-                        data_copy['interval_len'] = self.interval_len
-
-                        if self.mkt_snapshot_depth > 0:
-                            data_copy['lookback_bars'] = self.mkt_snapshot_depth
-
-                        self.conn.watch(**data_copy)
-                        self.watched_symbols.add(s)
-            elif data['symbol'] not in self.watched_symbols:
-                data_copy = data.copy()
-                data_copy['interval_type'] = self.interval_type
-                data_copy['interval_len'] = self.interval_len
-
-                self.conn.watch(**data_copy)
-                self.watched_symbols.add(data_copy['symbol'])
-
-            with self._lock:
-                if self._mkt_snapshot is not None:
-                    symbols = list(self.watched_symbols)
-                    symbols.sort()
-
-                    multi_index = pd.MultiIndex.from_product([symbols, s.index.levels[1].unique()], names=['Symbol', 'Time Stamp']).sort_values()
-                    self._mkt_snapshot = self._reindex_and_fill(self._mkt_snapshot, multi_index)
-
+            self.watch_bars(event['data']['symbol'])
         elif event['type'] == 'request_market_snapshot_bars':
-            with self._lock:
-                snapshot = self._mkt_snapshot.dropna()
-                snapshot.set_index(['Symbol', 'Time Stamp'], inplace=True)
-                snapshot.reset_index(inplace=True)
-                snapshot.set_index(['Symbol', 'Time Stamp'], drop=False, inplace=True)
-
-                if 'normalize' in event and event['normalize'] is True:
-                    multi_index = pd.MultiIndex.from_product([snapshot.index.levels[0].unique(), snapshot.index.levels[1].unique()], names=['Symbol', 'Time Stamp']).sort_values()
-                    snapshot = IQFeedBarDataListener._reindex_and_fill(snapshot, multi_index)
-
-                snapshot = snapshot.groupby(level=0).tail(self.mkt_snapshot_depth)
-
+            snapshot = self.request_market_snapshot_bars('normalize' in event and event['normalize'] is True)
             self.on_market_snapshot(snapshot)
+
+    def watch_bars(self, symbol):
+        if isinstance(symbol, str) and symbol not in self.watched_symbols:
+            data_copy = {'symbol': symbol, 'interval_type': self.interval_type, 'interval_len': self.interval_len}
+            if self.mkt_snapshot_depth > 0:
+                data_copy['lookback_bars'] = self.mkt_snapshot_depth
+
+            self.conn.watch(**data_copy)
+            self.watched_symbols.add(symbol)
+        elif isinstance(symbol, list):
+            data_copy = dict(symbol=symbol)
+            data_copy['interval_type'] = self.interval_type
+            data_copy['interval_len'] = self.interval_len
+
+            if self.mkt_snapshot_depth > 0:
+                data_copy['lookback_bars'] = self.mkt_snapshot_depth
+
+            for s in [s for s in data_copy['symbol'] if s not in self.watched_symbols]:
+                data_copy['symbol'] = s
+                self.conn.watch(**data_copy)
+                self.watched_symbols.add(s)
+
+        with self._lock:
+            if self._mkt_snapshot is not None:
+                symbol = list(self.watched_symbols)
+                symbol.sort()
+
+                multi_index = pd.MultiIndex.from_product([symbol, self._mkt_snapshot.index.levels[1].unique()], names=['Symbol', 'Time Stamp']).sort_values()
+                self._mkt_snapshot = self._reindex_and_fill(self._mkt_snapshot, multi_index)
+
+    def request_market_snapshot_bars(self, normalize=False):
+        with self._lock:
+            snapshot = self._mkt_snapshot.dropna()
+            snapshot.set_index(['Symbol', 'Time Stamp'], inplace=True)
+            snapshot.reset_index(inplace=True)
+            snapshot.set_index(['Symbol', 'Time Stamp'], drop=False, inplace=True)
+
+            if normalize:
+                multi_index = pd.MultiIndex.from_product([snapshot.index.levels[0].unique(), snapshot.index.levels[1].unique()], names=['Symbol', 'Time Stamp']).sort_values()
+                snapshot = IQFeedBarDataListener._reindex_and_fill(snapshot, multi_index)
+
+            return snapshot.groupby(level=0).tail(self.mkt_snapshot_depth)
 
     def _update_mkt_snapshot(self, data):
         if self.mkt_snapshot_depth is not None:
