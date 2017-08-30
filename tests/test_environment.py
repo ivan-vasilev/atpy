@@ -16,5 +16,5 @@ class TestEnvironment(unittest.TestCase):
     def test_1(self):
         events.use_global_event_bus()
         e = threading.Event()
-        with Environment(interval_len=300, mkt_snapshot_depth=3):
+        with Environment(interval_len=300, mkt_snapshot_depth=3, fire_news=True):
             e.wait()
