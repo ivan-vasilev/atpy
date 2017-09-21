@@ -110,7 +110,7 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
     @events.listener
     def on_event(self, event):
         if event['type'] == 'watch_bars':
-            self.watch_bars(event['data']['symbol'])
+            self.watch_bars(event['data']['symbol'] if isinstance(event['data'], dict) else event['data'])
         elif event['type'] == 'request_market_snapshot_bars':
             snapshot = self.request_market_snapshot_bars('normalize' in event and event['normalize'] is True)
             self.on_market_snapshot(snapshot)

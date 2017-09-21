@@ -64,4 +64,4 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
                     }
                 ]
 
-                InfluxDBClient.write_points(self.client, json_body, protocol='line')
+                InfluxDBClient.write_points(self.client, json_body, protocol='json')
