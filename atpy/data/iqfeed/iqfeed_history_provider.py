@@ -300,7 +300,7 @@ class IQFeedHistoryProvider(object):
             if synchronize_timestamps:
                 signals = self.synchronize_timestamps(signals, f, self.exclude_nan_ratio)
 
-            return signals
+            return signals if len(signals) > 0 else None
 
     def synchronize_timestamps(self, signals: map, f: NamedTuple, exclude_nan_ratio=None):
         """
@@ -310,67 +310,75 @@ class IQFeedHistoryProvider(object):
         :param exclude_nan_ratio: exclude stocks with more nans than the given ration (before synchronization)
         :return:
         """
-        if len(signals) <= 1 or 'TickID' + self.key_suffix in iter(signals.values()).__next__():
-            return
-
-        if exclude_nan_ratio is not None:
-            mean = np.mean(np.array([signal.shape[0] for signal in signals.values()]))
-            signals = {symbol: signal for symbol, signal in signals.items() if signal.shape[0] >= mean * exclude_nan_ratio}
-
-        col = 'Time Stamp' + self.key_suffix if 'Time Stamp' + self.key_suffix in list(signals.values())[0] else 'Date' + self.key_suffix if 'Date' + self.key_suffix in list(signals.values())[0] else None
-        if col is not None:
+        if signals is None or len(signals) <= 1:
+            result = signals
+        elif 'tick_id' + self.key_suffix in iter(signals.values()).__next__():
             signals = pd.concat(signals)
-            signals.index.set_names('Symbol', level=0, inplace=True)
+            signals.index.set_names('symbol', level=0, inplace=True)
+            signals.sort_index(level=['symbol', 'tick_id'], inplace=True, ascending=f.ascend)
 
-            for symbol in signals.index.get_level_values('Symbol').unique():
-                if 0 in signals.loc[symbol, 'Open'].values:
-                    logging.getLogger(__name__).warning(symbol + " contains 0 in the Open column before timestamp sync")
+            result = signals
+        else:
+            if exclude_nan_ratio is not None:
+                mean = np.mean(np.array([signal.shape[0] for signal in signals.values()]))
+                signals = {symbol: signal for symbol, signal in signals.items() if signal.shape[0] >= mean * exclude_nan_ratio}
 
-            multi_index = pd.MultiIndex.from_product([signals['Symbol'].unique(), signals[col].unique()], names=['Symbol', col]).sort_values()
+            col = 'time_stamp' + self.key_suffix if 'time_stamp' + self.key_suffix in list(signals.values())[0] else 'date' + self.key_suffix if 'date' + self.key_suffix in list(signals.values())[0] else None
+            if col is not None:
+                signals = pd.concat(signals)
+                signals.index.set_names('symbol', level=0, inplace=True)
 
-            signals = signals.reindex(multi_index)
-            signals.drop(['Symbol', col], axis=1, inplace=True)
-            signals.reset_index(inplace=True)
-            signals.set_index(multi_index, inplace=True)
+                for symbol in signals.index.get_level_values('symbol').unique():
+                    if 0 in signals.loc[symbol, 'open'].values:
+                        logging.getLogger(__name__).warning(symbol + " contains 0 in the Open column before timestamp sync")
 
-            for c in [c for c in ['Period Volume', 'Number of Trades'] if c in signals.columns]:
-                signals[c].fillna(0, inplace=True)
+                multi_index = pd.MultiIndex.from_product([signals['symbol'].unique(), signals[col].unique()], names=['symbol', col]).sort_values()
 
-            if 'Open' in signals.columns:
-                signals['Open'] = signals.groupby(level=0)['Open'].fillna(method='ffill')
+                signals = signals.reindex(multi_index)
+                signals.drop(['symbol', col], axis=1, inplace=True)
+                signals.reset_index(inplace=True)
+                signals.set_index(multi_index, inplace=True)
+
+                for c in [c for c in ['period_volume', 'number_of_trades'] if c in signals.columns]:
+                    signals[c].fillna(0, inplace=True)
+
+                if 'open' in signals.columns:
+                    signals['open'] = signals.groupby(level=0)['open'].fillna(method='ffill')
+
+                    if self.current_filter is not None and type(self.current_filter) == type(f) and self.current_batch is not None and f.ascend is True and self.current_batch.index.levels[0].equals(signals.index.levels[0]):
+                        last = self.current_batch.groupby(level=0)['open'].last()
+                        signals['open'] = signals.groupby(level=0)['open'].apply(lambda x: x.fillna(last[last.index.get_loc(x.name)]))
+
+                    signals['open'] = signals.groupby(level=0)['open'].fillna(method='backfill')
+
+                    op = signals['open']
+
+                    for c in [c for c in ['close', 'high', 'low'] if c in signals.columns]:
+                        signals[c].fillna(op, inplace=True)
+
+                signals = signals.groupby(level=0).fillna(method='ffill')
 
                 if self.current_filter is not None and type(self.current_filter) == type(f) and self.current_batch is not None and f.ascend is True and self.current_batch.index.levels[0].equals(signals.index.levels[0]):
-                    last = self.current_batch.groupby(level=0)['Open'].last()
-                    signals['Open'] = signals.groupby(level=0)['Open'].apply(lambda x: x.fillna(last[last.index.get_loc(x.name)]))
+                    last = self.current_batch.groupby(level=0).last()
+                    signals = signals.groupby(level=0).apply(lambda x: x.fillna(last.iloc[last.index.get_loc(x.name)]))
 
-                signals['Open'] = signals.groupby(level=0)['Open'].fillna(method='backfill')
+                signals = signals.groupby(level=0).fillna(method='backfill')
 
-                op = signals['Open']
+                zero_values = list()
 
-                for c in [c for c in ['Close', 'High', 'Low'] if c in signals.columns]:
-                    signals[c].fillna(op, inplace=True)
+                for symbol in signals.index.get_level_values('symbol').unique():
+                    if 0 in signals.loc[symbol, 'open'].values:
+                        logging.getLogger(__name__).warning(symbol + " contains 0 in the Open column after timestamp sync")
+                        zero_values.append(symbol)
 
-            signals = signals.groupby(level=0).fillna(method='ffill')
+                if not f.ascend:
+                    signals.sort_index(level=['symbol', col], inplace=True, ascending=False)
 
-            if self.current_filter is not None and type(self.current_filter) == type(f) and self.current_batch is not None and f.ascend is True and self.current_batch.index.levels[0].equals(signals.index.levels[0]):
-                last = self.current_batch.groupby(level=0).last()
-                signals = signals.groupby(level=0).apply(lambda x: x.fillna(last.iloc[last.index.get_loc(x.name)]))
+                result = signals
 
-            signals = signals.groupby(level=0).fillna(method='backfill')
+            logging.getLogger(__name__).info("Generated data of shape: " + str(result.shape))
 
-            zero_values = list()
-
-            for symbol in signals.index.get_level_values('Symbol').unique():
-                if 0 in signals.loc[symbol, 'Open'].values:
-                    logging.getLogger(__name__).warning(symbol + " contains 0 in the Open column after timestamp sync")
-                    zero_values.append(symbol)
-
-            if not f.ascend:
-                signals.sort_index(level=['Symbol', col], inplace=True, ascending=False)
-
-        logging.getLogger(__name__).info("Generated data of shape: " + str(signals.shape))
-
-        return signals
+        return result
 
     def _request_raw_symbol_data(self, f, conn):
         adjust_data = False
@@ -453,33 +461,33 @@ class IQFeedHistoryProvider(object):
     def _process_ticks(self, data, data_filter):
         result = pd.DataFrame(data)
         sf = self.key_suffix
-        result['Time Stamp' + sf] = data['date'] + data['time']
+        result['time_stamp' + sf] = data['date'] + data['time']
         result.drop(['date', 'time'], axis=1, inplace=True)
-        result.rename_axis({"last": "Last" + sf, "last_sz": "Last Size" + sf, "tot_vlm": "Total Volume" + sf, "bid": "Bid" + sf, "ask": "Ask" + sf, "tick_id": "TickID" + sf, "last_type": "Basis For Last" + sf, "mkt_ctr": "Trade Market Center" + sf}, axis="columns", copy=False, inplace=True)
-        result['Symbol'] = data_filter.ticker
+        result.rename_axis({"last": "last" + sf, "last_sz": "last_size" + sf, "tot_vlm": "total_volume" + sf, "bid": "bid" + sf, "ask": "ask" + sf, "tick_id": "tick_id" + sf, "last_type": "basis_for_last" + sf, "mkt_ctr": "trade_market_center" + sf}, axis="columns", copy=False, inplace=True)
+        result['symbol'] = data_filter.ticker
 
-        result.set_index("TickID" + sf, inplace=True, drop=False)
+        result.set_index("tick_id" + sf, inplace=True, drop=False)
 
         return result
 
     def _process_bars(self, data, data_filter):
         result = pd.DataFrame(data)
         sf = self.key_suffix
-        result['Time Stamp' + sf] = data['date'] + data['time']
-        result.set_index('Time Stamp' + sf, inplace=True, drop=False)
+        result['time_stamp' + sf] = data['date'] + data['time']
+        result.set_index('time_stamp' + sf, inplace=True, drop=False)
         result.drop(['date', 'time'], axis=1, inplace=True)
-        result.rename_axis({"high_p": "High" + sf, "low_p": "Low" + sf, "open_p": "Open" + sf, "close_p": "Close" + sf, "tot_vlm": "Total Volume" + sf, "prd_vlm": "Period Volume" + sf, "num_trds": "Number of Trades" + sf}, axis="columns", copy=False, inplace=True)
-        result['Symbol'] = data_filter.ticker
+        result.rename_axis({"high_p": "high" + sf, "low_p": "low" + sf, "open_p": "open" + sf, "close_p": "close" + sf, "tot_vlm": "total_volume" + sf, "prd_vlm": "period_volume" + sf, "num_trds": "number_of_trades" + sf}, axis="columns", copy=False, inplace=True)
+        result['symbol'] = data_filter.ticker
 
         return result
 
     def _process_daily(self, data, data_filter):
         result = pd.DataFrame(data)
         sf = self.key_suffix
-        result.rename_axis({"date": "Date" + sf, "high_p": "High" + sf, "low_p": "Low" + sf, "open_p": "Open" + sf, "close_p": "Close" + sf, "prd_vlm": "Period Volume" + sf, "open_int": "Open Interest" + sf}, axis="columns", copy=False, inplace=True)
-        result['Symbol'] = data_filter.ticker
+        result.rename_axis({"date": "date" + sf, "high_p": "high" + sf, "low_p": "low" + sf, "open_p": "open" + sf, "close_p": "close" + sf, "prd_vlm": "period_volume" + sf, "open_int": "open_interest" + sf}, axis="columns", copy=False, inplace=True)
+        result['symbol'] = data_filter.ticker
 
-        result.set_index('Date' + sf, inplace=True, drop=False)
+        result.set_index('date' + sf, inplace=True, drop=False)
 
         return result
 
@@ -577,28 +585,36 @@ class IQFeedHistoryListener(IQFeedHistoryProvider, metaclass=events.GlobalRegist
 
     def fire_events(self, data, f):
         event_type = self._event_type(f)
+        if data is None:
+            return
 
-        if data.index.names[0] != 'Symbol':
+        if isinstance(data.index, pd.DatetimeIndex):
             if self.fire_ticks:
                 for i in range(data.shape[0]):
                     self.process_datum({'type': event_type, 'data': data.iloc[i]})
 
             if self.minibatch is not None:
                 if self.current_minibatch is None or (self.current_filter is not None and type(self.current_filter) != type(f)):
-                    self.current_minibatch = data
+                    self.current_minibatch = data.copy(deep=True)
                 else:
                     self.current_minibatch = pd.concat([self.current_minibatch, data], axis=0)
+                    self.current_minibatch.sort_index(inplace=True, ascending=f.ascend)
 
                 for i in range(self.minibatch, self.current_minibatch.shape[0] - self.current_minibatch.shape[0] % self.minibatch + 1, self.minibatch):
-                    self.process_minibatch({'type': event_type + '_mb', 'data': self.current_minibatch.iloc[i - self.minibatch: i]})
+                    mb = self.current_minibatch.iloc[i - self.minibatch: i]
+                    mb.set_index(keys='tick_id' if 'tick_id' in mb.columns else 'time_stamp' if 'time_stamp' in mb.columns else 'date', drop=False, inplace=True)
+                    self.process_minibatch({'type': event_type + '_mb', 'data': mb})
 
-                self.current_minibatch = self.current_minibatch.iloc[i:]
+                self.current_minibatch = None if self.current_minibatch.shape[0] - i == 0 else self.current_minibatch.iloc[i:]
+                if self.current_minibatch is not None:
+                    self.current_minibatch.set_index(keys='tick_id' if 'tick_id' in self.current_minibatch.columns else 'time_stamp' if 'time_stamp' in self.current_minibatch.columns else 'date', drop=False, inplace=True)
 
             if self.fire_batches:
                 self.process_batch({'type': event_type + '_batch', 'data': data})
-        elif data.index.names[0] == 'Symbol':
+
+        elif 'time_stamp' in data.index.names:
             if self.fire_ticks:
-                for i in range(data.shape[1]):
+                for i in range(data.index.levels[1].shape[0]):
                     self.process_datum({'type': event_type, 'data': data.groupby(level=0).nth(i)})
 
             if self.minibatch is not None:
@@ -612,6 +628,29 @@ class IQFeedHistoryListener(IQFeedHistoryProvider, metaclass=events.GlobalRegist
                     self.process_minibatch({'type': event_type + '_mb', 'data': self.current_minibatch.loc[pd.IndexSlice[:, data.index.levels[1][i - self.minibatch: i]], :]})
 
                 self.current_minibatch = None if self.current_minibatch.index.levels[1].shape[0] - i == 0 else self.current_minibatch.groupby(level=0).tail(self.current_minibatch.index.levels[1].shape[0] - i)
+
+            if self.fire_batches:
+                self.process_batch({'type': event_type + '_batch', 'data': data})
+        elif 'tick_id' in data.index.names:
+            if self.fire_ticks:
+                for i in range(data.shape[0]):
+                    self.process_datum({'type': event_type, 'data': data.iloc[i]})
+
+            if self.minibatch is not None:
+                if self.current_minibatch is None or (self.current_filter is not None and type(self.current_filter) != type(f)):
+                    self.current_minibatch = data.copy(deep=True)
+                else:
+                    self.current_minibatch = pd.concat([self.current_minibatch, data], axis=0)
+                    self.current_minibatch.sort_index(inplace=True, ascending=f.ascend)
+
+                for i in range(self.minibatch, self.current_minibatch.shape[0] - self.current_minibatch.shape[0] % self.minibatch + 1, self.minibatch):
+                    mb = self.current_minibatch.iloc[i - self.minibatch: i]
+                    mb.set_index(keys=['symbol', 'tick_id'], drop=False, inplace=True)
+                    self.process_minibatch({'type': event_type + '_mb', 'data': mb})
+
+                self.current_minibatch = None if self.current_minibatch.shape[0] - i == 0 else self.current_minibatch.iloc[i:]
+                if self.current_minibatch is not None:
+                    self.current_minibatch.set_index(keys=['symbol', 'tick_id'], drop=False, inplace=True)
 
             if self.fire_batches:
                 self.process_batch({'type': event_type + '_batch', 'data': data})
@@ -653,13 +692,18 @@ class InPeriodProvider(FilterProvider, metaclass=ABCMeta):
     Generate a sequence of InPeriod filters to obtain market history
     """
 
-    def __init__(self, ticker: typing.Union[list, str], bgn_prd: datetime.date, delta: datetime.timedelta, ascend: bool=True, max_ticks: int=None, timeout: int=None):
+    def __init__(self, ticker: typing.Union[list, str], bgn_prd: datetime.date, delta: datetime.timedelta, ascend: bool=True, max_ticks: int=None, timeout: int=None, overlap: datetime.timedelta=None):
+        """
+        :param overlap: whether to provide overlap within the intervals
+        """
+
         self.ticker = ticker
         self.bgn_prd = datetime.datetime(year=bgn_prd.year, month=bgn_prd.month, day=bgn_prd.day)
         self.delta = delta
         self.ascend = ascend
         self.max_ticks = max_ticks
         self.timeout = timeout
+        self.overlap = overlap if overlap is not None else datetime.timedelta(days=0)
 
     def __iter__(self):
         self._deltas = -1
@@ -674,7 +718,7 @@ class InPeriodProvider(FilterProvider, metaclass=ABCMeta):
             bgn_prd = self.bgn_prd + self._deltas * self.delta
 
             if bgn_prd < now:
-                end_prd = self.bgn_prd + (self._deltas + 1) * self.delta
+                end_prd = self.bgn_prd + (self._deltas + 1) * self.delta + self.overlap
                 end_prd = end_prd if end_prd < now else now
 
                 return self._create_filter(bgn_prd, end_prd)
@@ -687,7 +731,7 @@ class InPeriodProvider(FilterProvider, metaclass=ABCMeta):
             end_prd = self.start - self._deltas * self.delta
 
             if end_prd > self.bgn_prd:
-                bgn_prd = max(self.start - (self._deltas + 1) * self.delta, self.bgn_prd)
+                bgn_prd = max(self.start - (self._deltas + 1) * self.delta - self.overlap, self.bgn_prd)
 
                 return self._create_filter(bgn_prd, end_prd)
             else:
@@ -721,8 +765,8 @@ class BarsInPeriodProvider(InPeriodProvider):
     Generate a sequence of BarsInPeriod filters to obtain market history
     """
 
-    def __init__(self, ticker: typing.Union[list, str], interval_len: int, interval_type: str, bgn_prd: datetime.date, delta: datetime.timedelta, bgn_flt: datetime.time=None, end_flt: datetime.time=None, ascend: bool=True, max_ticks: int=None, timeout: int=None):
-        super().__init__(ticker=ticker, bgn_prd=bgn_prd, delta=delta, ascend=ascend, max_ticks=max_ticks, timeout=timeout)
+    def __init__(self, ticker: typing.Union[list, str], interval_len: int, interval_type: str, bgn_prd: datetime.date, delta: datetime.timedelta, bgn_flt: datetime.time=None, end_flt: datetime.time=None, ascend: bool=True, max_ticks: int=None, timeout: int=None, overlap: datetime.timedelta=None):
+        super().__init__(ticker=ticker, bgn_prd=bgn_prd, delta=delta, ascend=ascend, max_ticks=max_ticks, timeout=timeout, overlap=overlap)
 
         self.interval_len = interval_len
         self.interval_type = interval_type

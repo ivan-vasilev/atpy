@@ -102,13 +102,13 @@ class PortfolioManager(object, metaclass=events.GlobalRegister):
             self.add_order(event['data'])
         elif event['type'] == 'level_1_tick':
             with self._lock:
-                if event['data']['Symbol'] in [o.symbol for o in self.orders]:
-                    self._values[event['data']['Symbol']] = event['data']['Bid']
+                if event['data']['symbol'] in [o.symbol for o in self.orders]:
+                    self._values[event['data']['symbol']] = event['data']['Bid']
                     self.portfolio_value_update()
         elif event['type'] == 'bar':
             with self._lock:
-                if event['data']['Symbol'] in [o.symbol for o in self.orders]:
-                    self._values[event['data']['Symbol']] = event['data']['Close']
+                if event['data']['symbol'] in [o.symbol for o in self.orders]:
+                    self._values[event['data']['symbol']] = event['data']['close']
                     self.portfolio_value_update()
 
     @events.after

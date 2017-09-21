@@ -31,14 +31,14 @@ def get_nasdaq_listed_companies():
     include_only_index = list()
     for i in range(result.shape[0]):
         s = result.iloc[i]
-        if len(s['Symbol']) < 5 or s['Symbol'][:4] not in include_only:
+        if len(s['symbol']) < 5 or s['symbol'][:4] not in include_only:
             include_only_index.append(True)
-            include_only.add(s['Symbol'])
+            include_only.add(s['symbol'])
         else:
             include_only_index.append(False)
 
     result = result[include_only_index]
-    result = list(result['Symbol'].str.replace('$', '-'))
+    result = list(result['symbol'].str.replace('$', '-'))
 
     for i, s in enumerate(result):
         try:

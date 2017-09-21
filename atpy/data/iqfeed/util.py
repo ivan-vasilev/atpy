@@ -27,14 +27,14 @@ def create_batch(data, key_suffix=''):
         datum = datum[0] if len(datum) == 1 else datum
 
         if i == 0:
-            result = {n + key_suffix: np.empty((len(data),), d.dtype if str(d.dtype) not in ('|S4', '|S3') else object) for n, d in zip(datum.dtype.names, datum)}
+            result = {n.replace(" ", "_").lower() + key_suffix: np.empty((len(data),), d.dtype if str(d.dtype) not in ('|S4', '|S3') else object) for n, d in zip(datum.dtype.names, datum)}
 
         for j, f in enumerate(datum.dtype.names):
             d = datum[j]
             if isinstance(datum[j], bytes):
                 d = datum[j].decode('ascii')
 
-            result[f][i] = d
+            result[f.replace(" ", "_").lower()][i] = d
 
     return result
 
@@ -48,7 +48,7 @@ def iqfeed_to_dict(data, key_suffix=''):
     """
     data = data[0] if len(data) == 1 else data
 
-    result = {n + key_suffix: d for n, d in zip(data.dtype.names, data)}
+    result = {n.replace(" ", "_").lower() + key_suffix: d for n, d in zip(data.dtype.names, data)}
 
     for k, v in result.items():
         if isinstance(v, bytes):
@@ -63,18 +63,18 @@ def adjust(data, fundamentals: dict):
         if d > fundamentals['Ex-dividend Date'] and d > fundamentals['Split Factor 1 Date'] and d > fundamentals['Split Factor 2 Date']:
             return
 
-    if fundamentals['Ex-dividend Date'] > fundamentals['Split Factor 1 Date']:
-        adjust_dividend(data, fundamentals['Dividend Amount'], fundamentals['Ex-dividend Date'])
-        adjust_split(data, fundamentals['Split Factor 1'], fundamentals['Split Factor 1 Date'])
-        adjust_split(data, fundamentals['Split Factor 2'], fundamentals['Split Factor 2 Date'])
-    elif fundamentals['Split Factor 1 Date'] > fundamentals['Ex-dividend Date'] > fundamentals['Split Factor 2 Date']:
-        adjust_split(data, fundamentals['Split Factor 1'], fundamentals['Split Factor 1 Date'])
-        adjust_dividend(data, fundamentals['Dividend Amount'], fundamentals['Ex-dividend Date'])
-        adjust_split(data, fundamentals['Split Factor 2'], fundamentals['Split Factor 2 Date'])
-    elif fundamentals['Split Factor 1 Date'] > fundamentals['Split Factor 2 Date'] > fundamentals['Ex-dividend Date']:
-        adjust_split(data, fundamentals['Split Factor 1'], fundamentals['Split Factor 1 Date'])
-        adjust_split(data, fundamentals['Split Factor 2'], fundamentals['Split Factor 2 Date'])
-        adjust_dividend(data, fundamentals['Dividend Amount'], fundamentals['Ex-dividend Date'])
+    if fundamentals['ex-dividend_date'] > fundamentals['split_factor_1_date']:
+        adjust_dividend(data, fundamentals['dividend_amount'], fundamentals['ex-dividend_date'])
+        adjust_split(data, fundamentals['split_factor_1'], fundamentals['split_factor_1_date'])
+        adjust_split(data, fundamentals['split_factor_2'], fundamentals['split_factor_2_date'])
+    elif fundamentals['split_factor_1_date'] > fundamentals['ex-dividend_date'] > fundamentals['split_factor_2_date']:
+        adjust_split(data, fundamentals['split_factor_1'], fundamentals['split_factor_1_date'])
+        adjust_dividend(data, fundamentals['dividend_amount'], fundamentals['ex-dividend_date'])
+        adjust_split(data, fundamentals['split_factor_2'], fundamentals['split_factor_2_date'])
+    elif fundamentals['split_factor_1_date'] > fundamentals['split_factor_2_date'] > fundamentals['ex-dividend_date']:
+        adjust_split(data, fundamentals['split_factor_1'], fundamentals['split_factor_1_date'])
+        adjust_split(data, fundamentals['split_factor_2'], fundamentals['split_factor_2_date'])
+        adjust_dividend(data, fundamentals['dividend_amount'], fundamentals['ex-dividend_date'])
 
 
 def adjust_dividend(data, dividend_amount, dividend_date):

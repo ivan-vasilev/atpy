@@ -7,7 +7,7 @@ import pandas as pd
 
 import pyevents.events as events
 import pyiqfeed as iq
-from atpy.data.iqfeed.util import launch_service, iqfeed_to_dict, IQFeedDataProvider
+from atpy.data.iqfeed.util import launch_service, iqfeed_to_dict, create_batch, IQFeedDataProvider
 
 
 class IQFeedLevel1Listener(iq.SilentQuoteListener, metaclass=events.GlobalRegister):
@@ -117,8 +117,7 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener, metaclass=events.GlobalRegist
             self._current_regional_mb_index += 1
 
             if len(self.current_regional_mb) == self.minibatch:
-                mb = pd.DataFrame(self.current_regional_mb)
-                mb['Symbol'] = mb['Symbol'].str.decode('ascii')
+                mb = pd.DataFrame(create_batch(self.current_regional_mb))
                 self.on_regional_quote_mb(mb)
 
                 self._current_regional_mb_index = None
@@ -158,8 +157,7 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener, metaclass=events.GlobalRegist
             self._current_update_mb_index += 1
 
             if len(self.current_update_mb) == self.minibatch:
-                mb = pd.DataFrame(self.current_update_mb)
-                mb['Symbol'] = mb['Symbol'].str.decode('ascii')
+                mb = pd.DataFrame(create_batch(self.current_update_mb))
                 self.on_update_mb(mb)
                 self.current_update_mb = None
 
@@ -177,7 +175,7 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener, metaclass=events.GlobalRegist
     def process_fundamentals(self, fund: np.array):
         f = iqfeed_to_dict(fund, self.key_suffix)
 
-        Fundamentals.fundamentals[f['Symbol']] = f
+        Fundamentals.fundamentals[f['symbol']] = f
 
         self.on_fundamentals(f)
 

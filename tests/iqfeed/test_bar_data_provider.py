@@ -15,10 +15,10 @@ class TestIQFeedBarData(unittest.TestCase):
             counters = {'GOOG': 0, 'IBM': 0}
 
             def bar_listener(event):
-                self.assertTrue(event['data']['Symbol'] in ['IBM', 'GOOG'])
-                counters[event['data']['Symbol']] += 1
-                if counters[event['data']['Symbol']] >= listener.mkt_snapshot_depth:
-                    e1[event['data']['Symbol']].set()
+                self.assertTrue(event['data']['symbol'] in ['IBM', 'GOOG'])
+                counters[event['data']['symbol']] += 1
+                if counters[event['data']['symbol']] >= listener.mkt_snapshot_depth:
+                    e1[event['data']['symbol']].set()
 
             listener.on_bar += bar_listener
 
@@ -45,7 +45,7 @@ class TestIQFeedBarData(unittest.TestCase):
         with IQFeedBarDataListener(interval_len=300) as listener:
             e1 = threading.Event()
 
-            listener.on_bar += lambda event: [self.assertEqual(event['data']['Symbol'], 'SPY'), e1.set()]
+            listener.on_bar += lambda event: [self.assertEqual(event['data']['symbol'], 'SPY'), e1.set()]
 
             listener.watch(symbol='SPY', interval_len=5, interval_type='s', update=1, lookback_bars=10)
 
