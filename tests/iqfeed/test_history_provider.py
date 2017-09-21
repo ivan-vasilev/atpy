@@ -55,11 +55,12 @@ class TestIQFeedHistory(unittest.TestCase):
                 for i, d in enumerate(provider):
                     self.assertEqual(d.shape, (4, 14))
 
-                    self.assertNotEqual(d['TickID'].iloc[0], d['TickID'].iloc[1])
+                    self.assertNotEqual(d['tick_id'].iloc[0], d['tick_id'].iloc[1])
 
                     if i == 1:
                         break
 
+                e1.wait()
                 e2.wait()
                 e3.wait()
         finally:
@@ -77,9 +78,8 @@ class TestIQFeedHistory(unittest.TestCase):
             def process_tick(event):
                 try:
                     data = event['data']
-                    self.assertEqual(len(list(data.keys())), 2)
-                    self.assertEqual(len(list(data['IBM'].keys())), 14)
-                    self.assertEqual(len(list(data['AAPL'].keys())), 14)
+                    self.assertEqual(data.size, 14)
+                    self.assertTrue(data['symbol'] in ["IBM", "AAPL"])
                 finally:
                     e1.set()
 
@@ -90,8 +90,7 @@ class TestIQFeedHistory(unittest.TestCase):
             def process_batch_listener_column(event):
                 try:
                     batch = event['data']
-                    self.assertEqual(batch['IBM'].shape[1], 14)
-                    self.assertEqual(batch['AAPL'].shape[1], 14)
+                    self.assertEqual(batch.shape[1], 14)
                 finally:
                     e2.set()
 
@@ -102,23 +101,19 @@ class TestIQFeedHistory(unittest.TestCase):
             def process_minibatch_listener_column(event):
                 try:
                     batch = event['data']
-                    self.assertEqual(batch['IBM'].shape, (4, 14))
-                    self.assertEqual(batch['AAPL'].shape, (4, 14))
+                    self.assertEqual(batch.shape, (4, 14))
                 finally:
                     e3.set()
 
             listener.process_minibatch += process_minibatch_listener_column
 
             for i, d in enumerate(provider):
-                self.assertEqual(d['IBM'].shape, (4, 14))
-                self.assertEqual(d['AAPL'].shape, (4, 14))
-
-                self.assertEqual(d['IBM']['Time Stamp'].iloc[0], d['AAPL']['Time Stamp'].iloc[0])
-                self.assertNotEqual(d['IBM']['Time Stamp'].iloc[0], d['AAPL']['Time Stamp'].iloc[1])
+                self.assertEqual(d.shape, (4, 14))
 
                 if i == 1:
                     break
 
+            e1.wait()
             e2.wait()
             e3.wait()
 
@@ -158,7 +153,7 @@ class TestIQFeedHistory(unittest.TestCase):
 
             for i, d in enumerate(provider):
                 self.assertEqual(d.shape, (4, 9))
-                self.assertNotEqual(d['Time Stamp'].iloc[0], d['Time Stamp'].iloc[1])
+                self.assertNotEqual(d['time_stamp'].iloc[0], d['time_stamp'].iloc[1])
 
                 if i == 1:
                     break
@@ -311,8 +306,8 @@ class TestIQFeedHistory(unittest.TestCase):
 
                 def process_bar(event):
                     try:
-                        self.assertLess(event['data']['Open'], 68)
-                        self.assertGreater(event['data']['Open'], 65)
+                        self.assertLess(event['data']['open'], 68)
+                        self.assertGreater(event['data']['open'], 65)
                     finally:
                         e1.set()
 
@@ -321,8 +316,8 @@ class TestIQFeedHistory(unittest.TestCase):
                 e1.wait()
 
                 for i, d in enumerate(provider):
-                    self.assertLess(d['Open'].max(), 68)
-                    self.assertGreater(d['Open'].min(), 65)
+                    self.assertLess(d['open'].max(), 68)
+                    self.assertGreater(d['open'].min(), 65)
 
                     if i == 1:
                         break
@@ -365,7 +360,7 @@ class TestIQFeedHistory(unittest.TestCase):
 
             for i, d in enumerate(provider):
                 self.assertEqual(d.shape, (4, 8))
-                self.assertNotEqual(d['Date'].iloc[0], d['Date'].iloc[1])
+                self.assertNotEqual(d['date'].iloc[0], d['date'].iloc[1])
 
                 if i == 1:
                     break
@@ -376,7 +371,7 @@ class TestIQFeedHistory(unittest.TestCase):
     def test_continuous_bars(self):
         now = datetime.datetime.now()
 
-        filter_provider = BarsInPeriodProvider(ticker=['AAPL', 'GOOG'], bgn_prd=datetime.date(now.year - 2, 1, 1), delta=datetime.timedelta(days=10), interval_len=3600, ascend=True, interval_type='s')
+        filter_provider = BarsInPeriodProvider(ticker=['AAPL', 'GOOG'], bgn_prd=datetime.date(now.year - 2, 1, 1), delta=datetime.timedelta(days=10), interval_len=3600, ascend=True, interval_type='s', overlap=datetime.timedelta(days=3))
 
         try:
             with IQFeedHistoryListener(fire_batches=True, fire_ticks=True, minibatch=10, filter_provider=filter_provider, lmdb_path='/tmp/test_continuous_bars', exclude_nan_ratio=None) as listener:

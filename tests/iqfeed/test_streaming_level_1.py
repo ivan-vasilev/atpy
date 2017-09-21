@@ -30,7 +30,7 @@ class TestIQFeedLevel1(unittest.TestCase):
 
             for i, fund_item in enumerate(provider):
                 self.assertEqual(len(fund_item), 50)
-                s = fund_item['Symbol']
+                s = fund_item['symbol']
                 self.assertTrue('SPY' == s or 'AAPL' == s or 'IBM' == s or 'GOOG' == s or 'MSFT' == s)
 
                 if i == 1:
@@ -58,7 +58,7 @@ class TestIQFeedLevel1(unittest.TestCase):
 
             for i, summary_item in enumerate(data_provider):
                 self.assertEqual(len(summary_item), 16)
-                s = summary_item['Symbol']
+                s = summary_item['symbol']
                 self.assertTrue('SPY' == s or 'AAPL' == s or 'IBM' == s or 'GOOG' == s or 'MSFT' == s)
 
                 if i == 1:
@@ -88,7 +88,7 @@ class TestIQFeedLevel1(unittest.TestCase):
                 try:
                     update_item = event['data']
                     self.assertEqual(update_item.shape, (2, 16))
-                    l = list(update_item['Symbol'])
+                    l = list(update_item['symbol'])
                     self.assertTrue('SPY' in l or 'AAPL' in l or 'IBM' in l or 'GOOG' in l or 'MSFT' in l)
                 finally:
                     e2.set()
@@ -100,7 +100,7 @@ class TestIQFeedLevel1(unittest.TestCase):
 
             for i, update_item in enumerate(update_provider):
                 self.assertEqual(update_item.shape, (2, 16))
-                l = list(update_item['Symbol'])
+                l = list(update_item['symbol'])
                 self.assertTrue('SPY' in l or 'AAPL' in l or 'IBM' in l or 'GOOG' in l or 'MSFT' in l)
 
                 if i == 1:
@@ -151,6 +151,7 @@ class TestIQFeedLevel1(unittest.TestCase):
 
                 if i == 1:
                     break
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -32,15 +32,15 @@ class MockOrders(object, metaclass=events.GlobalRegister):
 
     def process_tick_data(self, data):
         with self._lock:
-            matching_orders = [o for o in self._pending_orders if o.symbol == data['Symbol']]
+            matching_orders = [o for o in self._pending_orders if o.symbol == data['symbol']]
             for order in matching_orders:
                 if order.order_type == orders.Type.BUY:
-                    if 'TickID' in data:
+                    if 'tick_id' in data:
                         order.add_position(data['Last Size'], data['Ask'])
                     else:
                         order.add_position(data['Ask Size'] if data['Ask Size'] > 0 else data['Most Recent Trade Size'], data['Ask'] if data['Ask Size'] > 0 else data['Most Recent Trade'])
                 elif order.order_type == orders.Type.SELL:
-                    if 'TickID' in data:
+                    if 'tick_id' in data:
                         order.add_position(data['Last Size'], data['Bid'])
                     else:
                         order.add_position(data['Bid Size'] if data['Bid Size'] > 0 else data['Most Recent Trade Size'], data['Bid'] if data['Bid Size'] > 0 else data['Most Recent Trade'])

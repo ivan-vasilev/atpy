@@ -16,7 +16,7 @@ def get_bar_mean_std(symbols: typing.Union[list, str]=None, interaval_len=10000,
         nd = data_util.get_nasdaq_listed_companies()
         nd = nd[nd['Financial Status'] == 'N']
         non_nd = data_util.get_non_nasdaq_listed_companies()
-        symbols = list(set(list(non_nd['ACT Symbol']) + list(nd['Symbol'])))
+        symbols = list(set(list(non_nd['ACT Symbol']) + list(nd['symbol'])))
         symbols.sort()
 
     if isinstance(symbols, str):
@@ -50,8 +50,8 @@ def get_bar_mean_std(symbols: typing.Union[list, str]=None, interaval_len=10000,
 
                 if data is not None:
                     for s in data:
-                        c_o = data[s]['Close'] - data[s]['Open']
-                        h_l = data[s]['High'] - data[s]['Low']
+                        c_o = data[s]['close'] - data[s]['open']
+                        h_l = data[s]['high'] - data[s]['low']
 
                         if skip_zeros:
                             c_o = c_o[c_o != 0]
@@ -75,8 +75,8 @@ def get_bar_mean_std(symbols: typing.Union[list, str]=None, interaval_len=10000,
                 for f in filter_provider:
                     data = history.request_data(f, synchronize_timestamps=False)
                     for k, v in data.items():
-                        c_o = v['Close'] - v['Open']
-                        h_l = v['High'] - v['Low']
+                        c_o = v['close'] - v['open']
+                        h_l = v['high'] - v['low']
 
                         if skip_zeros:
                             c_o = c_o[c_o != 0]
@@ -98,8 +98,8 @@ def get_bar_mean_std(symbols: typing.Union[list, str]=None, interaval_len=10000,
                 for f in filter_provider:
                     data = history.request_data(f, synchronize_timestamps=False)
                     for k, v in data.items():
-                        c_o = np.square(v['Close'] - v['Open'] - means[k][0])
-                        h_l = np.square(v['High'] - v['Low'] - means[k][1])
+                        c_o = np.square(v['close'] - v['open'] - means[k][0])
+                        h_l = np.square(v['high'] - v['low'] - means[k][1])
 
                         if skip_zeros:
                             c_o = c_o[c_o != 0]
