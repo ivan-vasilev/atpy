@@ -5,6 +5,7 @@ from dateutil.parser import parse
 from influxdb import InfluxDBClient, DataFrameClient
 from atpy.data.iqfeed.iqfeed_history_provider import IQFeedHistoryProvider, BarsInPeriodFilter
 from dateutil.relativedelta import relativedelta
+import numpy as np
 
 
 class InfluxDBCache(object, metaclass=events.GlobalRegister):
@@ -55,12 +56,12 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
                     {
                         "measurement": "bars",
                         "tags": {
-                            "symbol": data['symbol'],
+                            "symbol": '"' + data['symbol'] + '"',
                             "interval_len": event['interval_len'],
                         },
 
                         "time": data['time_stamp'].astype(datetime.datetime),
-                        "fields": {**{'interval_type': event['interval_type']}, **{k: v for k, v in data.items() if k not in ('time_stamp', 'symbol')}}
+                        "fields": {**{'interval_type': event['interval_type']}, **{k: int(v) if isinstance(v, (int, np.integer)) else v for k, v in data.items() if k not in ('time_stamp', 'symbol')}}
                     }
                 ]
 
