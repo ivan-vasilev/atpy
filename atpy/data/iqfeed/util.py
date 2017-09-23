@@ -2,6 +2,7 @@ import queue
 import threading
 
 import numpy as np
+import pandas as pd
 
 import pyiqfeed as iq
 from passwords import dtn_product_id, dtn_login, dtn_password
@@ -58,8 +59,8 @@ def iqfeed_to_dict(data, key_suffix=''):
 
 
 def adjust(data, fundamentals: dict):
-    if not isinstance(data, np.ndarray):
-        d = data['date']
+    if not isinstance(data, pd.DataFrame):
+        d = data['time_stamp']
         if d > fundamentals['ex-dividend_date'] and d > fundamentals['split_factor_1_date'] and d > fundamentals['split_factor_2_date']:
             return
 
@@ -79,58 +80,58 @@ def adjust(data, fundamentals: dict):
 
 def adjust_dividend(data, dividend_amount, dividend_date):
     if not np.isnan(dividend_amount):
-        if isinstance(data, np.ndarray):
-            if 'open_p' in data[0].dtype.names:  # adjust bars
-                data['open_p'][data['date'] < dividend_date] -= dividend_amount
-                data['close_p'][data['date'] < dividend_date] -= dividend_amount
-                data['high_p'][data['date'] < dividend_date] -= dividend_amount
-                data['low_p'][data['date'] < dividend_date] -= dividend_amount
-            elif 'ask' in data[0].dtype.names:  # adjust ticks:
-                data['ask'][data['date'] < dividend_date] -= dividend_amount
-                data['bid'][data['date'] < dividend_date] -= dividend_amount
-                data['last'][data['date'] < dividend_date] -= dividend_amount
-        elif not np.isnan(dividend_amount) and dividend_date > data['date']:
-            if 'open_p' in data.dtype.names:  # adjust bars
-                data['open_p'] -= dividend_amount
-                data['close_p'] -= dividend_amount
-                data['high_p'] -= dividend_amount
-                data['low_p'] -= dividend_amount
-            elif 'ask' in data.dtype.names:  # adjust ticks:
-                data['ask'] -= dividend_amount
-                data['bid'] -= dividend_amount
-                data['last'] -= dividend_amount
+        if isinstance(data, pd.DataFrame):
+            if 'open' in data.columns:  # adjust bars
+                data.loc[data.index < dividend_date, 'close'] -= dividend_amount
+                data.loc[data.index < dividend_date, 'high'] -= dividend_amount
+                data.loc[data.index < dividend_date, 'open'] -= dividend_amount
+                data.loc[data.index < dividend_date, 'low'] -= dividend_amount
+            elif 'ask' in data.columns:  # adjust ticks:
+                data.loc[data.index < dividend_date, 'ask'] -= dividend_amount
+                data.loc[data.index < dividend_date, 'bid'] -= dividend_amount
+                data.loc[data.index < dividend_date, 'last'] -= dividend_amount
+        elif not np.isnan(dividend_amount) and dividend_date > data['time_stamp']:
+            if 'open' in data:  # adjust bars
+                data.loc['open'] -= dividend_amount
+                data.loc['close'] -= dividend_amount
+                data.loc['high'] -= dividend_amount
+                data.loc['low'] -= dividend_amount
+            elif 'ask' in data:  # adjust ticks:
+                data.loc['ask'] -= dividend_amount
+                data.loc['bid'] -= dividend_amount
+                data.loc['last'] -= dividend_amount
 
 
 def adjust_split(data, split_factor, split_date):
     if not np.isnan(split_factor) and split_factor > 0:
-        if isinstance(data, np.ndarray):
-            if 'open_p' in data[0].dtype.names:  # adjust bars
-                data['open_p'][data['date'] < split_date] *= split_factor
-                data['close_p'][data['date'] < split_date] *= split_factor
-                data['high_p'][data['date'] < split_date] *= split_factor
-                data['low_p'][data['date'] < split_date] *= split_factor
-                data['prd_vlm'][data['date'] < split_date] *= int(1 / split_factor)
-                data['tot_vlm'][data['date'] < split_date] *= int(1 / split_factor)
-            elif 'ask' in data[0].dtype.names:  # adjust ticks:
-                data['ask'][data['date'] < split_date] *= split_factor
-                data['bid'][data['date'] < split_date] *= split_factor
-                data['last'][data['date'] < split_date] *= split_factor
-                data['last_sz'][data['date'] < split_date] *= int(1 / split_factor)
-                data['tot_vlm'][data['date'] < split_date] *= int(1 / split_factor)
-        elif not np.isnan(split_factor) and split_factor > 0 and split_date > data['date']:
-            if 'open_p' in data.dtype.names:  # adjust bars
-                data['open_p'] *= split_factor
-                data['close_p'] *= split_factor
-                data['high_p'] *= split_factor
-                data['low_p'] *= split_factor
-                data['prd_vlm'] *= int(1 / split_factor)
-                data['tot_vlm'] *= int(1 / split_factor)
-            elif 'ask' in data.dtype.names:  # adjust ticks:
-                data['ask'] *= split_factor
-                data['bid'] *= split_factor
-                data['last'] *= split_factor
-                data['last_sz'] *= int(1 / split_factor)
-                data['tot_vlm'] *= int(1 / split_factor)
+        if isinstance(data, pd.DataFrame):
+            if 'open' in data.columns:  # adjust bars
+                data.loc[data.index < split_date, 'open'] *= split_factor
+                data.loc[data.index < split_date, 'close'] *= split_factor
+                data.loc[data.index < split_date, 'high'] *= split_factor
+                data.loc[data.index < split_date, 'low'] *= split_factor
+                data.loc[data.index < split_date, 'period_volume'] *= int(1 / split_factor)
+                data.loc[data.index < split_date, 'total_volume'] *= int(1 / split_factor)
+            elif 'ask' in data.columns:  # adjust ticks:
+                data.loc[data.index < split_date, 'ask'] *= split_factor
+                data.loc[data.index < split_date, 'bid'] *= split_factor
+                data.loc[data.index < split_date, 'last'] *= split_factor
+                data.loc[data.index < split_date, 'last_size'] *= int(1 / split_factor)
+                data.loc[data.index < split_date, 'total_volume'] *= int(1 / split_factor)
+        elif not np.isnan(split_factor) and split_factor > 0 and split_date > data['time_stamp']:
+            if 'open' in data:  # adjust bars
+                data.loc['open'] *= split_factor
+                data.loc['close'] *= split_factor
+                data.loc['high'] *= split_factor
+                data.loc['low'] *= split_factor
+                data.loc['period_volume'] *= int(1 / split_factor)
+                data.loc['total_volume'] *= int(1 / split_factor)
+            elif 'ask' in data:  # adjust ticks:
+                data.loc['ask'] *= split_factor
+                data.loc['bid'] *= split_factor
+                data.loc['last'] *= split_factor
+                data.loc['last_size'] *= int(1 / split_factor)
+                data.loc['total_volume'] *= int(1 / split_factor)
 
 
 class IQFeedDataProvider(object):
