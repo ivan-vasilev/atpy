@@ -66,7 +66,8 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
             d = datetime.datetime.now() - self._time_delta_back
 
         f = BarsInPeriodFilter(ticker=symbol, bgn_prd=d, end_prd=None, interval_len=interval_len, interval_type=interval_type)
-        to_cache = self._history_provider.request_data(f, synchronize_timestamps=False)
+        to_cache = self._history_provider.request_data(f, synchronize_timestamps=False, adjust_data=False)
+
         if to_cache is not None and not to_cache.empty:
             to_cache.drop('time_stamp', axis=1, inplace=True)
             to_cache['interval'] = interval
