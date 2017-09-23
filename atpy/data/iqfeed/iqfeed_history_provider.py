@@ -1,13 +1,11 @@
 import abc
 import datetime
 import logging
-import os
 import pickle
 import threading
 import typing
 from multiprocessing.pool import ThreadPool
 
-import lmdb
 import numpy as np
 import pandas as pd
 
@@ -176,16 +174,14 @@ class IQFeedHistoryProvider(object):
     IQFeed historical data provider. See the unit test on how to use
     """
 
-    def __init__(self, num_connections=10, key_suffix='', lmdb_path='', exclude_nan_ratio=0.9):
+    def __init__(self, num_connections=10, key_suffix='', exclude_nan_ratio=0.9):
         """
         :param num_connections: number of connections to use when requesting data
         :param key_suffix: suffix for field names
-        :param lmdb_path: '' to use default path, None, not to use lmdb
         :param exclude_nan_ratio: exclude stocks with more nans than the given ration (before synchronization)
         """
         self.num_connections = num_connections
         self.key_suffix = key_suffix
-        self.lmdb_path = lmdb_path
         self.exclude_nan_ratio = exclude_nan_ratio
         self.conn = None
         self.streaming_conn = None
@@ -193,13 +189,6 @@ class IQFeedHistoryProvider(object):
         self.current_filter = None
 
     def __enter__(self):
-        if self.lmdb_path == '':
-            self.db = lmdb.open(os.path.join(os.path.abspath('../' * (len(__name__.split('.')) - 2)), 'data', 'cache', 'history'), map_size=100000000000)
-        elif self.lmdb_path is not None:
-            self.db = lmdb.open(self.lmdb_path, map_size=100000000000)
-        else:
-            self.db = None
-
         launch_service()
 
         if self.num_connections == 1:
@@ -241,20 +230,21 @@ class IQFeedHistoryProvider(object):
         if self.streaming_conn is not None:
             self.streaming_conn.disconnect()
 
-    def request_data(self, f, synchronize_timestamps=True):
+    def request_data(self, f, synchronize_timestamps=True, adjust_data=True):
         """
         request history data
         :param f: filter tuple
         :param synchronize_timestamps: whether to synchronize timestamps between different signals
+        :param adjust_data: whether to adjust the data
         :return:
         """
         if isinstance(f.ticker, str):
-            data = self._request_raw_symbol_data(f, self.conn[0] if isinstance(self.conn, list) else self.conn)
+            data = self.request_raw_symbol_data(f, self.conn[0] if isinstance(self.conn, list) else self.conn)
             if data is None:
                 logging.getLogger(__name__).warning("No data found for filter: " + str(f))
                 return
 
-            return self._process_data(data, f)
+            return self._process_data(data, f, adjust_data=adjust_data)
         elif isinstance(f.ticker, list):
             signals = dict()
 
@@ -267,7 +257,7 @@ class IQFeedHistoryProvider(object):
                 def mp_worker(p):
                     try:
                         ft, conn = p
-                        raw_data = self._request_raw_symbol_data(ft, conn)
+                        raw_data = self.request_raw_symbol_data(ft, conn)
                     except Exception as err:
                         raw_data = None
                         logging.getLogger(__name__).exception(err)
@@ -293,7 +283,7 @@ class IQFeedHistoryProvider(object):
                 del self._global_counter
             else:
                 for ft in [f._replace(ticker=t) for t in f.ticker]:
-                    data = self._request_raw_symbol_data(ft, self.conn)
+                    data = self.request_raw_symbol_data(ft, self.conn)
                     if data is not None:
                         signals[ft.ticker] = self._process_data(data, ft)
 
@@ -380,85 +370,51 @@ class IQFeedHistoryProvider(object):
 
         return result
 
-    def _request_raw_symbol_data(self, f, conn):
-        adjust_data = False
-        cache_data = False
-
+    @staticmethod
+    def request_raw_symbol_data(f, conn):
         if isinstance(f, TicksFilter):
             method = conn.request_ticks
-            adjust_data = True
         elif isinstance(f, TicksForDaysFilter):
             method = conn.request_ticks_for_days
-            adjust_data = True
         elif isinstance(f, TicksInPeriodFilter):
             method = conn.request_ticks_in_period
-            adjust_data = True
-            cache_data = True
         elif isinstance(f, BarsFilter):
             method = conn.request_bars
-            adjust_data = True
         elif isinstance(f, BarsForDaysFilter):
             method = conn.request_bars_for_days
         elif isinstance(f, BarsInPeriodFilter):
             method = conn.request_bars_in_period
-            adjust_data = True
-            cache_data = True
         elif isinstance(f, BarsDailyFilter):
             method = conn.request_daily_data
         elif isinstance(f, BarsDailyForDatesFilter):
             method = conn.request_daily_data_for_dates
-            cache_data = True
         elif isinstance(f, BarsWeeklyFilter):
             method = conn.request_weekly_data
         elif isinstance(f, BarsMonthlyFilter):
             method = conn.request_monthly_data
 
         try:
-            if cache_data and self.db is not None:
-                with self.db.begin() as txn:
-                    data = txn.get(bytearray(f.__str__(), encoding='ascii'))
+            data = method(*f)
 
-                if data is None:
-                    data = method(*f)
-
-                    if data is not None:
-                        with self.db.begin(write=True) as txn:
-                            txn.put(bytearray(f.__str__(), encoding='ascii'), pickle.dumps(data))
-                else:
-                    data = pickle.loads(data)
-                    if isinstance(data, pyiqfeed.exceptions.NoDataError):
-                        data = None
-            else:
-                data = method(*f)
-
-            if adjust_data and data is not None:
+            if data is not None:
                 col = 'open_p' if 'open_p' in data[0].dtype.names else 'ask' if 'ask' in data[0].dtype.names else None
 
                 if col is not None and 0 in data[col]:
-                    logging.getLogger(__name__).warning(f.ticker + " contains 0 in the " + col + " column before adjust")
-
-                adjust(data, Fundamentals.get(f.ticker, self.streaming_conn))
-
-                if col is not None and 0 in data[col]:
-                    logging.getLogger(__name__).warning(f.ticker + " contains 0 in the " + col + " column before adjust")
-        except pyiqfeed.exceptions.NoDataError as err:
-            if self.db is not None:
-                with self.db.begin(write=True) as txn:
-                    txn.put(bytearray(f.__str__(), encoding='ascii'), pickle.dumps(err))
-
+                    logging.getLogger(__name__).warning(f.ticker + " contains 0 in the " + col)
+        except pyiqfeed.exceptions.NoDataError:
             return None
 
         return data
 
-    def _process_data(self, data, data_filter):
+    def _process_data(self, data, data_filter, adjust_data=True):
         if isinstance(data_filter, TicksFilter) or isinstance(data_filter, TicksForDaysFilter) or isinstance(data_filter, TicksInPeriodFilter):
-            return self._process_ticks(data, data_filter)
+            return self._process_ticks(data, data_filter, adjust_data)
         elif isinstance(data_filter, BarsFilter) or isinstance(data_filter, BarsForDaysFilter) or isinstance(data_filter, BarsInPeriodFilter):
-            return self._process_bars(data, data_filter)
+            return self._process_bars(data, data_filter, adjust_data)
         elif isinstance(data_filter, BarsDailyFilter) or isinstance(data_filter, BarsDailyForDatesFilter) or isinstance(data_filter, BarsWeeklyFilter) or isinstance(data_filter, BarsMonthlyFilter):
             return self._process_daily(data, data_filter)
 
-    def _process_ticks(self, data, data_filter):
+    def _process_ticks(self, data, data_filter, adjust_data=True):
         result = pd.DataFrame(data)
         sf = self.key_suffix
         result['time_stamp' + sf] = data['date'] + data['time']
@@ -468,9 +424,12 @@ class IQFeedHistoryProvider(object):
 
         result.set_index("tick_id" + sf, inplace=True, drop=False)
 
+        if adjust_data:
+            adjust(result, Fundamentals.get(data_filter.ticker, self.streaming_conn))
+
         return result
 
-    def _process_bars(self, data, data_filter):
+    def _process_bars(self, data, data_filter, adjust_data=True):
         result = pd.DataFrame(data)
         sf = self.key_suffix
         result['time_stamp' + sf] = data['date'] + data['time']
@@ -478,6 +437,9 @@ class IQFeedHistoryProvider(object):
         result.drop(['date', 'time'], axis=1, inplace=True)
         result.rename_axis({"high_p": "high" + sf, "low_p": "low" + sf, "open_p": "open" + sf, "close_p": "close" + sf, "tot_vlm": "total_volume" + sf, "prd_vlm": "period_volume" + sf, "num_trds": "number_of_trades" + sf}, axis="columns", copy=False, inplace=True)
         result['symbol'] = data_filter.ticker
+
+        if adjust_data:
+            adjust(result, Fundamentals.get(data_filter.ticker, self.streaming_conn))
 
         return result
 
@@ -506,23 +468,24 @@ class IQFeedHistoryListener(IQFeedHistoryProvider, metaclass=events.GlobalRegist
     IQFeed historical data listener. See the unit test on how to use
     """
 
-    def __init__(self, minibatch=None, fire_batches=False, fire_ticks=False, run_async=True, num_connections=10, key_suffix='', filter_provider=None, lmdb_path='', exclude_nan_ratio=0.9):
+    def __init__(self, minibatch=None, fire_batches=False, fire_ticks=False, run_async=True, adjust_data=True, num_connections=10, key_suffix='', filter_provider=None, exclude_nan_ratio=0.9):
         """
         :param minibatch: size of the minibatch
         :param fire_batches: raise event for each batch
         :param fire_ticks: raise event for each tick
         :param run_async: run asynchronous
+        :param adjust_data: adjust data
         :param num_connections: number of connections to use when requesting data
         :param key_suffix: suffix for field names
         :param filter_provider: news filter list
-        :param lmdb_path: '' to use default path, None, not to use lmdb
         :param exclude_nan_ratio: exclude stocks with more nans than the given ration (before synchronization)
         """
-        super().__init__(num_connections=num_connections, key_suffix=key_suffix, lmdb_path=lmdb_path, exclude_nan_ratio=exclude_nan_ratio)
+        super().__init__(num_connections=num_connections, key_suffix=key_suffix, exclude_nan_ratio=exclude_nan_ratio)
 
         self.minibatch = minibatch
         self.fire_batches = fire_batches
         self.fire_ticks = fire_ticks
+        self.adjust_data = adjust_data
         self.run_async = run_async
         self.current_minibatch = None
         self.filter_provider = filter_provider
@@ -571,7 +534,7 @@ class IQFeedHistoryListener(IQFeedHistoryProvider, metaclass=events.GlobalRegist
         for f in self.filter_provider:
             logging.getLogger(__name__).info("Loading data for filter " + str(f))
 
-            d = self.request_data(f)
+            d = self.request_data(f, adjust_data=self.adjust_data)
 
             self.current_filter = f
             self.current_batch = d

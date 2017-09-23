@@ -34,35 +34,41 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
         if self._use_stream_events and event['type'] == 'bar':
             with self._lock:
                 data = event['data']
+                interval = str(event['interval_len']) + '-' + event['interval_type']
+
                 if data['symbol'] not in self._synchronized_symbols:
-                    cached = list(InfluxDBClient.query(self.client, 'select LAST(close) from bars where symbol="{}" and interval_type="{}" and interval_len={}'.format(data['symbol'], event['interval_type'], event['interval_len'])).get_points())
-                    if len(cached) > 0:
-                        d = parse(cached[0]['time'])
-                    else:
-                        d = datetime.datetime.now() - self._time_delta_back
-
-                    filter = BarsInPeriodFilter(ticker=data['symbol'], bgn_prd=d, end_prd=data['time_stamp'].astype(datetime.datetime), interval_len=event['interval_len'], interval_type=event['interval_type'])
-                    to_cache = self._history_provider.request_data(filter, synchronize_timestamps=False)
-                    if not to_cache.empty:
-                        to_cache.drop('time_stamp', axis=1, inplace=True)
-                        to_cache['interval_type'] = event['interval_type']
-                        to_cache['interval_len'] = event['interval_len']
-
-                        self.client.write_points(to_cache, 'bars', protocol='line', tag_columns=['symbol', 'interval_len'])
-
+                    self.verify_timeseries_integrity(data['symbol'], event['interval_len'], event['interval_type'])
                     self._synchronized_symbols.add(data['symbol'])
 
                 json_body = [
                     {
                         "measurement": "bars",
                         "tags": {
-                            "symbol": '"' + data['symbol'] + '"',
+                            "symbol": data['symbol'],
                             "interval_len": event['interval_len'],
                         },
 
                         "time": data['time_stamp'].astype(datetime.datetime),
-                        "fields": {**{'interval_type': event['interval_type']}, **{k: int(v) if isinstance(v, (int, np.integer)) else v for k, v in data.items() if k not in ('time_stamp', 'symbol')}}
+                        "fields": {**{'interval': interval}, **{k: int(v) if isinstance(v, (int, np.integer)) else v for k, v in data.items() if k not in ('time_stamp', 'symbol')}}
                     }
                 ]
 
                 InfluxDBClient.write_points(self.client, json_body, protocol='json')
+
+    def verify_timeseries_integrity(self, symbol: str, interval_len: int, interval_type: str):
+        interval = str(interval_len) + '-' + interval_type
+
+        cached = list(InfluxDBClient.query(self.client, 'select LAST(close) from bars where symbol="{}" and interval="{}"'.format(symbol, interval)).get_points())
+
+        if len(cached) > 0:
+            d = parse(cached[0]['time'])
+        else:
+            d = datetime.datetime.now() - self._time_delta_back
+
+        f = BarsInPeriodFilter(ticker=symbol, bgn_prd=d, end_prd=None, interval_len=interval_len, interval_type=interval_type)
+        to_cache = self._history_provider.request_data(f, synchronize_timestamps=False)
+        if to_cache is not None and not to_cache.empty:
+            to_cache.drop('time_stamp', axis=1, inplace=True)
+            to_cache['interval'] = interval
+
+            self.client.write_points(to_cache, 'bars', protocol='line', tag_columns=['symbol', 'interval'])
