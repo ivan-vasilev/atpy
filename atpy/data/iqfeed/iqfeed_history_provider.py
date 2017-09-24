@@ -174,15 +174,19 @@ class IQFeedHistoryProvider(object):
     IQFeed historical data provider. See the unit test on how to use
     """
 
-    def __init__(self, num_connections=10, key_suffix='', exclude_nan_ratio=0.9):
+    def __init__(self, num_connections=10, key_suffix='', exclude_nan_ratio=0.9, influxdb_cache_read=None, influxdb_cache_write=None):
         """
         :param num_connections: number of connections to use when requesting data
         :param key_suffix: suffix for field names
         :param exclude_nan_ratio: exclude stocks with more nans than the given ration (before synchronization)
+        :param influxdb_cache_read: influxdb client for cache read operations
+        :param influxdb_cache_write: influxdb client for cache write operations operations
         """
         self.num_connections = num_connections
         self.key_suffix = key_suffix
         self.exclude_nan_ratio = exclude_nan_ratio
+        self.influxdb_cache_read = influxdb_cache_read
+        self.influxdb_cache_write = influxdb_cache_write
         self.conn = None
         self.streaming_conn = None
         self.current_batch = None

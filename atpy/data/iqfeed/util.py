@@ -92,14 +92,14 @@ def adjust_dividend(data, dividend_amount, dividend_date):
                 data.loc[data.index < dividend_date, 'last'] -= dividend_amount
         elif not np.isnan(dividend_amount) and dividend_date > data['time_stamp']:
             if 'open' in data:  # adjust bars
-                data.loc['open'] -= dividend_amount
-                data.loc['close'] -= dividend_amount
-                data.loc['high'] -= dividend_amount
-                data.loc['low'] -= dividend_amount
+                data['open'] -= dividend_amount
+                data['close'] -= dividend_amount
+                data['high'] -= dividend_amount
+                data['low'] -= dividend_amount
             elif 'ask' in data:  # adjust ticks:
-                data.loc['ask'] -= dividend_amount
-                data.loc['bid'] -= dividend_amount
-                data.loc['last'] -= dividend_amount
+                data['ask'] -= dividend_amount
+                data['bid'] -= dividend_amount
+                data['last'] -= dividend_amount
 
 
 def adjust_split(data, split_factor, split_date):
@@ -120,18 +120,18 @@ def adjust_split(data, split_factor, split_date):
                 data.loc[data.index < split_date, 'total_volume'] *= int(1 / split_factor)
         elif not np.isnan(split_factor) and split_factor > 0 and split_date > data['time_stamp']:
             if 'open' in data:  # adjust bars
-                data.loc['open'] *= split_factor
-                data.loc['close'] *= split_factor
-                data.loc['high'] *= split_factor
-                data.loc['low'] *= split_factor
-                data.loc['period_volume'] *= int(1 / split_factor)
-                data.loc['total_volume'] *= int(1 / split_factor)
+                data['open'] *= split_factor
+                data['close'] *= split_factor
+                data['high'] *= split_factor
+                data['low'] *= split_factor
+                data['period_volume'] *= int(1 / split_factor)
+                data['total_volume'] *= int(1 / split_factor)
             elif 'ask' in data:  # adjust ticks:
-                data.loc['ask'] *= split_factor
-                data.loc['bid'] *= split_factor
-                data.loc['last'] *= split_factor
-                data.loc['last_size'] *= int(1 / split_factor)
-                data.loc['total_volume'] *= int(1 / split_factor)
+                data['ask'] *= split_factor
+                data['bid'] *= split_factor
+                data['last'] *= split_factor
+                data['last_size'] *= int(1 / split_factor)
+                data['total_volume'] *= int(1 / split_factor)
 
 
 class IQFeedDataProvider(object):

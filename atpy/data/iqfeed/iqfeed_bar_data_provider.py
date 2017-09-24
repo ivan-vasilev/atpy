@@ -96,15 +96,19 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
 
     def process_history_bar(self, bar_data: np.array) -> None:
         bar_data = np.copy(bar_data)
-        bd = bar_data[0] if len(bar_data) == 1 else bar_data
-        adjust(bd, Fundamentals.get(bd['symbol'].decode('ascii'), self.streaming_conn))
 
         data = None
         if self.fire_bars:
             data = self._process_data(iqfeed_to_dict(bar_data, key_suffix=self.key_suffix))
+            adjust(data, Fundamentals.get(data['symbol'], self.streaming_conn))
+
             self.on_bar(data)
+
         if self.mkt_snapshot_depth > 0 is not None:
-            data = data if data is not None else self._process_data(iqfeed_to_dict(bar_data, key_suffix=self.key_suffix))
+            if data is None:
+                data = self._process_data(iqfeed_to_dict(bar_data, key_suffix=self.key_suffix))
+                adjust(data, Fundamentals.get(data['symbol'], self.streaming_conn))
+
             self._update_mkt_snapshot(data)
 
     @events.listener
