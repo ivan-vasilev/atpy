@@ -45,7 +45,7 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
                         "measurement": "bars",
                         "tags": {
                             "symbol": data['symbol'],
-                            "interval_len": event['interval_len'],
+                            "interval": interval,
                         },
 
                         "time": data['time_stamp'].astype(datetime.datetime),
