@@ -1,7 +1,6 @@
 import abc
 import datetime
 import logging
-import pickle
 import threading
 import typing
 from multiprocessing.pool import ThreadPool
@@ -15,6 +14,7 @@ import pyiqfeed as iq
 from atpy.data.iqfeed.filters import *
 from atpy.data.iqfeed.iqfeed_level_1_provider import Fundamentals
 from atpy.data.iqfeed.util import launch_service, adjust, IQFeedDataProvider
+import queue
 
 
 class TicksFilter(NamedTuple):
@@ -250,51 +250,69 @@ class IQFeedHistoryProvider(object):
 
             return self._process_data(data, f, adjust_data=adjust_data)
         elif isinstance(f.ticker, list):
-            signals = dict()
+            q = queue.Queue()
+            self.request_data_by_filters([f._replace(ticker=t) for t in f.ticker], q)
 
-            if self.num_connections > 1:
-                pool = ThreadPool(self.num_connections)
-                self._global_counter = 0
-                lock = threading.Lock()
-                no_data = set()
-
-                def mp_worker(p):
-                    try:
-                        ft, conn = p
-                        raw_data = self.request_raw_symbol_data(ft, conn)
-                    except Exception as err:
-                        raw_data = None
-                        logging.getLogger(__name__).exception(err)
-
-                    if raw_data is not None:
-                        signals[ft.ticker] = self._process_data(raw_data, ft)
-                    else:
-                        no_data.add(ft.ticker)
-
-                    with lock:
-                        self._global_counter += 1
-                        if self._global_counter % 200 == 0 or self._global_counter == len(f.ticker):
-                            logging.getLogger(__name__).info("Loaded " + str(self._global_counter) + " symbols")
-                            if len(no_data) > 0:
-                                no_data_list = list(no_data)
-                                no_data_list.sort()
-                                logging.getLogger(__name__).info("No data found for " + str(len(no_data_list)) + " symbols: " + str(no_data_list))
-                                no_data.clear()
-
-                pool.map(mp_worker, ((f._replace(ticker=t), self.conn[i % self.num_connections]) for i, t in enumerate(f.ticker)))
-                pool.close()
-                pool.join()
-                del self._global_counter
-            else:
-                for ft in [f._replace(ticker=t) for t in f.ticker]:
-                    data = self.request_raw_symbol_data(ft, self.conn)
-                    if data is not None:
-                        signals[ft.ticker] = self._process_data(data, ft)
+            signals = {d[0].ticker: d[1] for d in iter(q.get, None)}
 
             if synchronize_timestamps:
                 signals = self.synchronize_timestamps(signals, f, self.exclude_nan_ratio)
+            elif len(signals) > 0:
+                signals = pd.concat(signals)
+                signals.index.set_names('symbol', level=0, inplace=True)
+                signals.sort_index(inplace=True, ascending=f.ascend)
 
             return signals if len(signals) > 0 else None
+
+    def request_data_by_filters(self, filters: list, q: queue.Queue):
+        """
+        request data for multiple filters
+        :param filters: list of filters
+        :param q: queue to populate the results as they come. When all the results are returned, None is inserted to signal that no more are coming.
+        :return: None
+        """
+        if self.num_connections > 1:
+            pool = ThreadPool(self.num_connections)
+            self._global_counter = 0
+            lock = threading.Lock()
+            no_data = set()
+
+            def mp_worker(p):
+                try:
+                    ft, conn = p
+                    raw_data = self.request_raw_symbol_data(ft, conn)
+                except Exception as err:
+                    raw_data = None
+                    logging.getLogger(__name__).exception(err)
+
+                if raw_data is not None:
+                    q.put((ft, self._process_data(raw_data, ft)))
+                else:
+                    no_data.add(ft)
+
+                with lock:
+                    self._global_counter += 1
+                    if self._global_counter == len(filters):
+                        q.put(None)
+
+                    if self._global_counter % 200 == 0 or self._global_counter == len(filters):
+                        logging.getLogger(__name__).info("Loaded " + str(self._global_counter) + " symbols")
+                        if len(no_data) > 0:
+                            no_data_list = list(no_data)
+                            no_data_list.sort()
+                            logging.getLogger(__name__).info("No data found for " + str(len(no_data_list)) + " symbols: " + str(no_data_list))
+                            no_data.clear()
+
+            pool.map(mp_worker, ((f, self.conn[i % self.num_connections]) for i, f in enumerate(filters)))
+            pool.close()
+            del self._global_counter
+        else:
+            for ft in filters:
+                data = self.request_raw_symbol_data(ft, self.conn)
+                if data is not None:
+                    q.put((ft, self._process_data(data, ft)))
+
+            q.put(None)
 
     def synchronize_timestamps(self, signals: map, f: NamedTuple, exclude_nan_ratio=None):
         """
@@ -508,6 +526,8 @@ class IQFeedHistoryListener(IQFeedHistoryProvider, metaclass=events.GlobalRegist
         self._background_thread = None
 
         self.no_more_data()
+
+        super().__exit__(exception_type, exception_value, traceback)
 
     def start(self):
         if self.filter_provider is not None:

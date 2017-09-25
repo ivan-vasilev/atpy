@@ -87,9 +87,9 @@ def adjust_dividend(data, dividend_amount, dividend_date):
                 data.loc[data.index < dividend_date, 'open'] -= dividend_amount
                 data.loc[data.index < dividend_date, 'low'] -= dividend_amount
             elif 'ask' in data.columns:  # adjust ticks:
-                data.loc[data.index < dividend_date, 'ask'] -= dividend_amount
-                data.loc[data.index < dividend_date, 'bid'] -= dividend_amount
-                data.loc[data.index < dividend_date, 'last'] -= dividend_amount
+                data.loc[data['time_stamp'] < dividend_date, 'ask'] -= dividend_amount
+                data.loc[data['time_stamp'] < dividend_date, 'bid'] -= dividend_amount
+                data.loc[data['time_stamp'] < dividend_date, 'last'] -= dividend_amount
         elif not np.isnan(dividend_amount) and dividend_date > data['time_stamp']:
             if 'open' in data:  # adjust bars
                 data['open'] -= dividend_amount
@@ -113,11 +113,11 @@ def adjust_split(data, split_factor, split_date):
                 data.loc[data.index < split_date, 'period_volume'] *= int(1 / split_factor)
                 data.loc[data.index < split_date, 'total_volume'] *= int(1 / split_factor)
             elif 'ask' in data.columns:  # adjust ticks:
-                data.loc[data.index < split_date, 'ask'] *= split_factor
-                data.loc[data.index < split_date, 'bid'] *= split_factor
-                data.loc[data.index < split_date, 'last'] *= split_factor
-                data.loc[data.index < split_date, 'last_size'] *= int(1 / split_factor)
-                data.loc[data.index < split_date, 'total_volume'] *= int(1 / split_factor)
+                data.loc[data['time_stamp'] < split_date, 'ask'] *= split_factor
+                data.loc[data['time_stamp'] < split_date, 'bid'] *= split_factor
+                data.loc[data['time_stamp'] < split_date, 'last'] *= split_factor
+                data.loc[data['time_stamp'] < split_date, 'last_size'] *= int(1 / split_factor)
+                data.loc[data['time_stamp'] < split_date, 'total_volume'] *= int(1 / split_factor)
         elif not np.isnan(split_factor) and split_factor > 0 and split_date > data['time_stamp']:
             if 'open' in data:  # adjust bars
                 data['open'] *= split_factor

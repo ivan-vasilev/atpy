@@ -49,7 +49,7 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
                         },
 
                         "time": data['time_stamp'].astype(datetime.datetime),
-                        "fields": {**{'interval': interval}, **{k: int(v) if isinstance(v, (int, np.integer)) else v for k, v in data.items() if k not in ('time_stamp', 'symbol')}}
+                        "fields": {k: int(v) if isinstance(v, (int, np.integer)) else v for k, v in data.items() if k not in ('time_stamp', 'symbol')}
                     }
                 ]
 
@@ -73,3 +73,11 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
             to_cache['interval'] = interval
 
             self.client.write_points(to_cache, 'bars', protocol='line', tag_columns=['symbol', 'interval'])
+
+    def update_latest_values(self):
+        filters = list()
+        for time, tags in [(entry[0]['time'], entry[0]['last']['Tags']) for entry in InfluxDBClient.query(self.client, "select LAST(close), time from bars group by symbol, interval")]:
+            interval_len, interval_type = tags['interval'].split('-')
+            filters.append(BarsInPeriodFilter(ticker=tags['symbol'], bgn_prd=parse(time), end_prd=None, interval_len=int(interval_len), interval_type=interval_type))
+
+        pass

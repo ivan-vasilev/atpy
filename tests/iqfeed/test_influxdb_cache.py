@@ -33,6 +33,7 @@ class TestInfluxDBCache(unittest.TestCase):
                 if self._use_stream_events and event['type'] == 'bar':
                     with self._lock:
                         cached = client.query("select * from bars")
+                        self.update_latest_values()
                         _self.assertTrue(isinstance(cached, dict))
                         _self.assertTrue(isinstance(cached['bars'], pd.DataFrame))
                         _self.assertFalse(cached['bars'].empty)
