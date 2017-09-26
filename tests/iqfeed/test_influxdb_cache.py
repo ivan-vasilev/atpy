@@ -14,13 +14,14 @@ class TestInfluxDBCache(unittest.TestCase):
         events.reset()
         events.use_global_event_bus()
         self._client = DataFrameClient('localhost', 8086, 'root', 'root')
+
         self._client.create_database('test_cache')
         self._client.switch_database('test_cache')
 
     def tearDown(self):
         self._client.drop_database('test_cache')
 
-    def test_cache(self):
+    def test_streaming_cache(self):
         client = self._client
         _self = self
 
@@ -33,7 +34,6 @@ class TestInfluxDBCache(unittest.TestCase):
                 if self._use_stream_events and event['type'] == 'bar':
                     with self._lock:
                         cached = client.query("select * from bars")
-                        self.update_latest_values()
                         _self.assertTrue(isinstance(cached, dict))
                         _self.assertTrue(isinstance(cached['bars'], pd.DataFrame))
                         _self.assertFalse(cached['bars'].empty)
@@ -49,6 +49,28 @@ class TestInfluxDBCache(unittest.TestCase):
             watch_bars()
 
             e.wait()
+
+    def test_update_to_latest(self):
+        end_prd = datetime.datetime(2017, 3, 2)
+        filters = (BarsInPeriodFilter(ticker="IBM", bgn_prd=datetime.datetime(2017, 3, 1), end_prd=end_prd, interval_len=3600, ascend=True, interval_type='s', max_ticks=20),
+                   BarsInPeriodFilter(ticker="AAPL", bgn_prd=datetime.datetime(2017, 3, 1), end_prd=end_prd, interval_len=3600, ascend=True, interval_type='s', max_ticks=20),
+                   BarsInPeriodFilter(ticker="AAPL", bgn_prd=datetime.datetime(2017, 3, 1), end_prd=end_prd, interval_len=600, ascend=True, interval_type='s', max_ticks=20))
+
+        with IQFeedHistoryProvider(exclude_nan_ratio=None, num_connections=2) as history, InfluxDBCache(use_stream_events=True, client=self._client, history_provider=history, time_delta_back=relativedelta(days=3)) as cache:
+            data = [history.request_data(f, synchronize_timestamps=False, adjust_data=False) for f in filters]
+
+            for datum, f in zip(data, filters):
+                datum.drop('time_stamp', axis=1, inplace=True)
+                datum['interval'] = str(f.interval_len) + '-' + f.interval_type
+                cache.client.write_points(datum, 'bars', protocol='line', tag_columns=['symbol', 'interval'])
+
+            latest_old = cache.latest_entries
+            cache.update_to_latest()
+
+        latest_current = cache.latest_entries
+        self.assertEqual(len(latest_current), len(latest_old))
+        for t1, t2 in zip([e[0] for e in latest_current], [e[0] for e in latest_old]):
+            self.assertGreater(t1, t2)
 
 
 if __name__ == '__main__':
