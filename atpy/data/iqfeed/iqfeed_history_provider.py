@@ -251,7 +251,7 @@ class IQFeedHistoryProvider(object):
             return self._process_data(data, f, adjust_data=adjust_data)
         elif isinstance(f.ticker, list):
             q = queue.Queue()
-            self.request_data_by_filters([f._replace(ticker=t) for t in f.ticker], q)
+            self.request_data_by_filters([f._replace(ticker=t) for t in f.ticker], q, adjust_data=adjust_data)
 
             signals = {d[0].ticker: d[1] for d in iter(q.get, None)}
 
@@ -264,7 +264,7 @@ class IQFeedHistoryProvider(object):
 
             return signals if len(signals) > 0 else None
 
-    def request_data_by_filters(self, filters: list, q: queue.Queue):
+    def request_data_by_filters(self, filters: list, q: queue.Queue, adjust_data=True):
         """
         request data for multiple filters
         :param filters: list of filters
@@ -286,7 +286,7 @@ class IQFeedHistoryProvider(object):
                     logging.getLogger(__name__).exception(err)
 
                 if raw_data is not None:
-                    q.put((ft, self._process_data(raw_data, ft)))
+                    q.put((ft, self._process_data(raw_data, ft, adjust_data=adjust_data)))
                 else:
                     no_data.add(ft)
 
@@ -310,7 +310,7 @@ class IQFeedHistoryProvider(object):
             for ft in filters:
                 data = self.request_raw_symbol_data(ft, self.conn)
                 if data is not None:
-                    q.put((ft, self._process_data(data, ft)))
+                    q.put((ft, self._process_data(data, ft, adjust_data=adjust_data)))
 
             q.put(None)
 
