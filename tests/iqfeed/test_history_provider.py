@@ -150,7 +150,7 @@ class TestIQFeedHistory(unittest.TestCase):
 
             for i, d in enumerate(provider):
                 self.assertEqual(d.shape, (4, 9))
-                self.assertNotEqual(d['time_stamp'].iloc[0], d['time_stamp'].iloc[1])
+                self.assertNotEqual(d['timestamp'].iloc[0], d['timestamp'].iloc[1])
 
                 if i == 1:
                     break

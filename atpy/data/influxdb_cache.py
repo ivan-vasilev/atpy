@@ -7,6 +7,7 @@ import numpy as np
 from dateutil.parser import parse
 from dateutil.relativedelta import relativedelta
 from influxdb import InfluxDBClient, DataFrameClient
+import pandas as pd
 
 import pyevents.events as events
 from atpy.data.iqfeed.iqfeed_history_provider import IQFeedHistoryProvider, BarsInPeriodFilter
@@ -52,15 +53,45 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
                             "interval": interval,
                         },
 
-                        "time": data['time_stamp'].astype(datetime.datetime),
-                        "fields": {k: int(v) if isinstance(v, (int, np.integer)) else v for k, v in data.items() if k not in ('time_stamp', 'symbol')}
+                        "time": data['timestamp'].astype(datetime.datetime),
+                        "fields": {k: int(v) if isinstance(v, (int, np.integer)) else v for k, v in data.items() if k not in ('timestamp', 'symbol')}
                     }
                 ]
 
                 InfluxDBClient.write_points(self.client, json_body, protocol='json')
 
+    def request_data(self, symbol: str, interval_len: int, interval_type: str, bgn_prd: datetime.datetime=None, end_prd:datetime.datetime=None, ascending: bool=True):
+        """
+        :param symbol: symbol
+        :param interval_len: interval length
+        :param interval_type: interval type
+        :param bgn_prd: start datetime
+        :param end_prd: end datetime
+        :param ascending: asc/desc
+        :return: data from the database
+        """
+        query = "SELECT * FROM bars WHERE symbol = '{}' AND interval = '{}'" + ('' if bgn_prd is None else ' time >= {}') + ('' if end_prd is None else ' time <= {}') + ' ORDER BY time {}'
+        args = tuple(filter(lambda x: x is not None, [symbol, str(interval_len) + '-' + interval_type, bgn_prd, end_prd, 'ASC' if ascending else 'DESC']))
+        result = self.client.query(query.format(*args))
+        if len(result) == 0:
+            result = None
+        else:
+            result = result['bars']
+            result.drop('interval', axis=1, inplace=True)
+            result.index.name = 'timestamp'
+            result = result[['open', 'high', 'low', 'close', 'total_volume', 'period_volume', 'number_of_trades', 'symbol']]
+            result.index = result.index.tz_localize(None)
+
+            for c in [c for c in result.columns if result[c].dtype == np.int64]:
+                result[c] = result[c].astype(np.uint64, copy=False)
+
+        return result
+
     @property
     def latest_entries(self):
+        """
+        :return: list of latest times for each entry grouped by symbol and interval
+        """
         result = [(entry['time'], entry['last']['Tags']) for entry in InfluxDBClient.query(self.client, "select LAST(close), time from bars group by symbol, interval").get_points()]
         result.sort(key=lambda e: (e[1]['symbol'], e[1]['interval'], e[0]))
         return result
@@ -79,7 +110,7 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
         to_cache = self.history_provider.request_data(f, synchronize_timestamps=False, adjust_data=False)
 
         if to_cache is not None and not to_cache.empty:
-            to_cache.drop('time_stamp', axis=1, inplace=True)
+            to_cache.drop('timestamp', axis=1, inplace=True)
             to_cache['interval'] = interval
 
             self.client.write_points(to_cache, 'bars', protocol='line', tag_columns=['symbol', 'interval'])
@@ -113,7 +144,7 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
                     ft, to_cache = tupl
 
                 if to_cache is not None and not to_cache.empty:
-                    to_cache.drop('time_stamp', axis=1, inplace=True)
+                    to_cache.drop('timestamp', axis=1, inplace=True)
                     to_cache['interval'] = str(ft.interval_len) + '-' + ft.interval_type
 
                 try:
@@ -125,7 +156,7 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
                     global_counter['counter'] += 1
                     gc = global_counter['counter']
 
-                if gc % 200 == 0 or gc == len(filters):
+                if gc % 1 == 0 or gc == len(filters):
                     logging.getLogger(__name__).info("Cached " + str(gc) + " queries")
 
         threads = [threading.Thread(target=worker) for _ in range(self.history_provider.num_connections)]
