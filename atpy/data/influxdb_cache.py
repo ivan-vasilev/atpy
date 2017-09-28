@@ -70,7 +70,7 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
         :param ascending: asc/desc
         :return: data from the database
         """
-        query = "SELECT * FROM bars WHERE symbol = '{}' AND interval = '{}'" + ('' if bgn_prd is None else ' time >= {}') + ('' if end_prd is None else ' time <= {}') + ' ORDER BY time {}'
+        query = "SELECT * FROM bars WHERE symbol = '{}' AND interval = '{}'" + ('' if bgn_prd is None else " AND time >= '{}'") + ('' if end_prd is None else " AND time <= '{}'") + " ORDER BY time {}"
         args = tuple(filter(lambda x: x is not None, [symbol, str(interval_len) + '-' + interval_type, bgn_prd, end_prd, 'ASC' if ascending else 'DESC']))
         result = self.client.query(query.format(*args))
         if len(result) == 0:
