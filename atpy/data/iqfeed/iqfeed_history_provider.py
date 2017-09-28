@@ -174,19 +174,17 @@ class IQFeedHistoryProvider(object):
     IQFeed historical data provider. See the unit test on how to use
     """
 
-    def __init__(self, num_connections=10, key_suffix='', exclude_nan_ratio=0.9, influxdb_cache_read=None, influxdb_cache_write=None):
+    def __init__(self, num_connections=10, key_suffix='', exclude_nan_ratio=0.9, cache=None):
         """
         :param num_connections: number of connections to use when requesting data
         :param key_suffix: suffix for field names
         :param exclude_nan_ratio: exclude stocks with more nans than the given ration (before synchronization)
-        :param influxdb_cache_read: influxdb client for cache read operations
-        :param influxdb_cache_write: influxdb client for cache write operations operations
+        :param cache: influxdb client for cache read operations
         """
         self.num_connections = num_connections
         self.key_suffix = key_suffix
         self.exclude_nan_ratio = exclude_nan_ratio
-        self.influxdb_cache_read = influxdb_cache_read
-        self.influxdb_cache_write = influxdb_cache_write
+        self.cache = cache
         self.conn = None
         self.streaming_conn = None
         self.current_batch = None
@@ -335,7 +333,7 @@ class IQFeedHistoryProvider(object):
                 mean = np.mean(np.array([signal.shape[0] for signal in signals.values()]))
                 signals = {symbol: signal for symbol, signal in signals.items() if signal.shape[0] >= mean * exclude_nan_ratio}
 
-            col = 'time_stamp' + self.key_suffix if 'time_stamp' + self.key_suffix in list(signals.values())[0] else 'date' + self.key_suffix if 'date' + self.key_suffix in list(signals.values())[0] else None
+            col = 'timestamp' + self.key_suffix if 'timestamp' + self.key_suffix in list(signals.values())[0] else 'date' + self.key_suffix if 'date' + self.key_suffix in list(signals.values())[0] else None
             if col is not None:
                 signals = pd.concat(signals)
                 signals.index.set_names('symbol', level=0, inplace=True)
@@ -439,7 +437,7 @@ class IQFeedHistoryProvider(object):
     def _process_ticks(self, data, data_filter, adjust_data=True):
         result = pd.DataFrame(data)
         sf = self.key_suffix
-        result['time_stamp' + sf] = data['date'] + data['time']
+        result['timestamp' + sf] = data['date'] + data['time']
         result.drop(['date', 'time'], axis=1, inplace=True)
         result.rename_axis({"last": "last" + sf, "last_sz": "last_size" + sf, "tot_vlm": "total_volume" + sf, "bid": "bid" + sf, "ask": "ask" + sf, "tick_id": "tick_id" + sf, "last_type": "basis_for_last" + sf, "mkt_ctr": "trade_market_center" + sf}, axis="columns", copy=False, inplace=True)
         result['symbol'] = data_filter.ticker
@@ -454,8 +452,8 @@ class IQFeedHistoryProvider(object):
     def _process_bars(self, data, data_filter, adjust_data=True):
         result = pd.DataFrame(data)
         sf = self.key_suffix
-        result['time_stamp' + sf] = data['date'] + data['time']
-        result.set_index('time_stamp' + sf, inplace=True, drop=False)
+        result['timestamp' + sf] = data['date'] + data['time']
+        result.set_index('timestamp' + sf, inplace=True, drop=False)
         result.drop(['date', 'time'], axis=1, inplace=True)
         result.rename_axis({"high_p": "high" + sf, "low_p": "low" + sf, "open_p": "open" + sf, "close_p": "close" + sf, "tot_vlm": "total_volume" + sf, "prd_vlm": "period_volume" + sf, "num_trds": "number_of_trades" + sf}, axis="columns", copy=False, inplace=True)
         result['symbol'] = data_filter.ticker
@@ -589,17 +587,17 @@ class IQFeedHistoryListener(IQFeedHistoryProvider, metaclass=events.GlobalRegist
 
                 for i in range(self.minibatch, self.current_minibatch.shape[0] - self.current_minibatch.shape[0] % self.minibatch + 1, self.minibatch):
                     mb = self.current_minibatch.iloc[i - self.minibatch: i]
-                    mb.set_index(keys='tick_id' if 'tick_id' in mb.columns else 'time_stamp' if 'time_stamp' in mb.columns else 'date', drop=False, inplace=True)
+                    mb.set_index(keys='tick_id' if 'tick_id' in mb.columns else 'timestamp' if 'timestamp' in mb.columns else 'date', drop=False, inplace=True)
                     self.process_minibatch({'type': event_type + '_mb', 'data': mb})
 
                 self.current_minibatch = None if self.current_minibatch.shape[0] - i == 0 else self.current_minibatch.iloc[i:]
                 if self.current_minibatch is not None:
-                    self.current_minibatch.set_index(keys='tick_id' if 'tick_id' in self.current_minibatch.columns else 'time_stamp' if 'time_stamp' in self.current_minibatch.columns else 'date', drop=False, inplace=True)
+                    self.current_minibatch.set_index(keys='tick_id' if 'tick_id' in self.current_minibatch.columns else 'timestamp' if 'timestamp' in self.current_minibatch.columns else 'date', drop=False, inplace=True)
 
             if self.fire_batches:
                 self.process_batch({'type': event_type + '_batch', 'data': data})
 
-        elif 'time_stamp' in data.index.names:
+        elif 'timestamp' in data.index.names:
             if self.fire_ticks:
                 for i in range(data.index.levels[1].shape[0]):
                     self.process_datum({'type': event_type, 'data': data.groupby(level=0).nth(i)})

@@ -145,18 +145,18 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
                 symbol = list(self.watched_symbols)
                 symbol.sort()
 
-                multi_index = pd.MultiIndex.from_product([symbol, self._mkt_snapshot.index.levels[1].unique()], names=['symbol', 'time_stamp']).sort_values()
+                multi_index = pd.MultiIndex.from_product([symbol, self._mkt_snapshot.index.levels[1].unique()], names=['symbol', 'timestamp']).sort_values()
                 self._mkt_snapshot = self._reindex_and_fill(self._mkt_snapshot, multi_index)
 
     def request_market_snapshot_bars(self, normalize=False):
         with self._lock:
             snapshot = self._mkt_snapshot.dropna()
-            snapshot.set_index(['symbol', 'time_stamp'], inplace=True)
+            snapshot.set_index(['symbol', 'timestamp'], inplace=True)
             snapshot.reset_index(inplace=True)
-            snapshot.set_index(['symbol', 'time_stamp'], drop=False, inplace=True)
+            snapshot.set_index(['symbol', 'timestamp'], drop=False, inplace=True)
 
             if normalize:
-                multi_index = pd.MultiIndex.from_product([snapshot.index.levels[0].unique(), snapshot.index.levels[1].unique()], names=['symbol', 'time_stamp']).sort_values()
+                multi_index = pd.MultiIndex.from_product([snapshot.index.levels[0].unique(), snapshot.index.levels[1].unique()], names=['symbol', 'timestamp']).sort_values()
                 snapshot = IQFeedBarDataListener._reindex_and_fill(snapshot, multi_index)
 
             return snapshot.groupby(level=0).tail(self.mkt_snapshot_depth)
@@ -166,20 +166,20 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
             with self._lock:
                 if self._mkt_snapshot is None:
                     self._mkt_snapshot = pd.Series(data).to_frame().T
-                    self._mkt_snapshot.set_index(['symbol', 'time_stamp'], append=False, inplace=True, drop=False)
+                    self._mkt_snapshot.set_index(['symbol', 'timestamp'], append=False, inplace=True, drop=False)
 
                     symbols = list(self.watched_symbols)
                     symbols.sort()
 
-                    multi_index = pd.MultiIndex.from_product([symbols, self._mkt_snapshot.index.levels[1].unique()], names=['symbol', 'time_stamp']).sort_values()
+                    multi_index = pd.MultiIndex.from_product([symbols, self._mkt_snapshot.index.levels[1].unique()], names=['symbol', 'timestamp']).sort_values()
                     self._mkt_snapshot = self._reindex_and_fill(self._mkt_snapshot, multi_index)
-                elif isinstance(data, dict) and (data['symbol'], data['time_stamp']) in self._mkt_snapshot.index:
-                    self._mkt_snapshot.loc[data['symbol'], data['time_stamp']] = pd.Series(data)
+                elif isinstance(data, dict) and (data['symbol'], data['timestamp']) in self._mkt_snapshot.index:
+                    self._mkt_snapshot.loc[data['symbol'], data['timestamp']] = pd.Series(data)
                 else:
-                    expand = data['time_stamp'] > self._mkt_snapshot.index.levels[1][len(self._mkt_snapshot.index.levels[1]) - 1]
+                    expand = data['timestamp'] > self._mkt_snapshot.index.levels[1][len(self._mkt_snapshot.index.levels[1]) - 1]
 
                     to_concat = pd.Series(data).to_frame().T
-                    to_concat.set_index(['symbol', 'time_stamp'], append=False, inplace=True, drop=False)
+                    to_concat.set_index(['symbol', 'timestamp'], append=False, inplace=True, drop=False)
 
                     self._mkt_snapshot.update(to_concat)
                     to_concat = to_concat[~to_concat.index.isin(self._mkt_snapshot.index)]
@@ -203,7 +203,7 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
     @staticmethod
     def _reindex_and_fill(df, index):
         df = df.reindex(index)
-        df.drop(['symbol', 'time_stamp'], axis=1, inplace=True)
+        df.drop(['symbol', 'timestamp'], axis=1, inplace=True)
         df.reset_index(inplace=True)
         df.set_index(index, inplace=True)
 
@@ -231,7 +231,7 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
         diff = df.index.levels[1][1] - df.index.levels[1][0]
         new_index = df.index.levels[1].append(pd.date_range(df.index.levels[1][len(df.index.levels[1]) - 1] + diff, periods=steps, freq=diff))
 
-        multi_index = pd.MultiIndex.from_product([df.index.levels[0], new_index], names=['symbol', 'time_stamp']).sort_values()
+        multi_index = pd.MultiIndex.from_product([df.index.levels[0], new_index], names=['symbol', 'timestamp']).sort_values()
 
         result = df.reindex(multi_index)
 
@@ -247,7 +247,7 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
             sf = self.key_suffix
 
             result['symbol' + sf] = data.pop('symbol')
-            result['time_stamp' + sf] = data.pop('date') + data.pop('time')
+            result['timestamp' + sf] = data.pop('date') + data.pop('time')
             result['high' + sf] = data.pop('high_p')
             result['low' + sf] = data.pop('low_p')
             result['open' + sf] = data.pop('open_p')
@@ -259,9 +259,9 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
             result = pd.DataFrame(data)
             result['symbol'] = result['symbol'].str.decode('ascii')
             sf = self.key_suffix
-            result['time_stamp' + sf] = data['date'] + data['time']
+            result['timestamp' + sf] = data['date'] + data['time']
 
-            result.set_index('time_stamp' + sf, inplace=True, drop=False)
+            result.set_index('timestamp' + sf, inplace=True, drop=False)
 
             result.drop(['date', 'time'], axis=1, inplace=True)
             result.rename_axis({"symbol": "symbol" + sf, "high_p": "high" + sf, "low_p": "low" + sf, "open_p": "open" + sf, "close_p": "close" + sf, "tot_vlm": "total_volume" + sf, "prd_vlm": "period_volume" + sf, "num_trds": "number_of_trades" + sf}, axis="columns", copy=False, inplace=True)

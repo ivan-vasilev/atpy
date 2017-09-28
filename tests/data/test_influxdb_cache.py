@@ -3,6 +3,7 @@ import unittest
 from atpy.data.iqfeed.iqfeed_bar_data_provider import *
 from atpy.data.influxdb_cache import *
 from influxdb import DataFrameClient
+from pandas.util.testing import assert_frame_equal
 
 
 class TestInfluxDBCache(unittest.TestCase):
@@ -60,7 +61,7 @@ class TestInfluxDBCache(unittest.TestCase):
             data = [history.request_data(f, synchronize_timestamps=False, adjust_data=False) for f in filters]
 
             for datum, f in zip(data, filters):
-                datum.drop('time_stamp', axis=1, inplace=True)
+                datum.drop('timestamp', axis=1, inplace=True)
                 datum['interval'] = str(f.interval_len) + '-' + f.interval_type
                 cache.client.write_points(datum, 'bars', protocol='line', tag_columns=['symbol', 'interval'])
 
@@ -71,6 +72,24 @@ class TestInfluxDBCache(unittest.TestCase):
         self.assertEqual(len(latest_current), len(latest_old))
         for t1, t2 in zip([e[0] for e in latest_current], [e[0] for e in latest_old]):
             self.assertGreater(t1, t2)
+
+    def test_request_data(self):
+        end_prd = datetime.datetime(2017, 4, 1)
+        filters = (BarsInPeriodFilter(ticker="IBM", bgn_prd=datetime.datetime(2017, 3, 1), end_prd=end_prd, interval_len=3600, ascend=True, interval_type='s', max_ticks=20),
+                   BarsInPeriodFilter(ticker="AAPL", bgn_prd=datetime.datetime(2017, 3, 1), end_prd=end_prd, interval_len=3600, ascend=True, interval_type='s', max_ticks=20),
+                   BarsInPeriodFilter(ticker="AAPL", bgn_prd=datetime.datetime(2017, 3, 1), end_prd=end_prd, interval_len=600, ascend=True, interval_type='s', max_ticks=20))
+
+        with IQFeedHistoryProvider(exclude_nan_ratio=None, num_connections=2) as history, InfluxDBCache(use_stream_events=True, client=self._client, history_provider=history, time_delta_back=relativedelta(days=3)) as cache:
+            data = [history.request_data(f, synchronize_timestamps=False, adjust_data=False) for f in filters]
+
+            for datum, f in zip(data, filters):
+                datum.drop('timestamp', axis=1, inplace=True)
+                datum['interval'] = str(f.interval_len) + '-' + f.interval_type
+                cache.client.write_points(datum, 'bars', protocol='line', tag_columns=['symbol', 'interval'])
+                datum.drop('interval', axis=1, inplace=True)
+
+                test_data = cache.request_data(f.ticker, interval_len=f.interval_len, interval_type=f.interval_type)
+                assert_frame_equal(datum, test_data)
 
 
 if __name__ == '__main__':
