@@ -96,6 +96,35 @@ class TestInfluxDBCache(unittest.TestCase):
                 self.assertGreater(len(test_data_limit), 0)
                 self.assertLess(len(test_data_limit), len(test_data))
 
+    def test_timeseries_ranges(self):
+        with IQFeedHistoryProvider(exclude_nan_ratio=None, num_connections=2) as history, InfluxDBCache(use_stream_events=True, client=self._client, history_provider=history, time_delta_back=relativedelta(days=3)) as cache:
+            end_prd = datetime.datetime(2017, 5, 1)
+            filters = (BarsInPeriodFilter(ticker="IBM", bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, interval_len=3600, ascend=True, interval_type='s'),
+                       BarsInPeriodFilter(ticker="AAPL", bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, interval_len=3600, ascend=True, interval_type='s'),
+                       BarsInPeriodFilter(ticker="AAPL", bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, interval_len=600, ascend=True, interval_type='s'))
+
+            data = [history.request_data(f, synchronize_timestamps=False, adjust_data=False) for f in filters]
+
+            for datum, f in zip(data, filters):
+                datum.drop('timestamp', axis=1, inplace=True)
+                datum['interval'] = str(f.interval_len) + '-' + f.interval_type
+                cache.client.write_points(datum, 'bars', protocol='line', tag_columns=['symbol', 'interval'])
+                datum.drop('interval', axis=1, inplace=True)
+
+                test_data = cache.request_data(f.ticker, interval_len=f.interval_len, interval_type=f.interval_type)
+                assert_frame_equal(datum, test_data)
+
+            test_data_limit = cache.series_ranges(["IBM", "AAPL"], interval_len=3600, interval_type="s")
+            self.assertEqual(len(test_data_limit), 2)
+            self.assertTrue('AAPL' in test_data_limit.keys())
+            self.assertTrue('IBM' in test_data_limit.keys())
+
+            test_data_limit = cache.series_ranges("IBM", interval_len=3600, interval_type="s")
+            self.assertEqual(len(test_data_limit), 2)
+            self.assertTrue(isinstance(test_data_limit, tuple))
+            self.assertEqual(test_data_limit[0], data[0].index[0])
+            self.assertEqual(test_data_limit[1], data[0].index[-1])
+
 
 if __name__ == '__main__':
     unittest.main()
