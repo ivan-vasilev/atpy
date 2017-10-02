@@ -7,8 +7,8 @@ import numpy as np
 from dateutil.parser import parse
 from dateutil.relativedelta import relativedelta
 from influxdb import InfluxDBClient, DataFrameClient
-import pandas as pd
 
+import typing
 import pyevents.events as events
 from atpy.data.iqfeed.iqfeed_history_provider import IQFeedHistoryProvider, BarsInPeriodFilter
 
@@ -65,12 +65,12 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
         :param symbol: symbol
         :param interval_len: interval length
         :param interval_type: interval type
-        :param bgn_prd: start datetime
-        :param end_prd: end datetime
+        :param bgn_prd: start datetime (excluding)
+        :param end_prd: end datetime (excluding)
         :param ascending: asc/desc
         :return: data from the database
         """
-        query = "SELECT * FROM bars WHERE symbol = '{}' AND interval = '{}'" + ('' if bgn_prd is None else " AND time >= '{}'") + ('' if end_prd is None else " AND time <= '{}'") + " ORDER BY time {}"
+        query = "SELECT * FROM bars WHERE symbol = '{}' AND interval = '{}'" + ('' if bgn_prd is None else " AND time > '{}'") + ('' if end_prd is None else " AND time < '{}'") + " ORDER BY time {}"
         args = tuple(filter(lambda x: x is not None, [symbol, str(interval_len) + '-' + interval_type, bgn_prd, end_prd, 'ASC' if ascending else 'DESC']))
         result = self.client.query(query.format(*args))
         if len(result) == 0:
@@ -86,6 +86,27 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
                 result[c] = result[c].astype(np.uint64, copy=False)
 
         return result
+
+    def series_ranges(self, symbol: typing.Union[list, str], interval_len: int, interval_type: str):
+        """
+        :return: list of existing ranges for symbol/interval
+        """
+        query = "SELECT FIRST(close), time FROM bars WHERE interval = '{}' AND symbol =" + ("~ /{}/ GROUP BY symbol" if isinstance(symbol, list) else " '{}'")
+        args = tuple(filter(lambda x: x is not None, [str(interval_len) + '-' + interval_type, "|" + "|".join(symbol) if isinstance(symbol, list) else symbol]))
+
+        firsts = InfluxDBClient.query(self.client, query.format(*args))
+
+        query = "SELECT LAST(close), time FROM bars WHERE interval = '{}' AND symbol =" + ("~ /{}/ GROUP BY symbol" if isinstance(symbol, list) else " '{}'")
+        lasts = InfluxDBClient.query(self.client, query.format(*args))
+
+        if len(firsts) == 0:
+            result = None
+        else:
+            firsts = {entry['first']['Tags']['symbol']: parse(entry['time'][:-1]) for entry in firsts.get_points()}
+            lasts = {entry['last']['Tags']['symbol']: parse(entry['time'][:-1]) for entry in lasts.get_points()}
+            result = {k: (firsts[k], lasts[k]) for k in firsts.keys()}
+
+        return result if len(result) > 1 else list(result.values())[0]
 
     @property
     def latest_entries(self):
