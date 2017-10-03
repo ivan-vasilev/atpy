@@ -76,6 +76,8 @@ class TestInfluxDBCache(unittest.TestCase):
     def test_request_data(self):
         with IQFeedHistoryProvider(exclude_nan_ratio=None, num_connections=2) as history, InfluxDBCache(use_stream_events=True, client=self._client, history_provider=history, time_delta_back=relativedelta(days=3)) as cache:
             end_prd = datetime.datetime(2017, 5, 1)
+
+            # test single symbol request
             filters = (BarsInPeriodFilter(ticker="IBM", bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, interval_len=3600, ascend=True, interval_type='s'),
                        BarsInPeriodFilter(ticker="AAPL", bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, interval_len=3600, ascend=True, interval_type='s'),
                        BarsInPeriodFilter(ticker="AAPL", bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, interval_len=600, ascend=True, interval_type='s'))
@@ -95,6 +97,11 @@ class TestInfluxDBCache(unittest.TestCase):
                 test_data_limit = cache.request_data(f.ticker, interval_len=f.interval_len, interval_type=f.interval_type, bgn_prd=f.bgn_prd + relativedelta(days=7), end_prd=f.end_prd - relativedelta(days=7))
                 self.assertGreater(len(test_data_limit), 0)
                 self.assertLess(len(test_data_limit), len(test_data))
+
+            # test multisymbol request
+            requested_data = history.request_data(BarsInPeriodFilter(ticker=["AAPL", "IBM"], bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, interval_len=3600, ascend=True, interval_type='s'), synchronize_timestamps=False, adjust_data=False)
+            test_data = cache.request_data(['IBM', 'AAPL'], interval_len=3600, interval_type='s', bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd)
+            assert_frame_equal(requested_data, test_data)
 
     def test_timeseries_ranges(self):
         with IQFeedHistoryProvider(exclude_nan_ratio=None, num_connections=2) as history, InfluxDBCache(use_stream_events=True, client=self._client, history_provider=history, time_delta_back=relativedelta(days=3)) as cache:
