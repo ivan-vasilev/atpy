@@ -7,6 +7,7 @@ import numpy as np
 from dateutil.parser import parse
 from dateutil.relativedelta import relativedelta
 from influxdb import InfluxDBClient, DataFrameClient
+import pandas as pd
 
 import typing
 import pyevents.events as events
@@ -60,9 +61,9 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
 
                 InfluxDBClient.write_points(self.client, json_body, protocol='json')
 
-    def request_data(self, symbol: str, interval_len: int, interval_type: str, bgn_prd: datetime.datetime=None, end_prd:datetime.datetime=None, ascending: bool=True):
+    def request_data(self, symbol: typing.Union[list, str], interval_len: int, interval_type: str, bgn_prd: datetime.datetime=None, end_prd:datetime.datetime=None, ascending: bool=True):
         """
-        :param symbol: symbol
+        :param symbol: symbol or symbol list
         :param interval_len: interval length
         :param interval_type: interval type
         :param bgn_prd: start datetime (excluding)
@@ -70,8 +71,15 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
         :param ascending: asc/desc
         :return: data from the database
         """
-        query = "SELECT * FROM bars WHERE symbol = '{}' AND interval = '{}'" + ('' if bgn_prd is None else " AND time > '{}'") + ('' if end_prd is None else " AND time < '{}'") + " ORDER BY time {}"
-        args = tuple(filter(lambda x: x is not None, [symbol, str(interval_len) + '-' + interval_type, bgn_prd, end_prd, 'ASC' if ascending else 'DESC']))
+
+        query = "SELECT * FROM bars WHERE " \
+                "symbol =" + ("~ /{}/ " if isinstance(symbol, list) else " '{}'") + \
+                "AND interval = '{}'" + \
+                ('' if bgn_prd is None else " AND time > '{}'") + \
+                ('' if end_prd is None else " AND time < '{}'") + \
+                " ORDER BY time {}"
+
+        args = tuple(filter(lambda x: x is not None, ["|".join(symbol) if isinstance(symbol, list) else symbol, str(interval_len) + '-' + interval_type, bgn_prd, end_prd, 'ASC' if ascending else 'DESC']))
         result = self.client.query(query.format(*args))
         if len(result) == 0:
             result = None
@@ -84,6 +92,13 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
 
             for c in [c for c in result.columns if result[c].dtype == np.int64]:
                 result[c] = result[c].astype(np.uint64, copy=False)
+
+            if isinstance(symbol, list) and len(symbol) > 1:
+                result['timestamp'] = result.index
+                result.set_index('symbol', drop=False, append=True, inplace=True)
+                result = result.swaplevel(0, 1, axis=0)
+                result.sort_index(inplace=True, ascending=ascending)
+                result = result[['open', 'high', 'low', 'close', 'total_volume', 'period_volume', 'number_of_trades', 'timestamp', 'symbol']]
 
         return result
 
