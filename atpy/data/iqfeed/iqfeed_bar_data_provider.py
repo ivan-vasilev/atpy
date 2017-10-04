@@ -3,6 +3,7 @@ from atpy.data.iqfeed.util import *
 from atpy.data.iqfeed.iqfeed_level_1_provider import Fundamentals
 import pandas as pd
 import threading
+from dateutil import tz
 
 
 class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegister):
@@ -247,7 +248,7 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
             sf = self.key_suffix
 
             result['symbol' + sf] = data.pop('symbol')
-            result['timestamp' + sf] = data.pop('date') + data.pop('time')
+            result['timestamp' + sf] = (data['date'] + data['time']).item().replace(tzinfo=tz.gettz('US/Eastern'))
             result['high' + sf] = data.pop('high_p')
             result['low' + sf] = data.pop('low_p')
             result['open' + sf] = data.pop('open_p')
@@ -259,7 +260,8 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
             result = pd.DataFrame(data)
             result['symbol'] = result['symbol'].str.decode('ascii')
             sf = self.key_suffix
-            result['timestamp' + sf] = data['date'] + data['time']
+
+            result['timestamp' + sf] = pd.Index(data['date'] + data['time']).tz_localize('US/Eastern')
 
             result.set_index('timestamp' + sf, inplace=True, drop=False)
 

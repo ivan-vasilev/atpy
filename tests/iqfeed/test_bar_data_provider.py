@@ -51,5 +51,6 @@ class TestIQFeedBarData(unittest.TestCase):
 
             e1.wait()
 
+
 if __name__ == '__main__':
     unittest.main()

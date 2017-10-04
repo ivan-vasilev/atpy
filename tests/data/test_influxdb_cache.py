@@ -123,7 +123,7 @@ class TestInfluxDBCache(unittest.TestCase):
                 cache.client.write_points(datum, 'bars', protocol='line', tag_columns=['symbol', 'interval'])
                 datum.drop('interval', axis=1, inplace=True)
 
-                test_data = cache.request_data(f.ticker, interval_len=f.interval_len, interval_type=f.interval_type)
+                test_data = cache.request_data(interval_len=f.interval_len, interval_type=f.interval_type, symbol=f.ticker)
                 assert_frame_equal(datum, test_data)
 
             test_data_limit = cache.series_ranges(["IBM", "AAPL"], interval_len=3600, interval_type="s")

@@ -437,8 +437,11 @@ class IQFeedHistoryProvider(object):
     def _process_ticks(self, data, data_filter, adjust_data=True):
         result = pd.DataFrame(data)
         sf = self.key_suffix
-        result['timestamp' + sf] = data['date'] + data['time']
+
+        result['timestamp' + sf] = pd.Index(data['date'] + data['time']).tz_localize('US/Eastern')
+        result.set_index('timestamp' + sf, inplace=True, drop=False)
         result.drop(['date', 'time'], axis=1, inplace=True)
+
         result.rename_axis({"last": "last" + sf, "last_sz": "last_size" + sf, "tot_vlm": "total_volume" + sf, "bid": "bid" + sf, "ask": "ask" + sf, "tick_id": "tick_id" + sf, "last_type": "basis_for_last" + sf, "mkt_ctr": "trade_market_center" + sf}, axis="columns", copy=False, inplace=True)
         result['symbol'] = data_filter.ticker
 
@@ -452,9 +455,11 @@ class IQFeedHistoryProvider(object):
     def _process_bars(self, data, data_filter, adjust_data=True):
         result = pd.DataFrame(data)
         sf = self.key_suffix
-        result['timestamp' + sf] = data['date'] + data['time']
+
+        result['timestamp' + sf] = pd.Index(data['date'] + data['time']).tz_localize('US/Eastern')
         result.set_index('timestamp' + sf, inplace=True, drop=False)
         result.drop(['date', 'time'], axis=1, inplace=True)
+
         result.rename_axis({"high_p": "high" + sf, "low_p": "low" + sf, "open_p": "open" + sf, "close_p": "close" + sf, "tot_vlm": "total_volume" + sf, "prd_vlm": "period_volume" + sf, "num_trds": "number_of_trades" + sf}, axis="columns", copy=False, inplace=True)
         result['symbol'] = data_filter.ticker
 

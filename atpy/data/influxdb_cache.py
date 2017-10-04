@@ -88,7 +88,7 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
             result.drop('interval', axis=1, inplace=True)
             result.index.name = 'timestamp'
             result = result[['open', 'high', 'low', 'close', 'total_volume', 'period_volume', 'number_of_trades', 'symbol']]
-            result.index = result.index.tz_localize(None)
+            result.index = result.index.tz_convert('US/Eastern')
 
             for c in [c for c in result.columns if result[c].dtype == np.int64]:
                 result[c] = result[c].astype(np.uint64, copy=False)
