@@ -61,11 +61,11 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
 
                 InfluxDBClient.write_points(self.client, json_body, protocol='json')
 
-    def request_data(self, symbol: typing.Union[list, str], interval_len: int, interval_type: str, bgn_prd: datetime.datetime=None, end_prd:datetime.datetime=None, ascending: bool=True):
+    def request_data(self, interval_len: int, interval_type: str, symbol: typing.Union[list, str]=None, bgn_prd: datetime.datetime=None, end_prd:datetime.datetime=None, ascending: bool=True):
         """
-        :param symbol: symbol or symbol list
         :param interval_len: interval length
         :param interval_type: interval type
+        :param symbol: symbol or symbol list
         :param bgn_prd: start datetime (excluding)
         :param end_prd: end datetime (excluding)
         :param ascending: asc/desc
@@ -73,13 +73,13 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
         """
 
         query = "SELECT * FROM bars WHERE " \
-                "symbol =" + ("~ /{}/ " if isinstance(symbol, list) else " '{}'") + \
-                "AND interval = '{}'" + \
+                "interval = '{}'" + \
+                ('' if symbol is None else " AND symbol =" + ("~ /{}/ " if isinstance(symbol, list) else " '{}'")) + \
                 ('' if bgn_prd is None else " AND time > '{}'") + \
                 ('' if end_prd is None else " AND time < '{}'") + \
                 " ORDER BY time {}"
 
-        args = tuple(filter(lambda x: x is not None, ["|".join(symbol) if isinstance(symbol, list) else symbol, str(interval_len) + '-' + interval_type, bgn_prd, end_prd, 'ASC' if ascending else 'DESC']))
+        args = tuple(filter(lambda x: x is not None, [str(interval_len) + '-' + interval_type, None if symbol is None else "|".join(symbol) if isinstance(symbol, list) else symbol, bgn_prd, end_prd, 'ASC' if ascending else 'DESC']))
         result = self.client.query(query.format(*args))
         if len(result) == 0:
             result = None
@@ -93,7 +93,7 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
             for c in [c for c in result.columns if result[c].dtype == np.int64]:
                 result[c] = result[c].astype(np.uint64, copy=False)
 
-            if isinstance(symbol, list) and len(symbol) > 1:
+            if len(result['symbol'].unique()) > 1:
                 result['timestamp'] = result.index
                 result.set_index('symbol', drop=False, append=True, inplace=True)
                 result = result.swaplevel(0, 1, axis=0)
