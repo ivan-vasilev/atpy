@@ -62,18 +62,17 @@ class TestInfluxDBCache(unittest.TestCase):
 
             for datum, f in zip(data, filters):
                 datum.drop('timestamp', axis=1, inplace=True)
-                datum['interval'] = str(f.interval_len) + '-' + f.interval_type
+                datum['interval'] = str(f.interval_len) + '_' + f.interval_type
                 cache.client.write_points(datum, 'bars', protocol='line', tag_columns=['symbol', 'interval'])
 
-            latest_old = cache.latest_entries
+            latest_old = cache.ranges
             cache.update_to_latest()
 
-        latest_current = cache.latest_entries
+        latest_current = cache.ranges
         self.assertEqual(len(latest_current), len(latest_old))
-        for e1, e2 in zip(latest_current, latest_old):
-            self.assertGreater(e1['time'], e2['time'])
-            self.assertEqual(e1['symbol'], e2['symbol'])
-            self.assertEqual(e1['interval'], e2['interval'])
+        self.assertEqual(len([k for k in latest_current.keys() & latest_old.keys()]), len(latest_current))
+        for k in latest_current.keys() & latest_old.keys():
+            self.assertGreater(latest_current[k][1], latest_old[k][1])
 
     def test_request_data(self):
         with IQFeedHistoryProvider(exclude_nan_ratio=None, num_connections=2) as history, InfluxDBCache(use_stream_events=True, client=self._client, history_provider=history, time_delta_back=relativedelta(days=3)) as cache:
@@ -88,7 +87,7 @@ class TestInfluxDBCache(unittest.TestCase):
 
             for datum, f in zip(data, filters):
                 datum.drop('timestamp', axis=1, inplace=True)
-                datum['interval'] = str(f.interval_len) + '-' + f.interval_type
+                datum['interval'] = str(f.interval_len) + '_' + f.interval_type
                 cache.client.write_points(datum, 'bars', protocol='line', tag_columns=['symbol', 'interval'])
                 datum.drop('interval', axis=1, inplace=True)
 
@@ -109,31 +108,6 @@ class TestInfluxDBCache(unittest.TestCase):
             requested_data = history.request_data(BarsInPeriodFilter(ticker=["AAPL", "IBM"], bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, interval_len=3600, ascend=True, interval_type='s'), synchronize_timestamps=False, adjust_data=False)
             test_data = cache.request_data(interval_len=3600, interval_type='s', symbol=None, bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd)
             assert_frame_equal(requested_data, test_data)
-
-    def test_timeseries_ranges(self):
-        with IQFeedHistoryProvider(exclude_nan_ratio=None, num_connections=2) as history, InfluxDBCache(use_stream_events=True, client=self._client, history_provider=history, time_delta_back=relativedelta(days=3)) as cache:
-            end_prd = datetime.datetime(2017, 5, 1)
-            filters = (BarsInPeriodFilter(ticker="IBM", bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, interval_len=3600, ascend=True, interval_type='s'),
-                       BarsInPeriodFilter(ticker="AAPL", bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, interval_len=3600, ascend=True, interval_type='s'),
-                       BarsInPeriodFilter(ticker="AAPL", bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, interval_len=600, ascend=True, interval_type='s'))
-
-            data = [history.request_data(f, synchronize_timestamps=False, adjust_data=False) for f in filters]
-
-            for datum, f in zip(data, filters):
-                datum.drop('timestamp', axis=1, inplace=True)
-                datum['interval'] = str(f.interval_len) + '-' + f.interval_type
-                cache.client.write_points(datum, 'bars', protocol='line', tag_columns=['symbol', 'interval'])
-
-            test_data_limit = cache.series_ranges(["IBM", "AAPL"], interval_len=3600, interval_type="s")
-            self.assertEqual(len(test_data_limit), 2)
-            self.assertTrue('AAPL' in test_data_limit.keys())
-            self.assertTrue('IBM' in test_data_limit.keys())
-
-            test_data_limit = cache.series_ranges("IBM", interval_len=3600, interval_type="s")
-            self.assertEqual(len(test_data_limit), 2)
-            self.assertTrue(isinstance(test_data_limit, tuple))
-            self.assertEqual(test_data_limit[0], data[0].index[0])
-            self.assertEqual(test_data_limit[1], data[0].index[-1])
 
 
 if __name__ == '__main__':

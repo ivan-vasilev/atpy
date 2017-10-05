@@ -185,6 +185,9 @@ class IQFeedHistoryProvider(object):
         self.key_suffix = key_suffix
         self.exclude_nan_ratio = exclude_nan_ratio
         self.cache = cache
+        if cache is not None:
+            self._ranges = None
+
         self.conn = None
         self.streaming_conn = None
         self.current_batch = None
@@ -232,6 +235,13 @@ class IQFeedHistoryProvider(object):
         if self.streaming_conn is not None:
             self.streaming_conn.disconnect()
 
+    def request_cache_data(self, f, adjust_data=True):
+        if self.cache is not None:
+            if self._ranges is None:
+                pass
+            # if isinstance(f, BarsInPeriodFilter) and f.bgn_prd is not None and f.end_prd is not None:
+
+
     def request_data(self, f, synchronize_timestamps=True, adjust_data=True):
         """
         request history data
@@ -241,12 +251,17 @@ class IQFeedHistoryProvider(object):
         :return:
         """
         if isinstance(f.ticker, str):
-            data = self.request_raw_symbol_data(f, self.conn[0] if isinstance(self.conn, list) else self.conn)
-            if data is None:
-                logging.getLogger(__name__).warning("No data found for filter: " + str(f))
-                return
+            data = self.request_cache_data(f, adjust_data=adjust_data)
 
-            return self._process_data(data, f, adjust_data=adjust_data)
+            if data is None:
+                data = self.request_raw_symbol_data(f, self.conn[0] if isinstance(self.conn, list) else self.conn)
+                if data is None:
+                    logging.getLogger(__name__).warning("No data found for filter: " + str(f))
+                    return
+
+                data = self._process_data(data, f, adjust_data=adjust_data)
+
+            return data
         elif isinstance(f.ticker, list):
             q = queue.Queue()
             self.request_data_by_filters([f._replace(ticker=t) for t in f.ticker], q, adjust_data=adjust_data)
@@ -276,17 +291,23 @@ class IQFeedHistoryProvider(object):
             no_data = set()
 
             def mp_worker(p):
-                try:
-                    ft, conn = p
-                    raw_data = self.request_raw_symbol_data(ft, conn)
-                except Exception as err:
-                    raw_data = None
-                    logging.getLogger(__name__).exception(err)
+                ft, conn = p
 
-                if raw_data is not None:
-                    q.put((ft, self._process_data(raw_data, ft, adjust_data=adjust_data)))
+                data = self.request_cache_data(ft, adjust_data=adjust_data)
+
+                if data is None:
+                    try:
+                        raw_data = self.request_raw_symbol_data(ft, conn)
+                    except Exception as err:
+                        raw_data = None
+                        logging.getLogger(__name__).exception(err)
+
+                    if raw_data is not None:
+                        q.put((ft, self._process_data(raw_data, ft, adjust_data=adjust_data)))
+                    else:
+                        no_data.add(ft)
                 else:
-                    no_data.add(ft)
+                    q.put((ft, data))
 
                 with lock:
                     self._global_counter += 1

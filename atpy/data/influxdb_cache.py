@@ -41,7 +41,7 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
         if self._use_stream_events and event['type'] == 'bar':
             with self._lock:
                 data = event['data']
-                interval = str(event['interval_len']) + '-' + event['interval_type']
+                interval = str(event['interval_len']) + '_' + event['interval_type']
 
                 if data['symbol'] not in self._synchronized_symbols:
                     self.verify_timeseries_integrity(data['symbol'], event['interval_len'], event['interval_type'])
@@ -80,7 +80,7 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
                 ('' if end_prd is None else " AND time < '{}'") + \
                 " ORDER BY time {}"
 
-        args = tuple(filter(lambda x: x is not None, [str(interval_len) + '-' + interval_type, None if symbol is None else "|".join(symbol) if isinstance(symbol, list) else symbol, bgn_prd, end_prd, 'ASC' if ascending else 'DESC']))
+        args = tuple(filter(lambda x: x is not None, [str(interval_len) + '_' + interval_type, None if symbol is None else "|".join(symbol) if isinstance(symbol, list) else symbol, bgn_prd, end_prd, 'ASC' if ascending else 'DESC']))
         result = self.client.query(query.format(*args))
         if len(result) == 0:
             result = None
@@ -105,43 +105,25 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
 
         return result
 
-    def series_ranges(self, symbol: typing.Union[list, str], interval_len: int, interval_type: str):
-        """
-        :return: list of existing ranges for symbol/interval
-        """
-        query = "SELECT FIRST(close), time FROM bars WHERE interval = '{}' AND symbol =" + ("~ /{}/ GROUP BY symbol" if isinstance(symbol, list) else " '{}'")
-        args = tuple(filter(lambda x: x is not None, [str(interval_len) + '-' + interval_type, "|" + "|".join(symbol) if isinstance(symbol, list) else symbol]))
-
-        firsts = InfluxDBClient.query(self.client, query.format(*args))
-
-        query = "SELECT LAST(close), time FROM bars WHERE interval = '{}' AND symbol =" + ("~ /{}/ GROUP BY symbol" if isinstance(symbol, list) else " '{}'")
-        lasts = InfluxDBClient.query(self.client, query.format(*args))
-
-        if len(firsts) == 0:
-            result = None
-        else:
-            firsts = {entry['first']['Tags']['symbol']: parse(entry['time'][:-1]) for entry in firsts.get_points()}
-            lasts = {entry['last']['Tags']['symbol']: parse(entry['time'][:-1]) for entry in lasts.get_points()}
-            result = {k: (firsts[k], lasts[k]) for k in firsts.keys()}
-
-            if self._default_timezone is not None:
-                result = {k: (v[0].replace(tzinfo=tz.gettz(self._default_timezone)), v[1].replace(tzinfo=tz.gettz(self._default_timezone))) for k, v in result.items()}
-
-        return result if len(result) > 1 else list(result.values())[0]
-
     @property
-    def latest_entries(self):
+    def ranges(self):
         """
         :return: list of latest times for each entry grouped by symbol and interval
         """
+        parse_time = lambda t: parse(t) if self._default_timezone is None else parse(t).replace(tzinfo=tz.gettz(self._default_timezone))
+
+        points = InfluxDBClient.query(self.client, "select FIRST(close), time from bars group by symbol, interval").get_points()
+        firsts = {entry['first']['Tags']['symbol'] + '_' + entry['first']['Tags']['interval']: parse_time(entry['time']) for entry in points}
+
         points = InfluxDBClient.query(self.client, "select LAST(close), time from bars group by symbol, interval").get_points()
-        result = [{**{'time': parse(entry['time']) if self._default_timezone is None else parse(entry['time']).replace(tzinfo=tz.gettz(self._default_timezone))}, **entry['last']['Tags']} for entry in points]
-        result.sort(key=lambda e: (e['symbol'], e['interval'], e['time']))
+        lasts = {entry['last']['Tags']['symbol'] + '_' + entry['last']['Tags']['interval']: parse_time(entry['time']) for entry in points}
+
+        result = {k: (firsts[k], lasts[k]) for k in firsts.keys() & lasts.keys()}
 
         return result
 
     def verify_timeseries_integrity(self, symbol: str, interval_len: int, interval_type: str):
-        interval = str(interval_len) + '-' + interval_type
+        interval = str(interval_len) + '_' + interval_type
 
         cached = list(InfluxDBClient.query(self.client, 'select LAST(close) from bars where symbol="{}" and interval="{}"'.format(symbol, interval)).get_points())
 
@@ -167,7 +149,7 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
         Update existing entries in the database to the most current values
         """
         filters = list()
-        for time, symbol, interval_len, interval_type in [(e['time'], e['symbol'], *e['interval'].split('-')) for e in self.latest_entries]:
+        for time, symbol, interval_len, interval_type in [(e[1][1], *e[0].split('_')) for e in self.ranges.items()]:
             filters.append(BarsInPeriodFilter(ticker=symbol, bgn_prd=time, end_prd=None, interval_len=int(interval_len), interval_type=interval_type))
 
         q = queue.Queue()
@@ -191,7 +173,7 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
 
                 if to_cache is not None and not to_cache.empty:
                     to_cache.drop('timestamp', axis=1, inplace=True)
-                    to_cache['interval'] = str(ft.interval_len) + '-' + ft.interval_type
+                    to_cache['interval'] = str(ft.interval_len) + '_' + ft.interval_type
 
                 try:
                     self.client.write_points(to_cache, 'bars', protocol='line', tag_columns=['symbol', 'interval'])
