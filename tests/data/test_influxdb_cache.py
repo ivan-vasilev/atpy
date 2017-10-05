@@ -70,8 +70,10 @@ class TestInfluxDBCache(unittest.TestCase):
 
         latest_current = cache.latest_entries
         self.assertEqual(len(latest_current), len(latest_old))
-        for t1, t2 in zip([e[0] for e in latest_current], [e[0] for e in latest_old]):
-            self.assertGreater(t1, t2)
+        for e1, e2 in zip(latest_current, latest_old):
+            self.assertGreater(e1['time'], e2['time'])
+            self.assertEqual(e1['symbol'], e2['symbol'])
+            self.assertEqual(e1['interval'], e2['interval'])
 
     def test_request_data(self):
         with IQFeedHistoryProvider(exclude_nan_ratio=None, num_connections=2) as history, InfluxDBCache(use_stream_events=True, client=self._client, history_provider=history, time_delta_back=relativedelta(days=3)) as cache:
@@ -121,10 +123,6 @@ class TestInfluxDBCache(unittest.TestCase):
                 datum.drop('timestamp', axis=1, inplace=True)
                 datum['interval'] = str(f.interval_len) + '-' + f.interval_type
                 cache.client.write_points(datum, 'bars', protocol='line', tag_columns=['symbol', 'interval'])
-                datum.drop('interval', axis=1, inplace=True)
-
-                test_data = cache.request_data(interval_len=f.interval_len, interval_type=f.interval_type, symbol=f.ticker)
-                assert_frame_equal(datum, test_data)
 
             test_data_limit = cache.series_ranges(["IBM", "AAPL"], interval_len=3600, interval_type="s")
             self.assertEqual(len(test_data_limit), 2)

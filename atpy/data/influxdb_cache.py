@@ -7,19 +7,20 @@ import numpy as np
 from dateutil.parser import parse
 from dateutil.relativedelta import relativedelta
 from influxdb import InfluxDBClient, DataFrameClient
-import pandas as pd
 
 import typing
 import pyevents.events as events
 from atpy.data.iqfeed.iqfeed_history_provider import IQFeedHistoryProvider, BarsInPeriodFilter
+from dateutil import tz
 
 
 class InfluxDBCache(object, metaclass=events.GlobalRegister):
-    def __init__(self, client: DataFrameClient, use_stream_events=True, history_provider: IQFeedHistoryProvider=None, time_delta_back: relativedelta=relativedelta(years=5)):
+    def __init__(self, client: DataFrameClient, use_stream_events=True, history_provider: IQFeedHistoryProvider=None, time_delta_back: relativedelta=relativedelta(years=5), default_timezone: str='US/Eastern'):
         self.client = client
         self.history_provider = history_provider
         self._use_stream_events = use_stream_events
         self._time_delta_back = time_delta_back
+        self._default_timezone = default_timezone
         self._synchronized_symbols = set()
         self._lock = threading.RLock()
 
@@ -88,7 +89,9 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
             result.drop('interval', axis=1, inplace=True)
             result.index.name = 'timestamp'
             result = result[['open', 'high', 'low', 'close', 'total_volume', 'period_volume', 'number_of_trades', 'symbol']]
-            result.index = result.index.tz_convert('US/Eastern')
+
+            if self._default_timezone is not None:
+                result.index = result.index.tz_convert(self._default_timezone)
 
             for c in [c for c in result.columns if result[c].dtype == np.int64]:
                 result[c] = result[c].astype(np.uint64, copy=False)
@@ -121,6 +124,9 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
             lasts = {entry['last']['Tags']['symbol']: parse(entry['time'][:-1]) for entry in lasts.get_points()}
             result = {k: (firsts[k], lasts[k]) for k in firsts.keys()}
 
+            if self._default_timezone is not None:
+                result = {k: (v[0].replace(tzinfo=tz.gettz(self._default_timezone)), v[1].replace(tzinfo=tz.gettz(self._default_timezone))) for k, v in result.items()}
+
         return result if len(result) > 1 else list(result.values())[0]
 
     @property
@@ -128,8 +134,10 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
         """
         :return: list of latest times for each entry grouped by symbol and interval
         """
-        result = [(entry['time'], entry['last']['Tags']) for entry in InfluxDBClient.query(self.client, "select LAST(close), time from bars group by symbol, interval").get_points()]
-        result.sort(key=lambda e: (e[1]['symbol'], e[1]['interval'], e[0]))
+        points = InfluxDBClient.query(self.client, "select LAST(close), time from bars group by symbol, interval").get_points()
+        result = [{**{'time': parse(entry['time']) if self._default_timezone is None else parse(entry['time']).replace(tzinfo=tz.gettz(self._default_timezone))}, **entry['last']['Tags']} for entry in points]
+        result.sort(key=lambda e: (e['symbol'], e['interval'], e['time']))
+
         return result
 
     def verify_timeseries_integrity(self, symbol: str, interval_len: int, interval_type: str):
@@ -141,6 +149,9 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
             d = parse(cached[0]['time'])
         else:
             d = datetime.datetime.now() - self._time_delta_back
+
+        if self._default_timezone is not None:
+            d = d.replace(tzinfo=tz.gettz(self._default_timezone))
 
         f = BarsInPeriodFilter(ticker=symbol, bgn_prd=d, end_prd=None, interval_len=interval_len, interval_type=interval_type)
         to_cache = self.history_provider.request_data(f, synchronize_timestamps=False, adjust_data=False)
@@ -156,9 +167,8 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
         Update existing entries in the database to the most current values
         """
         filters = list()
-        for time, tags in self.latest_entries:
-            interval_len, interval_type = tags['interval'].split('-')
-            filters.append(BarsInPeriodFilter(ticker=tags['symbol'], bgn_prd=parse(time), end_prd=None, interval_len=int(interval_len), interval_type=interval_type))
+        for time, symbol, interval_len, interval_type in [(e['time'], e['symbol'], *e['interval'].split('-')) for e in self.latest_entries]:
+            filters.append(BarsInPeriodFilter(ticker=symbol, bgn_prd=time, end_prd=None, interval_len=int(interval_len), interval_type=interval_type))
 
         q = queue.Queue()
         self.history_provider.request_data_by_filters(filters, q, adjust_data=False)
