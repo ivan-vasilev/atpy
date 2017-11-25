@@ -1,2 +1,0 @@
-Algo trading experiments
-========================
