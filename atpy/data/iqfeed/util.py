@@ -61,7 +61,7 @@ def iqfeed_to_dict(data, key_suffix=''):
 
 def adjust(data, fundamentals: dict):
     if not isinstance(data, pd.DataFrame):
-        d = datetime.date(data['timestamp'])
+        d = data['timestamp'].date()
         if d > fundamentals['ex-dividend_date'] and d > fundamentals['split_factor_1_date'] and d > fundamentals['split_factor_2_date']:
             return
 
