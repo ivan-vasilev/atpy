@@ -1,21 +1,25 @@
 import datetime
 import logging
+import os
 import queue
+import tempfile
 import threading
+import typing
+import zipfile
 
 import numpy as np
+import requests
+from dateutil import tz
 from dateutil.parser import parse
 from dateutil.relativedelta import relativedelta
 from influxdb import InfluxDBClient, DataFrameClient
 
-import typing
 import pyevents.events as events
 from atpy.data.iqfeed.iqfeed_history_provider import IQFeedHistoryProvider, BarsInPeriodFilter
-from dateutil import tz
 
 
 class InfluxDBCache(object, metaclass=events.GlobalRegister):
-    def __init__(self, client: DataFrameClient, use_stream_events=True, history_provider: IQFeedHistoryProvider=None, time_delta_back: relativedelta=relativedelta(years=5), default_timezone: str='US/Eastern'):
+    def __init__(self, client: DataFrameClient, use_stream_events=True, history_provider: IQFeedHistoryProvider = None, time_delta_back: relativedelta = relativedelta(years=5), default_timezone: str = 'US/Eastern'):
         self.client = client
         self.history_provider = history_provider
         self._use_stream_events = use_stream_events
@@ -62,7 +66,7 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
 
                 InfluxDBClient.write_points(self.client, json_body, protocol='json')
 
-    def request_data(self, interval_len: int, interval_type: str, symbol: typing.Union[list, str]=None, bgn_prd: datetime.datetime=None, end_prd:datetime.datetime=None, ascending: bool=True):
+    def request_data(self, interval_len: int, interval_type: str, symbol: typing.Union[list, str] = None, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None, ascending: bool = True):
         """
         :param interval_len: interval length
         :param interval_type: interval type
@@ -144,13 +148,25 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
 
             self.client.write_points(to_cache, 'bars', protocol='line', tag_columns=['symbol', 'interval'])
 
-    def update_to_latest(self):
+    def update_to_latest(self, new_symbols: dict=None):
         """
         Update existing entries in the database to the most current values
+        :param new_symbols: additional symbols to add {symbol: [(interval_len, interval_type), ...]}
+        :return:
         """
         filters = list()
+
+        new_symbols = set() if new_symbols is None else new_symbols
+
         for time, symbol, interval_len, interval_type in [(e[1][1], *e[0].split('_')) for e in self.ranges.items()]:
+            if symbol in new_symbols and str(new_symbols[symbol][0]) == interval_len and new_symbols[symbol][1] == interval_type:
+                del new_symbols[symbol]
+
             filters.append(BarsInPeriodFilter(ticker=symbol, bgn_prd=time, end_prd=None, interval_len=int(interval_len), interval_type=interval_type))
+
+        d = datetime.datetime.now() - self._time_delta_back
+        for symbol, interval in new_symbols.items():
+            filters += [BarsInPeriodFilter(ticker=symbol, bgn_prd=d, end_prd=None, interval_len=int(i[0]), interval_type=i[1]) for i in interval]
 
         q = queue.Queue()
         self.history_provider.request_data_by_filters(filters, q, adjust_data=False)
@@ -194,3 +210,40 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
 
         for t in threads:
             t.join()
+
+    def get_missing_symbols(self, intervals):
+        """
+        :param intervals: [(interval_len, interval_type), ...]
+        """
+        with tempfile.TemporaryFile() as tf, tempfile.TemporaryDirectory() as td:
+            r = requests.get('http://www.dtniq.com/product/mktsymbols_v2.zip', allow_redirects=True)
+            tf.write(r.content)
+
+            zip_ref = zipfile.ZipFile(tf)
+            zip_ref.extractall(td)
+
+            with open(os.path.join(td, 'mktsymbols_v2.txt')) as f:
+                content = f.readlines()
+
+        content = [c for c in content if '\tEQUITY' in c and ('\tNYSE' in c or '\tNASDAQ' in c)]
+
+        all_symbols = {s.split('\t')[0] for s in content}
+
+        result = dict()
+        for i in intervals:
+            existing_symbols = {e['symbol'] for e in InfluxDBClient.query(self.client, "select FIRST(close), symbol from bars where interval = '{}' group by symbol".format(str(i[0]) + '_' + i[1])).get_points()}
+
+            for s in all_symbols - existing_symbols:
+                if s not in result:
+                    result[s] = list()
+
+                result[s].append(i)
+
+        return result
+
+    def populate_db(self, intervals):
+        """
+        :param intervals: [(interval_len, interval_type), ...]
+        """
+        missing = self.get_missing_symbols(intervals)
+        self.update_to_latest(missing)
