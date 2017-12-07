@@ -1,12 +1,12 @@
 import pyevents.events as events
-from atpy.data.iqfeed.iqfeed_latest_bars import IQFeedLatestBars
 from atpy.ibapi.ib_events import IBEvents
 from atpy.data.iqfeed.iqfeed_level_1_provider import IQFeedLevel1Listener
+from atpy.data.iqfeed.iqfeed_bar_data_provider import IQFeedBarDataListener
 
 
 class Environment(object, metaclass=events.GlobalRegister):
     def __init__(self, interval_len, interval_type='s', fire_bars=True, fire_news=True, mkt_snapshot_depth=0, key_suffix=''):
-        self.latest_bars = IQFeedLatestBars(interval_len=interval_len, interval_type=interval_type, fire_bars=fire_bars, mkt_snapshot_depth=mkt_snapshot_depth, key_suffix=key_suffix)
+        self.latest_bars = IQFeedBarDataListener(interval_len=interval_len, interval_type=interval_type, fire_bars=fire_bars, mkt_snapshot_depth=mkt_snapshot_depth, key_suffix=key_suffix)
         self.ibapi = IBEvents("127.0.0.1", 4002, 0)
         self.fire_news = fire_news
         self.level_1_conn = IQFeedLevel1Listener(fire_ticks=False) if fire_news else None
