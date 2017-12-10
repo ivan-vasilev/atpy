@@ -13,32 +13,27 @@ from dateutil import tz
 from dateutil.parser import parse
 from dateutil.relativedelta import relativedelta
 from influxdb import InfluxDBClient, DataFrameClient
+import multiprocessing
 
 import pyevents.events as events
-from atpy.data.iqfeed.iqfeed_history_provider import IQFeedHistoryProvider, BarsInPeriodFilter
+from abc import ABC, abstractmethod
+
+
+class BarsFilter(typing.NamedTuple):
+    ticker: typing.Union[list, str]
+    interval_len: int
+    interval_type: str
+    bgn_prd: datetime.datetime
 
 
 class InfluxDBCache(object, metaclass=events.GlobalRegister):
-    def __init__(self, client: DataFrameClient, use_stream_events=True, history_provider: IQFeedHistoryProvider = None, time_delta_back: relativedelta = relativedelta(years=5), default_timezone: str = 'US/Eastern'):
+    def __init__(self, client: DataFrameClient, use_stream_events=True, time_delta_back: relativedelta = relativedelta(years=5), default_timezone: str = 'US/Eastern'):
         self.client = client
-        self.history_provider = history_provider
         self._use_stream_events = use_stream_events
         self._time_delta_back = time_delta_back
         self._default_timezone = default_timezone
         self._synchronized_symbols = set()
         self._lock = threading.RLock()
-
-    def __enter__(self):
-        self.own_history = self.history_provider is None
-        if self.own_history:
-            self.history_provider = IQFeedHistoryProvider(exclude_nan_ratio=None)
-            self.history_provider.__enter__()
-
-        return self
-
-    def __exit__(self, exception_type, exception_value, traceback):
-        if self.own_history:
-            self.history_provider.__exit__(exception_type, exception_value, traceback)
 
     @events.listener
     def on_event(self, event):
@@ -59,7 +54,7 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
                             "interval": interval,
                         },
 
-                        "time": data['timestamp'].astype(datetime.datetime),
+                        "time": data['timestamp'] if isinstance(data['timestamp'], datetime.datetime) else data['timestamp'].astype(datetime.datetime),
                         "fields": {k: int(v) if isinstance(v, (int, np.integer)) else v for k, v in data.items() if k not in ('timestamp', 'symbol')}
                     }
                 ]
@@ -126,7 +121,7 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
 
         return result
 
-    def verify_timeseries_integrity(self, symbol: str, interval_len: int, interval_type: str):
+    def verify_timeseries_integrity(self, symbol: str, interval_len: int, interval_type: str='s'):
         interval = str(interval_len) + '_' + interval_type
 
         cached = list(InfluxDBClient.query(self.client, 'select LAST(close) from bars where symbol="{}" and interval="{}"'.format(symbol, interval)).get_points())
@@ -139,14 +134,21 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
         if self._default_timezone is not None:
             d = d.replace(tzinfo=tz.gettz(self._default_timezone))
 
-        f = BarsInPeriodFilter(ticker=symbol, bgn_prd=d, end_prd=None, interval_len=interval_len, interval_type=interval_type)
-        to_cache = self.history_provider.request_data(f, synchronize_timestamps=False, adjust_data=False)
+        to_cache = self._request_noncache_datum(symbol, d, interval_len, interval_type)
 
         if to_cache is not None and not to_cache.empty:
             to_cache.drop('timestamp', axis=1, inplace=True)
             to_cache['interval'] = interval
 
             self.client.write_points(to_cache, 'bars', protocol='line', tag_columns=['symbol', 'interval'])
+
+    @abstractmethod
+    def _request_noncache_data(self, filters: typing.List[BarsFilter], q: queue.Queue):
+        pass
+
+    @abstractmethod
+    def _request_noncache_datum(self, ticker: typing.Union[list, str], bgn_prd: datetime.datetime, interval_len: int, interval_type: str='s'):
+        pass
 
     def update_to_latest(self, new_symbols: dict=None):
         """
@@ -162,14 +164,14 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
             if symbol in new_symbols and str(new_symbols[symbol][0]) == interval_len and new_symbols[symbol][1] == interval_type:
                 del new_symbols[symbol]
 
-            filters.append(BarsInPeriodFilter(ticker=symbol, bgn_prd=time, end_prd=None, interval_len=int(interval_len), interval_type=interval_type))
+            filters.append(BarsFilter(ticker=symbol, bgn_prd=time, interval_len=int(interval_len), interval_type=interval_type))
 
         d = datetime.datetime.now() - self._time_delta_back
         for symbol, interval in new_symbols.items():
-            filters += [BarsInPeriodFilter(ticker=symbol, bgn_prd=d, end_prd=None, interval_len=int(i[0]), interval_type=i[1]) for i in interval]
+            filters += [BarsFilter(ticker=symbol, bgn_prd=d, interval_len=int(i[0]), interval_type=i[1]) for i in interval]
 
         q = queue.Queue()
-        self.history_provider.request_data_by_filters(filters, q, adjust_data=False)
+        self._request_noncache_data(filters, q)
 
         lock = threading.Lock()
 
@@ -203,7 +205,7 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
                 if gc % 1 == 0 or gc == len(filters):
                     logging.getLogger(__name__).info("Cached " + str(gc) + " queries")
 
-        threads = [threading.Thread(target=worker) for _ in range(self.history_provider.num_connections)]
+        threads = [threading.Thread(target=worker) for _ in range(multiprocessing.cpu_count())]
 
         for t in threads:
             t.start()

@@ -1,7 +1,7 @@
 import unittest
 
 from atpy.data.iqfeed.iqfeed_bar_data_provider import *
-from atpy.data.influxdb_cache import *
+from atpy.data.iqfeed.iqfeed_influxdb_cache import *
 from influxdb import DataFrameClient
 from pandas.util.testing import assert_frame_equal
 
@@ -28,7 +28,7 @@ class TestInfluxDBCache(unittest.TestCase):
 
         e = threading.Event()
 
-        class InfluxDBCacheTest(InfluxDBCache):
+        class InfluxDBCacheTest(IQFeedInfluxDBCache):
             @events.listener
             def on_event(self, event):
                 super().on_event(event)
@@ -41,7 +41,7 @@ class TestInfluxDBCache(unittest.TestCase):
 
                         symbols = list(cached['bars']['symbol'])
                         _self.assertTrue('IBM' in symbols or 'GOOG' in symbols)
-                        _self.assertEqual(cached['bars']['interval'][0], '3600-s')
+                        _self.assertEqual(cached['bars']['interval'][0], '3600_s')
 
                         e.set()
 
@@ -57,7 +57,7 @@ class TestInfluxDBCache(unittest.TestCase):
                    BarsInPeriodFilter(ticker="AAPL", bgn_prd=datetime.datetime(2017, 3, 1), end_prd=end_prd, interval_len=3600, ascend=True, interval_type='s'),
                    BarsInPeriodFilter(ticker="AAPL", bgn_prd=datetime.datetime(2017, 3, 1), end_prd=end_prd, interval_len=600, ascend=True, interval_type='s'))
 
-        with IQFeedHistoryProvider(exclude_nan_ratio=None, num_connections=2) as history, InfluxDBCache(use_stream_events=True, client=self._client, history_provider=history, time_delta_back=relativedelta(days=30)) as cache:
+        with IQFeedHistoryProvider(exclude_nan_ratio=None, num_connections=2) as history, IQFeedInfluxDBCache(use_stream_events=True, client=self._client, history=history, time_delta_back=relativedelta(days=30)) as cache:
             data = [history.request_data(f, synchronize_timestamps=False, adjust_data=False) for f in filters]
 
             for datum, f in zip(data, filters):
@@ -75,7 +75,7 @@ class TestInfluxDBCache(unittest.TestCase):
             self.assertGreater(latest_current[k][1], latest_old[k][1])
 
     def test_request_data(self):
-        with IQFeedHistoryProvider(exclude_nan_ratio=None, num_connections=2) as history, InfluxDBCache(use_stream_events=True, client=self._client, history_provider=history, time_delta_back=relativedelta(days=3)) as cache:
+        with IQFeedHistoryProvider(exclude_nan_ratio=None, num_connections=2) as history, IQFeedInfluxDBCache(use_stream_events=True, client=self._client, history=history, time_delta_back=relativedelta(days=3)) as cache:
             end_prd = datetime.datetime(2017, 5, 1)
 
             # test single symbol request
@@ -115,7 +115,7 @@ class TestInfluxDBCache(unittest.TestCase):
                    BarsInPeriodFilter(ticker="AAPL", bgn_prd=datetime.datetime(2017, 3, 1), end_prd=end_prd, interval_len=3600, ascend=True, interval_type='s'),
                    BarsInPeriodFilter(ticker="AAPL", bgn_prd=datetime.datetime(2017, 3, 1), end_prd=end_prd, interval_len=600, ascend=True, interval_type='s'))
 
-        with IQFeedHistoryProvider(exclude_nan_ratio=None, num_connections=2) as history, InfluxDBCache(use_stream_events=True, client=self._client, history_provider=history, time_delta_back=relativedelta(days=3)) as cache:
+        with IQFeedHistoryProvider(exclude_nan_ratio=None, num_connections=2) as history, IQFeedInfluxDBCache(use_stream_events=True, client=self._client, history=history, time_delta_back=relativedelta(days=3)) as cache:
             data = [history.request_data(f, synchronize_timestamps=False, adjust_data=False) for f in filters]
 
             for datum, f in zip(data, filters):
