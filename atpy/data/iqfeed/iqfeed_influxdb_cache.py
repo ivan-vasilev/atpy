@@ -1,6 +1,7 @@
 import datetime
 import typing
 
+
 import pandas as pd
 from dateutil.relativedelta import relativedelta
 from influxdb import DataFrameClient
@@ -9,6 +10,8 @@ from atpy.data.influxdb_cache import InfluxDBCache
 from atpy.data.iqfeed.iqfeed_history_provider import IQFeedHistoryProvider, BarsInPeriodFilter
 from atpy.data.iqfeed.iqfeed_level_1_provider import Fundamentals
 from atpy.data.iqfeed.util import adjust
+from multiprocessing.pool import ThreadPool
+import multiprocessing
 
 
 class IQFeedInfluxDBCache(InfluxDBCache):
@@ -32,8 +35,9 @@ class IQFeedInfluxDBCache(InfluxDBCache):
     def request_data(self, interval_len: int, interval_type: str = 's', symbol: typing.Union[list, str] = None, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None, ascending: bool = True, adjust_data=True):
         result = super().request_data(interval_len=interval_len, interval_type=interval_type, symbol=symbol, bgn_prd=bgn_prd, end_prd=end_prd)
         if isinstance(result.index, pd.MultiIndex):
-            for s in result.index.levels[0]:
-                adjust(result, Fundamentals.get(s, self.history.streaming_conn))
+            pool = ThreadPool(multiprocessing.cpu_count())
+            pool.map(lambda s: adjust(result, Fundamentals.get(s, self.history.streaming_conn)), (s for s in result.index.levels[0]))
+            pool.close()
         elif isinstance(symbol, str):
             adjust(result, Fundamentals.get(symbol, self.history.streaming_conn))
 
