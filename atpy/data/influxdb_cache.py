@@ -16,7 +16,7 @@ from influxdb import InfluxDBClient, DataFrameClient
 import multiprocessing
 
 import pyevents.events as events
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 
 
 class BarsFilter(typing.NamedTuple):
@@ -95,12 +95,14 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
             for c in [c for c in result.columns if result[c].dtype == np.int64]:
                 result[c] = result[c].astype(np.uint64, copy=False)
 
+            result['timestamp'] = result.index
+
             if len(result['symbol'].unique()) > 1:
-                result['timestamp'] = result.index
                 result.set_index('symbol', drop=False, append=True, inplace=True)
                 result = result.swaplevel(0, 1, axis=0)
                 result.sort_index(inplace=True, ascending=ascending)
-                result = result[['open', 'high', 'low', 'close', 'total_volume', 'period_volume', 'number_of_trades', 'timestamp', 'symbol']]
+
+            result = result[['open', 'high', 'low', 'close', 'total_volume', 'period_volume', 'number_of_trades', 'timestamp', 'symbol']]
 
         return result
 

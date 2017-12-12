@@ -83,30 +83,33 @@ class TestInfluxDBCache(unittest.TestCase):
                        BarsInPeriodFilter(ticker="AAPL", bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, interval_len=3600, ascend=True, interval_type='s'),
                        BarsInPeriodFilter(ticker="AAPL", bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, interval_len=600, ascend=True, interval_type='s'))
 
-            data = [history.request_data(f, synchronize_timestamps=False, adjust_data=False) for f in filters]
+            adjusted = list()
 
-            for datum, f in zip(data, filters):
+            for f in filters:
+                datum = history.request_data(f, synchronize_timestamps=False, adjust_data=False)
                 datum.drop('timestamp', axis=1, inplace=True)
                 datum['interval'] = str(f.interval_len) + '_' + f.interval_type
                 cache.client.write_points(datum, 'bars', protocol='line', tag_columns=['symbol', 'interval'])
                 datum.drop('interval', axis=1, inplace=True)
 
-                test_data = cache.request_data(interval_len=f.interval_len, interval_type=f.interval_type, symbol=f.ticker)
+                datum = history.request_data(f, synchronize_timestamps=False, adjust_data=True)
+                adjusted.append(datum)
+                test_data = cache.request_data(interval_len=f.interval_len, interval_type=f.interval_type, symbol=f.ticker, adjust_data=True)
                 assert_frame_equal(datum, test_data)
 
-            for datum, f in zip(data, filters):
-                test_data_limit = cache.request_data(interval_len=f.interval_len, interval_type=f.interval_type, symbol=f.ticker, bgn_prd=f.bgn_prd + relativedelta(days=7), end_prd=f.end_prd - relativedelta(days=7))
+            for datum, f in zip(adjusted, filters):
+                test_data_limit = cache.request_data(interval_len=f.interval_len, interval_type=f.interval_type, symbol=f.ticker, bgn_prd=f.bgn_prd + relativedelta(days=7), end_prd=f.end_prd - relativedelta(days=7), adjust_data=True)
                 self.assertGreater(len(test_data_limit), 0)
                 self.assertLess(len(test_data_limit), len(test_data))
 
             # test multisymbol request
-            requested_data = history.request_data(BarsInPeriodFilter(ticker=["AAPL", "IBM"], bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, interval_len=3600, ascend=True, interval_type='s'), synchronize_timestamps=False, adjust_data=False)
-            test_data = cache.request_data(interval_len=3600, interval_type='s', symbol=['IBM', 'AAPL', 'TSG'], bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd)
+            requested_data = history.request_data(BarsInPeriodFilter(ticker=["AAPL", "IBM"], bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, interval_len=3600, ascend=True, interval_type='s'), synchronize_timestamps=False, adjust_data=True)
+            test_data = cache.request_data(interval_len=3600, interval_type='s', symbol=['IBM', 'AAPL', 'TSG'], bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, adjust_data=True)
             assert_frame_equal(requested_data, test_data)
 
             # test any symbol request
-            requested_data = history.request_data(BarsInPeriodFilter(ticker=["AAPL", "IBM"], bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, interval_len=3600, ascend=True, interval_type='s'), synchronize_timestamps=False, adjust_data=False)
-            test_data = cache.request_data(interval_len=3600, interval_type='s', symbol=None, bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd)
+            requested_data = history.request_data(BarsInPeriodFilter(ticker=["AAPL", "IBM"], bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, interval_len=3600, ascend=True, interval_type='s'), synchronize_timestamps=False, adjust_data=True)
+            test_data = cache.request_data(interval_len=3600, interval_type='s', symbol=None, bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, adjust_data=True)
             assert_frame_equal(requested_data, test_data)
 
     def test_get_missing_symbols(self):
