@@ -1,6 +1,7 @@
 import datetime
+import multiprocessing
 import typing
-
+from multiprocessing.pool import ThreadPool
 
 import pandas as pd
 from dateutil.relativedelta import relativedelta
@@ -10,8 +11,6 @@ from atpy.data.influxdb_cache import InfluxDBCache
 from atpy.data.iqfeed.iqfeed_history_provider import IQFeedHistoryProvider, BarsInPeriodFilter
 from atpy.data.iqfeed.iqfeed_level_1_provider import Fundamentals
 from atpy.data.iqfeed.util import adjust
-from multiprocessing.pool import ThreadPool
-import multiprocessing
 
 
 class IQFeedInfluxDBCache(InfluxDBCache):

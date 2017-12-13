@@ -60,6 +60,12 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
                 ]
 
                 InfluxDBClient.write_points(self.client, json_body, protocol='json')
+        elif event['type'] == 'request_cache_data':
+            self.request_result(self.request_data(**event['data']))
+
+    @events.after
+    def request_result(self, data):
+        return {'type': 'cache_result', 'data': data}
 
     def request_data(self, interval_len: int, interval_type: str, symbol: typing.Union[list, str] = None, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None, ascending: bool = True):
         """
