@@ -1,11 +1,13 @@
 import datetime
 import logging
+import multiprocessing
 import os
 import queue
 import tempfile
 import threading
 import typing
 import zipfile
+from abc import abstractmethod
 
 import numpy as np
 import requests
@@ -13,10 +15,8 @@ from dateutil import tz
 from dateutil.parser import parse
 from dateutil.relativedelta import relativedelta
 from influxdb import InfluxDBClient, DataFrameClient
-import multiprocessing
 
 import pyevents.events as events
-from abc import abstractmethod
 
 
 class BarsFilter(typing.NamedTuple):
@@ -60,57 +60,6 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
                 ]
 
                 InfluxDBClient.write_points(self.client, json_body, protocol='json')
-        elif event['type'] == 'request_cache_data':
-            self.request_result(self.request_data(**event['data']))
-
-    @events.after
-    def request_result(self, data):
-        return {'type': 'cache_result', 'data': data}
-
-    def request_data(self, interval_len: int, interval_type: str, symbol: typing.Union[list, str] = None, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None, ascending: bool = True):
-        """
-        :param interval_len: interval length
-        :param interval_type: interval type
-        :param symbol: symbol or symbol list
-        :param bgn_prd: start datetime (excluding)
-        :param end_prd: end datetime (excluding)
-        :param ascending: asc/desc
-        :return: data from the database
-        """
-
-        query = "SELECT * FROM bars WHERE " \
-                "interval = '{}'" + \
-                ('' if symbol is None else " AND symbol =" + ("~ /{}/ " if isinstance(symbol, list) else " '{}'")) + \
-                ('' if bgn_prd is None else " AND time > '{}'") + \
-                ('' if end_prd is None else " AND time < '{}'") + \
-                " ORDER BY time {}"
-
-        args = tuple(filter(lambda x: x is not None, [str(interval_len) + '_' + interval_type, None if symbol is None else "|".join(symbol) if isinstance(symbol, list) else symbol, bgn_prd, end_prd, 'ASC' if ascending else 'DESC']))
-        result = self.client.query(query.format(*args))
-        if len(result) == 0:
-            result = None
-        else:
-            result = result['bars']
-            result.drop('interval', axis=1, inplace=True)
-            result.index.name = 'timestamp'
-            result = result[['open', 'high', 'low', 'close', 'total_volume', 'period_volume', 'number_of_trades', 'symbol']]
-
-            if self._default_timezone is not None:
-                result.index = result.index.tz_convert(self._default_timezone)
-
-            for c in [c for c in result.columns if result[c].dtype == np.int64]:
-                result[c] = result[c].astype(np.uint64, copy=False)
-
-            result['timestamp'] = result.index
-
-            if len(result['symbol'].unique()) > 1:
-                result.set_index('symbol', drop=False, append=True, inplace=True)
-                result = result.swaplevel(0, 1, axis=0)
-                result.sort_index(inplace=True, ascending=ascending)
-
-            result = result[['open', 'high', 'low', 'close', 'total_volume', 'period_volume', 'number_of_trades', 'timestamp', 'symbol']]
-
-        return result
 
     @property
     def ranges(self):
@@ -129,7 +78,7 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
 
         return result
 
-    def verify_timeseries_integrity(self, symbol: str, interval_len: int, interval_type: str='s'):
+    def verify_timeseries_integrity(self, symbol: str, interval_len: int, interval_type: str = 's'):
         interval = str(interval_len) + '_' + interval_type
 
         cached = list(InfluxDBClient.query(self.client, 'select LAST(close) from bars where symbol="{}" and interval="{}"'.format(symbol, interval)).get_points())
@@ -155,10 +104,10 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
         pass
 
     @abstractmethod
-    def _request_noncache_datum(self, ticker: typing.Union[list, str], bgn_prd: datetime.datetime, interval_len: int, interval_type: str='s'):
+    def _request_noncache_datum(self, ticker: typing.Union[list, str], bgn_prd: datetime.datetime, interval_len: int, interval_type: str = 's'):
         pass
 
-    def update_to_latest(self, new_symbols: dict=None):
+    def update_to_latest(self, new_symbols: dict = None):
         """
         Update existing entries in the database to the most current values
         :param new_symbols: additional symbols to add {symbol: [(interval_len, interval_type), ...]}

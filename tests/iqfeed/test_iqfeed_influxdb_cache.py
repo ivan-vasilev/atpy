@@ -74,55 +74,6 @@ class TestInfluxDBCache(unittest.TestCase):
         for k in latest_current.keys() & latest_old.keys():
             self.assertGreater(latest_current[k][1], latest_old[k][1])
 
-    def test_request_data(self):
-        with IQFeedHistoryProvider(exclude_nan_ratio=None, num_connections=2) as history, IQFeedInfluxDBCache(use_stream_events=True, client=self._client, history=history, time_delta_back=relativedelta(days=3)) as cache:
-            end_prd = datetime.datetime(2017, 5, 1)
-
-            # test single symbol request
-            filters = (BarsInPeriodFilter(ticker="IBM", bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, interval_len=3600, ascend=True, interval_type='s'),
-                       BarsInPeriodFilter(ticker="AAPL", bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, interval_len=3600, ascend=True, interval_type='s'),
-                       BarsInPeriodFilter(ticker="AAPL", bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, interval_len=600, ascend=True, interval_type='s'))
-
-            adjusted = list()
-
-            for f in filters:
-                datum = history.request_data(f, synchronize_timestamps=False, adjust_data=False)
-                datum.drop('timestamp', axis=1, inplace=True)
-                datum['interval'] = str(f.interval_len) + '_' + f.interval_type
-                cache.client.write_points(datum, 'bars', protocol='line', tag_columns=['symbol', 'interval'])
-                datum.drop('interval', axis=1, inplace=True)
-
-                datum = history.request_data(f, synchronize_timestamps=False, adjust_data=True)
-                adjusted.append(datum)
-                test_data = cache.request_data(interval_len=f.interval_len, interval_type=f.interval_type, symbol=f.ticker, adjust_data=True)
-                assert_frame_equal(datum, test_data)
-
-            for datum, f in zip(adjusted, filters):
-                test_data_limit = cache.request_data(interval_len=f.interval_len, interval_type=f.interval_type, symbol=f.ticker, bgn_prd=f.bgn_prd + relativedelta(days=7), end_prd=f.end_prd - relativedelta(days=7), adjust_data=True)
-                self.assertGreater(len(test_data_limit), 0)
-                self.assertLess(len(test_data_limit), len(test_data))
-
-            # test multisymbol request
-            requested_data = history.request_data(BarsInPeriodFilter(ticker=["AAPL", "IBM"], bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, interval_len=3600, ascend=True, interval_type='s'), synchronize_timestamps=False, adjust_data=True)
-            test_data = cache.request_data(interval_len=3600, interval_type='s', symbol=['IBM', 'AAPL', 'TSG'], bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, adjust_data=True)
-            assert_frame_equal(requested_data, test_data)
-
-            # test any symbol request
-            requested_data = history.request_data(BarsInPeriodFilter(ticker=["AAPL", "IBM"], bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, interval_len=3600, ascend=True, interval_type='s'), synchronize_timestamps=False, adjust_data=True)
-            # cache.request_data(interval_len=3600, interval_type='s', symbol=None, bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, adjust_data=True)
-
-            e = threading.Event()
-
-            @events.listener
-            def listen(event):
-                if event['type'] == 'cache_result':
-                    assert_frame_equal(requested_data, event['data'])
-                    e.set()
-
-            cache.on_event({'type': 'request_cache_data', 'data': {'interval_len': 3600, 'interval_type': 's', 'bgn_prd': datetime.datetime(2017, 4, 1), 'end_prd': end_prd, 'adjust_data': True}})
-
-            e.wait()
-
     def test_get_missing_symbols(self):
         end_prd = datetime.datetime(2017, 3, 2)
         filters = (BarsInPeriodFilter(ticker="IBM", bgn_prd=datetime.datetime(2017, 3, 1), end_prd=end_prd, interval_len=3600, ascend=True, interval_type='s'),
