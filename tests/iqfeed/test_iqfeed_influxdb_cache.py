@@ -109,15 +109,16 @@ class TestInfluxDBCache(unittest.TestCase):
 
             # test any symbol request
             requested_data = history.request_data(BarsInPeriodFilter(ticker=["AAPL", "IBM"], bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, interval_len=3600, ascend=True, interval_type='s'), synchronize_timestamps=False, adjust_data=True)
+            # cache.request_data(interval_len=3600, interval_type='s', symbol=None, bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, adjust_data=True)
 
             e = threading.Event()
 
+            @events.listener
             def listen(event):
                 if event['type'] == 'cache_result':
                     assert_frame_equal(requested_data, event['data'])
                     e.set()
 
-            cache.request_result += [listen]
             cache.on_event({'type': 'request_cache_data', 'data': {'interval_len': 3600, 'interval_type': 's', 'bgn_prd': datetime.datetime(2017, 4, 1), 'end_prd': end_prd, 'adjust_data': True}})
 
             e.wait()
