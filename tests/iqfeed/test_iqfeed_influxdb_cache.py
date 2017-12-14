@@ -1,7 +1,5 @@
 import unittest
 
-from pandas.util.testing import assert_frame_equal
-
 from atpy.data.iqfeed.iqfeed_bar_data_provider import *
 from atpy.data.iqfeed.iqfeed_influxdb_cache import *
 
