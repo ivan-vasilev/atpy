@@ -7,7 +7,7 @@ from influxdb import DataFrameClient
 import pyevents.events as events
 
 
-class InfluxDBCacheRequests(object, metaclass=events.GlobalRegister):
+class InfluxDBOHLCRequest(object, metaclass=events.GlobalRegister):
     def __init__(self, client: DataFrameClient, default_timezone: str = 'US/Eastern'):
         self.client = client
         self._default_timezone = default_timezone
@@ -15,15 +15,13 @@ class InfluxDBCacheRequests(object, metaclass=events.GlobalRegister):
     @events.listener
     def on_event(self, event):
         if event['type'] == 'request_ohlc':
-            self.request_result(self.request_ohlc(**event['data']))
-        if event['type'] == 'request_delta':
-            self.request_result(self.request_delta(**event['data']))
+            self.request_result(self.request(**event['data']))
 
     @events.after
     def request_result(self, data):
         return {'type': 'cache_result', 'data': data}
 
-    def request_ohlc(self, interval_len: int, interval_type: str, symbol: typing.Union[list, str] = None, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None, ascending: bool = True):
+    def request(self, interval_len: int, interval_type: str, symbol: typing.Union[list, str] = None, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None, ascending: bool = True):
         """
         :param interval_len: interval length
         :param interval_type: interval type
@@ -35,7 +33,7 @@ class InfluxDBCacheRequests(object, metaclass=events.GlobalRegister):
         """
 
         query = "SELECT * FROM bars" + \
-                self._query_where(interval_len=interval_len, interval_type=interval_type, symbol=symbol, bgn_prd=bgn_prd, end_prd=end_prd) + \
+                _query_where(interval_len=interval_len, interval_type=interval_type, symbol=symbol, bgn_prd=bgn_prd, end_prd=end_prd) + \
                 " ORDER BY time " + "ASC" if ascending else "DESC"
 
         result = self.client.query(query)
@@ -64,7 +62,22 @@ class InfluxDBCacheRequests(object, metaclass=events.GlobalRegister):
 
         return result
 
-    def request_delta(self, interval_len: int, interval_type: str, symbol: typing.Union[list, str] = None, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None, ascending: bool = True):
+
+class InfluxDBDeltaRequest(object, metaclass=events.GlobalRegister):
+    def __init__(self, client: DataFrameClient, default_timezone: str = 'US/Eastern'):
+        self.client = client
+        self._default_timezone = default_timezone
+
+    @events.listener
+    def on_event(self, event):
+        if event['type'] == 'request_delta':
+            self.request_result(self.request(**event['data']))
+
+    @events.after
+    def request_result(self, data):
+        return {'type': 'cache_result', 'data': data}
+
+    def request(self, interval_len: int, interval_type: str, symbol: typing.Union[list, str] = None, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None, ascending: bool = True):
         """
         :param interval_len: interval length
         :param interval_type: interval type
@@ -76,7 +89,7 @@ class InfluxDBCacheRequests(object, metaclass=events.GlobalRegister):
         """
 
         query = "SELECT symbol, (close - open) / open as delta FROM bars" + \
-                self._query_where(interval_len=interval_len, interval_type=interval_type, symbol=symbol, bgn_prd=bgn_prd, end_prd=end_prd) + \
+                _query_where(interval_len=interval_len, interval_type=interval_type, symbol=symbol, bgn_prd=bgn_prd, end_prd=end_prd) + \
                 " ORDER BY time " + "ASC" if ascending else "DESC"
 
         result = self.client.query(query)
@@ -101,23 +114,23 @@ class InfluxDBCacheRequests(object, metaclass=events.GlobalRegister):
 
         return result
 
-    @staticmethod
-    def _query_where(interval_len: int, interval_type: str, symbol: typing.Union[list, str] = None, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None):
-        """
-        generate query where string
-        :param interval_len: interval length
-        :param interval_type: interval type
-        :param symbol: symbol or symbol list
-        :param bgn_prd: start datetime (excluding)
-        :param end_prd: end datetime (excluding)
-        :return: data from the database
-        """
 
-        result = " WHERE" \
-                 " interval = '{}'" + \
-                 ('' if symbol is None else " AND symbol =" + ("~ /{}/ " if isinstance(symbol, list) else " '{}'")) + \
-                 ('' if bgn_prd is None else " AND time > '{}'") + \
-                 ('' if end_prd is None else " AND time < '{}'")
+def _query_where(interval_len: int, interval_type: str, symbol: typing.Union[list, str] = None, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None):
+    """
+    generate query where string
+    :param interval_len: interval length
+    :param interval_type: interval type
+    :param symbol: symbol or symbol list
+    :param bgn_prd: start datetime (excluding)
+    :param end_prd: end datetime (excluding)
+    :return: data from the database
+    """
 
-        args = tuple(filter(lambda x: x is not None, [str(interval_len) + '_' + interval_type, None if symbol is None else "|".join(symbol) if isinstance(symbol, list) else symbol, bgn_prd, end_prd]))
-        return result.format(*args)
+    result = " WHERE" \
+             " interval = '{}'" + \
+             ('' if symbol is None else " AND symbol =" + ("~ /{}/ " if isinstance(symbol, list) else " '{}'")) + \
+             ('' if bgn_prd is None else " AND time > '{}'") + \
+             ('' if end_prd is None else " AND time < '{}'")
+
+    args = tuple(filter(lambda x: x is not None, [str(interval_len) + '_' + interval_type, None if symbol is None else "|".join(symbol) if isinstance(symbol, list) else symbol, bgn_prd, end_prd]))
+    return result.format(*args)
