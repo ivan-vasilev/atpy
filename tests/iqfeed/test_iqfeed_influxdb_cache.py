@@ -12,7 +12,7 @@ class TestInfluxDBCache(unittest.TestCase):
     def setUp(self):
         events.reset()
         events.use_global_event_bus()
-        self._client = DataFrameClient('localhost', 8086, 'root', 'root')
+        self._client = DataFrameClient('localhost', 8086, 'root', 'root', retries=100)
 
         self._client.create_database('test_cache')
         self._client.switch_database('test_cache')

@@ -8,7 +8,15 @@ import pyevents.events as events
 
 
 class InfluxDBOHLCRequest(object, metaclass=events.GlobalRegister):
-    def __init__(self, client: DataFrameClient, default_timezone: str = 'US/Eastern'):
+    def __init__(self, client: DataFrameClient, interval_len: int, interval_type: str='s', default_timezone: str = 'US/Eastern'):
+        """
+        :param client: influxdb client
+        :param interval_len: interval length
+        :param interval_type: interval type
+        :param default_timezone: timezone
+        """
+        self.interval_len = interval_len
+        self.interval_type = interval_type
         self.client = client
         self._default_timezone = default_timezone
 
@@ -21,10 +29,8 @@ class InfluxDBOHLCRequest(object, metaclass=events.GlobalRegister):
     def request_result(self, data):
         return {'type': 'cache_result', 'data': data}
 
-    def request(self, interval_len: int, interval_type: str, symbol: typing.Union[list, str] = None, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None, ascending: bool = True):
+    def request(self, symbol: typing.Union[list, str] = None, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None, ascending: bool = True):
         """
-        :param interval_len: interval length
-        :param interval_type: interval type
         :param symbol: symbol or symbol list
         :param bgn_prd: start datetime (excluding)
         :param end_prd: end datetime (excluding)
@@ -33,7 +39,7 @@ class InfluxDBOHLCRequest(object, metaclass=events.GlobalRegister):
         """
 
         query = "SELECT * FROM bars" + \
-                _query_where(interval_len=interval_len, interval_type=interval_type, symbol=symbol, bgn_prd=bgn_prd, end_prd=end_prd) + \
+                _query_where(interval_len=self.interval_len, interval_type=self.interval_type, symbol=symbol, bgn_prd=bgn_prd, end_prd=end_prd) + \
                 " ORDER BY time " + "ASC" if ascending else "DESC"
 
         result = self.client.query(query)
@@ -63,10 +69,24 @@ class InfluxDBOHLCRequest(object, metaclass=events.GlobalRegister):
         return result
 
 
-class InfluxDBDeltaRequest(object, metaclass=events.GlobalRegister):
-    def __init__(self, client: DataFrameClient, default_timezone: str = 'US/Eastern'):
+class InfluxDBValueRequest(object, metaclass=events.GlobalRegister):
+    """abstract class for single value selection"""
+
+    def __init__(self, value: str, client: DataFrameClient, interval_len: int, interval_type: str='s', default_timezone: str = 'US/Eastern'):
+        """
+        :param value: value to select. value is a part of query
+        :param client: influxdb client
+        :param interval_len: interval length
+        :param interval_type: interval type
+        :param default_timezone: timezone
+        """
+        self.value = value
+        self.interval_len = interval_len
+        self.interval_type = interval_type
         self.client = client
         self._default_timezone = default_timezone
+        self.means = None
+        self.stddev = None
 
     @events.listener
     def on_event(self, event):
@@ -77,10 +97,8 @@ class InfluxDBDeltaRequest(object, metaclass=events.GlobalRegister):
     def request_result(self, data):
         return {'type': 'cache_result', 'data': data}
 
-    def request(self, interval_len: int, interval_type: str, symbol: typing.Union[list, str] = None, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None, ascending: bool = True):
+    def request(self, symbol: typing.Union[list, str] = None, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None, ascending: bool = True):
         """
-        :param interval_len: interval length
-        :param interval_type: interval type
         :param symbol: symbol or symbol list
         :param bgn_prd: start datetime (excluding)
         :param end_prd: end datetime (excluding)
@@ -88,8 +106,8 @@ class InfluxDBDeltaRequest(object, metaclass=events.GlobalRegister):
         :return: data from the database
         """
 
-        query = "SELECT symbol, (close - open) / open as delta FROM bars" + \
-                _query_where(interval_len=interval_len, interval_type=interval_type, symbol=symbol, bgn_prd=bgn_prd, end_prd=end_prd) + \
+        query = "SELECT symbol, " + self.value + " as delta FROM bars" + \
+                _query_where(interval_len=self.interval_len, interval_type=self.interval_type, symbol=symbol, bgn_prd=bgn_prd, end_prd=end_prd) + \
                 " ORDER BY time " + "ASC" if ascending else "DESC"
 
         result = self.client.query(query)
@@ -112,7 +130,57 @@ class InfluxDBDeltaRequest(object, metaclass=events.GlobalRegister):
                 result = result.swaplevel(0, 1, axis=0)
                 result.sort_index(inplace=True, ascending=ascending)
 
+                if self.means is not None:
+                    result['delta'] = result['delta'].groupby(level=0).apply(lambda x: x - self.means[x.name])
+
+                if self.stddev is not None:
+                    result['delta'] = result['delta'].groupby(level=0).apply(lambda x: x / self.stddev[x.name])
+            else:
+                if self.means is not None:
+                    result['delta'] = result['delta'] - self.means[result['symbol'][0]]
+
+                if self.stddev is not None:
+                    result['delta'] = result['delta'] / self.stddev[result['symbol'][0]]
+
         return result
+
+    def enable_mean(self, symbol: typing.Union[list, str] = None, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None):
+        """
+        :param symbol: symbol or symbol list
+        :param bgn_prd: start datetime (excluding)
+        :param end_prd: end datetime (excluding)
+        :return: data from the database
+        """
+        query = "SELECT MEAN(value) FROM (SELECT symbol, " + self.value + " as value FROM bars" + \
+                _query_where(interval_len=self.interval_len, interval_type=self.interval_type, symbol=symbol, bgn_prd=bgn_prd, end_prd=end_prd) + \
+                ") GROUP BY symbol"
+
+        rs = super(DataFrameClient, self.client).query(query)
+        self.means = {k[1]['symbol']: next(data)['mean'] for k, data in rs.items()}
+
+    def enable_stddev(self, symbol: typing.Union[list, str] = None, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None):
+        """
+        :param symbol: symbol or symbol list
+        :param bgn_prd: start datetime (excluding)
+        :param end_prd: end datetime (excluding)
+        :return: data from the database
+        """
+        query = "SELECT STDDEV(delta) FROM (SELECT symbol, (close - open) / open as delta FROM bars" + \
+                _query_where(interval_len=self.interval_len, interval_type=self.interval_type, symbol=symbol, bgn_prd=bgn_prd, end_prd=end_prd) + \
+                ") GROUP BY symbol"
+
+        rs = super(DataFrameClient, self.client).query(query)
+        self.stddev = {k[1]['symbol']: next(data)['stddev'] for k, data in rs.items()}
+
+
+class InfluxDBDeltaAdjustedRequest(InfluxDBValueRequest, metaclass=events.GlobalRegister):
+    def __init__(self, client: DataFrameClient, interval_len: int, interval_type: str='s', default_timezone: str = 'US/Eastern'):
+        super().__init__(value='(close - open) / open', client=client, interval_len=interval_len, interval_type=interval_type, default_timezone=default_timezone)
+
+
+class InfluxDBDeltaRequest(InfluxDBValueRequest, metaclass=events.GlobalRegister):
+    def __init__(self, client: DataFrameClient, interval_len: int, interval_type: str='s', default_timezone: str = 'US/Eastern'):
+        super().__init__(value='close - open', client=client, interval_len=interval_len, interval_type=interval_type, default_timezone=default_timezone)
 
 
 def _query_where(interval_len: int, interval_type: str, symbol: typing.Union[list, str] = None, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None):

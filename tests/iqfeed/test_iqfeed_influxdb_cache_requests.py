@@ -27,7 +27,6 @@ class TestInfluxDBCacheRequests(unittest.TestCase):
     def test_request_ohlc(self):
         with IQFeedHistoryProvider(exclude_nan_ratio=None, num_connections=2) as history, \
                 IQFeedInfluxDBCache(use_stream_events=True, client=self._client, history=history, time_delta_back=relativedelta(days=3)) as cache:
-            cache_requests = IQFeedInfluxDBOHLCRequest(client=self._client, streaming_conn=history.streaming_conn)
 
             end_prd = datetime.datetime(2017, 5, 1)
 
@@ -47,17 +46,24 @@ class TestInfluxDBCacheRequests(unittest.TestCase):
 
                 datum = history.request_data(f, synchronize_timestamps=False, adjust_data=True)
                 adjusted.append(datum)
-                test_data = cache_requests.request(interval_len=f.interval_len, interval_type=f.interval_type, symbol=f.ticker, adjust_data=True)
+
+                cache_requests = IQFeedInfluxDBOHLCRequest(client=self._client, interval_len=f.interval_len, interval_type=f.interval_type, streaming_conn=history.streaming_conn)
+                test_data = cache_requests.request(symbol=f.ticker, adjust_data=True)
+
                 assert_frame_equal(datum, test_data)
 
             for datum, f in zip(adjusted, filters):
-                test_data_limit = cache_requests.request(interval_len=f.interval_len, interval_type=f.interval_type, symbol=f.ticker, bgn_prd=f.bgn_prd + relativedelta(days=7), end_prd=f.end_prd - relativedelta(days=7), adjust_data=True)
+                cache_requests = IQFeedInfluxDBOHLCRequest(client=self._client, interval_len=f.interval_len, interval_type=f.interval_type, streaming_conn=history.streaming_conn)
+                test_data = cache_requests.request(symbol=f.ticker, adjust_data=True)
+                test_data_limit = cache_requests.request(symbol=f.ticker, bgn_prd=f.bgn_prd + relativedelta(days=7), end_prd=f.end_prd - relativedelta(days=7), adjust_data=True)
+
                 self.assertGreater(len(test_data_limit), 0)
                 self.assertLess(len(test_data_limit), len(test_data))
 
             # test multisymbol request
             requested_data = history.request_data(BarsInPeriodFilter(ticker=["AAPL", "IBM"], bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, interval_len=3600, ascend=True, interval_type='s'), synchronize_timestamps=False, adjust_data=True)
-            test_data = cache_requests.request(interval_len=3600, interval_type='s', symbol=['IBM', 'AAPL', 'TSG'], bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, adjust_data=True)
+            cache_requests = IQFeedInfluxDBOHLCRequest(client=self._client, interval_len=3600, streaming_conn=history.streaming_conn)
+            test_data = cache_requests.request(symbol=['IBM', 'AAPL', 'TSG'], bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, adjust_data=True)
             assert_frame_equal(requested_data, test_data)
 
             # test any symbol request
@@ -71,15 +77,13 @@ class TestInfluxDBCacheRequests(unittest.TestCase):
                     assert_frame_equal(requested_data, event['data'])
                     e.set()
 
-            cache_requests.on_event({'type': 'request_ohlc', 'data': {'interval_len': 3600, 'interval_type': 's', 'bgn_prd': datetime.datetime(2017, 4, 1), 'end_prd': end_prd, 'adjust_data': True}})
+            cache_requests.on_event({'type': 'request_ohlc', 'data': {'bgn_prd': datetime.datetime(2017, 4, 1), 'end_prd': end_prd, 'adjust_data': True}})
 
             e.wait()
 
     def test_request_deltas(self):
         with IQFeedHistoryProvider(exclude_nan_ratio=None, num_connections=2) as history, \
                 IQFeedInfluxDBCache(use_stream_events=True, client=self._client, history=history, time_delta_back=relativedelta(days=3)) as cache:
-            cache_requests = InfluxDBDeltaRequest(client=self._client)
-
             end_prd = datetime.datetime(2017, 5, 1)
 
             # test single symbol request
@@ -94,29 +98,43 @@ class TestInfluxDBCacheRequests(unittest.TestCase):
                 cache.client.write_points(data, 'bars', protocol='line', tag_columns=['symbol', 'interval'])
 
                 delta = (data['close'] - data['open']) / data['open']
-                test_delta = cache_requests.request(interval_len=f.interval_len, interval_type=f.interval_type, symbol=f.ticker)['delta']
-                self.assertFalse(False in delta == test_delta)
+                delta = (delta - delta.mean()) / delta.std()
+
+                cache_requests = InfluxDBDeltaAdjustedRequest(client=self._client, interval_len=f.interval_len, interval_type=f.interval_type)
+                cache_requests.enable_mean()
+                cache_requests.enable_stddev()
+                test_delta = cache_requests.request(symbol=f.ticker)['delta']
+
+                np.testing.assert_almost_equal(test_delta.values, delta.values)
 
             # test multisymbol request
             requested_data = history.request_data(BarsInPeriodFilter(ticker=["AAPL", "IBM"], bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, interval_len=3600, ascend=True, interval_type='s'), synchronize_timestamps=False, adjust_data=False)
             delta = (requested_data['close'] - requested_data['open']) / requested_data['open']
+            delta = delta.groupby(level=0).apply(lambda x: x - x.mean())
+            delta = delta.groupby(level=0).apply(lambda x: x / x.std())
 
-            test_delta = cache_requests.request(interval_len=3600, interval_type='s', symbol=['IBM', 'AAPL', 'TSG'], bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd)['delta']
-            self.assertFalse(False in delta == test_delta)
+            cache_requests = InfluxDBDeltaAdjustedRequest(client=self._client, interval_len=3600, interval_type='s')
+            cache_requests.enable_mean()
+            cache_requests.enable_stddev()
+
+            test_delta = cache_requests.request(symbol=['IBM', 'AAPL', 'TSG'], bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd)['delta']
+            np.testing.assert_almost_equal(test_delta.values, delta.values)
 
             # test any symbol request
             requested_data = history.request_data(BarsInPeriodFilter(ticker=["AAPL", "IBM"], bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, interval_len=3600, ascend=True, interval_type='s'), synchronize_timestamps=False, adjust_data=False)
             delta = (requested_data['close'] - requested_data['open']) / requested_data['open']
+            delta = delta.groupby(level=0).apply(lambda x: x - x.mean())
+            delta = delta.groupby(level=0).apply(lambda x: x / x.std())
 
             e = threading.Event()
 
             @events.listener
             def listen(event):
                 if event['type'] == 'cache_result':
-                    self.assertFalse(False in delta == event['data']['delta'])
+                    np.testing.assert_almost_equal(test_delta.values, delta.values)
                     e.set()
 
-            cache_requests.on_event({'type': 'request_delta', 'data': {'interval_len': 3600, 'interval_type': 's', 'bgn_prd': datetime.datetime(2017, 4, 1), 'end_prd': end_prd}})
+            cache_requests.on_event({'type': 'request_delta', 'data': {'bgn_prd': datetime.datetime(2017, 4, 1), 'end_prd': end_prd}})
 
             e.wait()
 
