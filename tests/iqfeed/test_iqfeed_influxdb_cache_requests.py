@@ -48,14 +48,14 @@ class TestInfluxDBCacheRequests(unittest.TestCase):
                 adjusted.append(datum)
 
                 cache_requests = IQFeedInfluxDBOHLCRequest(client=self._client, interval_len=f.interval_len, interval_type=f.interval_type, streaming_conn=history.streaming_conn)
-                test_data = cache_requests.request(symbol=f.ticker, adjust_data=True)
+                _, test_data = cache_requests.request(symbol=f.ticker, adjust_data=True)
 
                 assert_frame_equal(datum, test_data)
 
             for datum, f in zip(adjusted, filters):
                 cache_requests = IQFeedInfluxDBOHLCRequest(client=self._client, interval_len=f.interval_len, interval_type=f.interval_type, streaming_conn=history.streaming_conn)
-                test_data = cache_requests.request(symbol=f.ticker, adjust_data=True)
-                test_data_limit = cache_requests.request(symbol=f.ticker, bgn_prd=f.bgn_prd + relativedelta(days=7), end_prd=f.end_prd - relativedelta(days=7), adjust_data=True)
+                _, test_data = cache_requests.request(symbol=f.ticker, adjust_data=True)
+                _, test_data_limit = cache_requests.request(symbol=f.ticker, bgn_prd=f.bgn_prd + relativedelta(days=7), end_prd=f.end_prd - relativedelta(days=7), adjust_data=True)
 
                 self.assertGreater(len(test_data_limit), 0)
                 self.assertLess(len(test_data_limit), len(test_data))
@@ -63,7 +63,7 @@ class TestInfluxDBCacheRequests(unittest.TestCase):
             # test multisymbol request
             requested_data = history.request_data(BarsInPeriodFilter(ticker=["AAPL", "IBM"], bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, interval_len=3600, ascend=True, interval_type='s'), synchronize_timestamps=False, adjust_data=True)
             cache_requests = IQFeedInfluxDBOHLCRequest(client=self._client, interval_len=3600, streaming_conn=history.streaming_conn)
-            test_data = cache_requests.request(symbol=['IBM', 'AAPL', 'TSG'], bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, adjust_data=True)
+            _, test_data = cache_requests.request(symbol=['IBM', 'AAPL', 'TSG'], bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, adjust_data=True)
             assert_frame_equal(requested_data, test_data)
 
             # test any symbol request
@@ -74,7 +74,7 @@ class TestInfluxDBCacheRequests(unittest.TestCase):
             @events.listener
             def listen(event):
                 if event['type'] == 'cache_result':
-                    assert_frame_equal(requested_data, event['data'])
+                    assert_frame_equal(requested_data, event['data'][0])
                     e.set()
 
             cache_requests.on_event({'type': 'request_ohlc', 'data': {'bgn_prd': datetime.datetime(2017, 4, 1), 'end_prd': end_prd, 'adjust_data': True}})
@@ -103,7 +103,8 @@ class TestInfluxDBCacheRequests(unittest.TestCase):
                 cache_requests = InfluxDBDeltaAdjustedRequest(client=self._client, interval_len=f.interval_len, interval_type=f.interval_type)
                 cache_requests.enable_mean()
                 cache_requests.enable_stddev()
-                test_delta = cache_requests.request(symbol=f.ticker)['delta']
+                _, test_delta = cache_requests.request(symbol=f.ticker)
+                test_delta = test_delta['delta']
 
                 np.testing.assert_almost_equal(test_delta.values, delta.values)
 
@@ -117,7 +118,8 @@ class TestInfluxDBCacheRequests(unittest.TestCase):
             cache_requests.enable_mean()
             cache_requests.enable_stddev()
 
-            test_delta = cache_requests.request(symbol=['IBM', 'AAPL', 'TSG'], bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd)['delta']
+            _, test_delta = cache_requests.request(symbol=['IBM', 'AAPL', 'TSG'], bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd)
+            test_delta = test_delta['delta']
             np.testing.assert_almost_equal(test_delta.values, delta.values)
 
             # test any symbol request
@@ -134,7 +136,7 @@ class TestInfluxDBCacheRequests(unittest.TestCase):
                     np.testing.assert_almost_equal(test_delta.values, delta.values)
                     e.set()
 
-            cache_requests.on_event({'type': 'request_delta', 'data': {'bgn_prd': datetime.datetime(2017, 4, 1), 'end_prd': end_prd}})
+            cache_requests.on_event({'type': 'request_value', 'data': {'bgn_prd': datetime.datetime(2017, 4, 1), 'end_prd': end_prd}})
 
             e.wait()
 

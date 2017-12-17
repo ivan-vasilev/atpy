@@ -18,7 +18,7 @@ class IQFeedInfluxDBOHLCRequest(InfluxDBOHLCRequest):
         self.streaming_conn = streaming_conn
 
     def request(self, symbol: typing.Union[list, str] = None, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None, ascending: bool = True, adjust_data=True):
-        result = super().request(symbol=symbol, bgn_prd=bgn_prd, end_prd=end_prd)
+        result, processed_result = super().request(symbol=symbol, bgn_prd=bgn_prd, end_prd=end_prd)
         if isinstance(result.index, pd.MultiIndex):
             pool = ThreadPool(multiprocessing.cpu_count())
             pool.map(lambda s: adjust(result, Fundamentals.get(s, self.streaming_conn)), (s for s in result.index.levels[0]))
@@ -26,4 +26,4 @@ class IQFeedInfluxDBOHLCRequest(InfluxDBOHLCRequest):
         elif isinstance(symbol, str):
             adjust(result, Fundamentals.get(symbol, self.streaming_conn))
 
-        return result
+        return result, processed_result

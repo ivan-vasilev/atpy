@@ -8,7 +8,7 @@ import pyevents.events as events
 
 
 class InfluxDBOHLCRequest(object, metaclass=events.GlobalRegister):
-    def __init__(self, client: DataFrameClient, interval_len: int, interval_type: str='s', default_timezone: str = 'US/Eastern'):
+    def __init__(self, client: DataFrameClient, interval_len: int, interval_type: str = 's', default_timezone: str = 'US/Eastern'):
         """
         :param client: influxdb client
         :param interval_len: interval length
@@ -66,13 +66,16 @@ class InfluxDBOHLCRequest(object, metaclass=events.GlobalRegister):
 
             result = result[['open', 'high', 'low', 'close', 'total_volume', 'period_volume', 'number_of_trades', 'timestamp', 'symbol']]
 
-        return result
+        return result, self.postprocess_data(result)
+
+    def postprocess_data(self, data):
+        return data
 
 
 class InfluxDBValueRequest(object, metaclass=events.GlobalRegister):
     """abstract class for single value selection"""
 
-    def __init__(self, value: str, client: DataFrameClient, interval_len: int, interval_type: str='s', default_timezone: str = 'US/Eastern'):
+    def __init__(self, value: str, client: DataFrameClient, interval_len: int, interval_type: str = 's', default_timezone: str = 'US/Eastern'):
         """
         :param value: value to select. value is a part of query
         :param client: influxdb client
@@ -90,7 +93,7 @@ class InfluxDBValueRequest(object, metaclass=events.GlobalRegister):
 
     @events.listener
     def on_event(self, event):
-        if event['type'] == 'request_delta':
+        if event['type'] == 'request_value':
             self.request_result(self.request(**event['data']))
 
     @events.after
@@ -130,19 +133,26 @@ class InfluxDBValueRequest(object, metaclass=events.GlobalRegister):
                 result = result.swaplevel(0, 1, axis=0)
                 result.sort_index(inplace=True, ascending=ascending)
 
-                if self.means is not None:
-                    result['delta'] = result['delta'].groupby(level=0).apply(lambda x: x - self.means[x.name])
+        return result, self.postprocess_data(result)
 
-                if self.stddev is not None:
-                    result['delta'] = result['delta'].groupby(level=0).apply(lambda x: x / self.stddev[x.name])
-            else:
-                if self.means is not None:
-                    result['delta'] = result['delta'] - self.means[result['symbol'][0]]
+    def postprocess_data(self, data):
+        if self.means is not None or self.stddev is not None:
+            data = data.copy(deep=True)
 
-                if self.stddev is not None:
-                    result['delta'] = result['delta'] / self.stddev[result['symbol'][0]]
+        if len(data['symbol'].unique()) > 1:
+            if self.means is not None:
+                data['delta'] = data['delta'].groupby(level=0).apply(lambda x: x - self.means[x.name])
 
-        return result
+            if self.stddev is not None:
+                data['delta'] = data['delta'].groupby(level=0).apply(lambda x: x / self.stddev[x.name])
+        else:
+            if self.means is not None:
+                data['delta'] = data['delta'] - self.means[data['symbol'][0]]
+
+            if self.stddev is not None:
+                data['delta'] = data['delta'] / self.stddev[data['symbol'][0]]
+
+        return data
 
     def enable_mean(self, symbol: typing.Union[list, str] = None, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None):
         """
@@ -174,12 +184,12 @@ class InfluxDBValueRequest(object, metaclass=events.GlobalRegister):
 
 
 class InfluxDBDeltaAdjustedRequest(InfluxDBValueRequest, metaclass=events.GlobalRegister):
-    def __init__(self, client: DataFrameClient, interval_len: int, interval_type: str='s', default_timezone: str = 'US/Eastern'):
+    def __init__(self, client: DataFrameClient, interval_len: int, interval_type: str = 's', default_timezone: str = 'US/Eastern'):
         super().__init__(value='(close - open) / open', client=client, interval_len=interval_len, interval_type=interval_type, default_timezone=default_timezone)
 
 
 class InfluxDBDeltaRequest(InfluxDBValueRequest, metaclass=events.GlobalRegister):
-    def __init__(self, client: DataFrameClient, interval_len: int, interval_type: str='s', default_timezone: str = 'US/Eastern'):
+    def __init__(self, client: DataFrameClient, interval_len: int, interval_type: str = 's', default_timezone: str = 'US/Eastern'):
         super().__init__(value='close - open', client=client, interval_len=interval_len, interval_type=interval_type, default_timezone=default_timezone)
 
 

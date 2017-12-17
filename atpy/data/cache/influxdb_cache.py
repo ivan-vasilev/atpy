@@ -27,6 +27,10 @@ class BarsFilter(typing.NamedTuple):
 
 
 class InfluxDBCache(object, metaclass=events.GlobalRegister):
+    """
+    InfluxDB bar data cache using abstract data provider
+    """
+
     def __init__(self, client: DataFrameClient, use_stream_events=True, time_delta_back: relativedelta = relativedelta(years=5), default_timezone: str = 'US/Eastern'):
         self.client = client
         self._use_stream_events = use_stream_events

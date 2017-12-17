@@ -1,9 +1,6 @@
 import unittest
-import shutil
-
 
 from atpy.data.iqfeed.iqfeed_history_provider import *
-from atpy.data.iqfeed.history_util import get_bar_mean_std
 
 
 class TestIQFeedHistory(unittest.TestCase):
@@ -498,20 +495,6 @@ class TestIQFeedHistory(unittest.TestCase):
             e2.wait()
 
             self.assertLess(datetime.datetime.now() - now, datetime.timedelta(seconds=40))
-
-    def test_bar_mean_std(self):
-        with IQFeedHistoryListener(run_async=False):
-            mean_std_m = get_bar_mean_std(['AAPL', 'IBM'], interval_type='m', years_back=2)
-            self.assertEqual(mean_std_m.shape, (2, 5))
-
-            mean_std_w = get_bar_mean_std(['AAPL', 'IBM'], interval_type='w', years_back=2)
-            self.assertEqual(mean_std_w.shape, (2, 5))
-
-            mean_std_d = get_bar_mean_std(['AAPL', 'IBM'], interval_type='d', years_back=1)
-            self.assertEqual(mean_std_d.shape, (2, 5))
-
-            mean_std_s = get_bar_mean_std(['AAPL', 'IBM'], interval_type='s', interaval_len=300, years_back=1)
-            self.assertEqual(mean_std_s.shape, (2, 5))
 
 
 if __name__ == '__main__':

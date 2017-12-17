@@ -6,6 +6,9 @@ from atpy.data.iqfeed.iqfeed_history_provider import IQFeedHistoryProvider, Bars
 
 
 class IQFeedInfluxDBCache(InfluxDBCache):
+    """
+    InfluxDB bar data cache using IQFeed data provider
+    """
 
     def __init__(self, client: DataFrameClient, history: IQFeedHistoryProvider=None, use_stream_events=True, time_delta_back: relativedelta = relativedelta(years=5), default_timezone: str = 'US/Eastern'):
         super().__init__(client=client, use_stream_events=use_stream_events, time_delta_back=time_delta_back, default_timezone=default_timezone)
