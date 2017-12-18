@@ -1,5 +1,7 @@
 import pyevents.events as events
 from atpy.data.iqfeed.util import *
+import atpy.data.iqfeed.bar_util as bars
+
 from atpy.data.iqfeed.iqfeed_level_1_provider import Fundamentals
 import pandas as pd
 import threading
@@ -147,18 +149,17 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
                 symbol.sort()
 
                 multi_index = pd.MultiIndex.from_product([symbol, self._mkt_snapshot.index.levels[1].unique()], names=['symbol', 'timestamp']).sort_values()
-                self._mkt_snapshot = self._reindex_and_fill(self._mkt_snapshot, multi_index)
+                self._mkt_snapshot = bars.reindex_and_fill(self._mkt_snapshot, multi_index)
 
-    def request_market_snapshot_bars(self, normalize=False):
+    def request_market_snapshot_bars(self, synchronize=False):
         with self._lock:
             snapshot = self._mkt_snapshot.dropna()
             snapshot.set_index(['symbol', 'timestamp'], inplace=True)
             snapshot.reset_index(inplace=True)
             snapshot.set_index(['symbol', 'timestamp'], drop=False, inplace=True)
 
-            if normalize:
-                multi_index = pd.MultiIndex.from_product([snapshot.index.levels[0].unique(), snapshot.index.levels[1].unique()], names=['symbol', 'timestamp']).sort_values()
-                snapshot = IQFeedBarDataListener._reindex_and_fill(snapshot, multi_index)
+            if synchronize:
+                snapshot = bars.synchronize_timestamps(snapshot)
 
             return snapshot.groupby(level=0).tail(self.mkt_snapshot_depth)
 
@@ -173,7 +174,7 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
                     symbols.sort()
 
                     multi_index = pd.MultiIndex.from_product([symbols, self._mkt_snapshot.index.levels[1].unique()], names=['symbol', 'timestamp']).sort_values()
-                    self._mkt_snapshot = self._reindex_and_fill(self._mkt_snapshot, multi_index)
+                    self._mkt_snapshot = bars.reindex_and_fill(self._mkt_snapshot, multi_index)
                 elif isinstance(data, dict) and (data['symbol'], data['timestamp']) in self._mkt_snapshot.index:
                     self._mkt_snapshot.loc[data['symbol'], data['timestamp']] = pd.Series(data)
                 else:
@@ -185,61 +186,10 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
                     self._mkt_snapshot.update(to_concat)
                     to_concat = to_concat[~to_concat.index.isin(self._mkt_snapshot.index)]
 
-                    self._mkt_snapshot = self._merge_snapshots(self._mkt_snapshot, to_concat)
+                    self._mkt_snapshot = bars.merge_snapshots(self._mkt_snapshot, to_concat)
 
                     if expand:
-                        self._mkt_snapshot = self._expand(self._mkt_snapshot, min(1000, self.mkt_snapshot_depth * 10), self.mkt_snapshot_depth)
-
-    @staticmethod
-    def _merge_snapshots(s1, s2):
-        if s1.empty and not s2.empty:
-            return s2
-        elif s2.empty and not s1.empty:
-            return s1
-        elif s1.empty and s2.empty:
-            return
-
-        return pd.concat([s1, s2]).sort_index()
-
-    @staticmethod
-    def _reindex_and_fill(df, index):
-        df = df.reindex(index)
-        df.drop(['symbol', 'timestamp'], axis=1, inplace=True)
-        df.reset_index(inplace=True)
-        df.set_index(index, inplace=True)
-
-        for c in [c for c in ['period_volume', 'number_of_trades'] if c in df.columns]:
-            df[c].fillna(0, inplace=True)
-
-        if 'open' in df.columns:
-            df['open'] = df.groupby(level=0)['open'].fillna(method='ffill')
-            op = df['open']
-
-            for c in [c for c in ['close', 'high', 'low'] if c in df.columns]:
-                df[c].fillna(op, inplace=True)
-
-        df = df.groupby(level=0).fillna(method='ffill')
-
-        df = df.groupby(level=0).fillna(method='backfill')
-
-        return df
-
-    @staticmethod
-    def _expand(df, steps, max_length=None):
-        if len(df.index.levels[1]) < 2:
-            return df
-
-        diff = df.index.levels[1][1] - df.index.levels[1][0]
-        new_index = df.index.levels[1].append(pd.date_range(df.index.levels[1][len(df.index.levels[1]) - 1] + diff, periods=steps, freq=diff))
-
-        multi_index = pd.MultiIndex.from_product([df.index.levels[0], new_index], names=['symbol', 'timestamp']).sort_values()
-
-        result = df.reindex(multi_index)
-
-        if max_length is not None:
-            result = df.groupby(level=0).tail(max_length)
-
-        return result
+                        self._mkt_snapshot = bars.expand(self._mkt_snapshot, min(1000, self.mkt_snapshot_depth * 10), self.mkt_snapshot_depth)
 
     def _process_data(self, data):
         if isinstance(data, dict):

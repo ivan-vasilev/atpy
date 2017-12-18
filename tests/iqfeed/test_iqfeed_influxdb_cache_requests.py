@@ -47,23 +47,23 @@ class TestInfluxDBCacheRequests(unittest.TestCase):
                 datum = history.request_data(f, synchronize_timestamps=False, adjust_data=True)
                 adjusted.append(datum)
 
-                cache_requests = IQFeedInfluxDBOHLCRequest(client=self._client, interval_len=f.interval_len, interval_type=f.interval_type, streaming_conn=history.streaming_conn)
-                _, test_data = cache_requests.request(symbol=f.ticker, adjust_data=True)
+                cache_requests = IQFeedInfluxDBOHLCRequest(client=self._client, interval_len=f.interval_len, interval_type=f.interval_type, streaming_conn=history.streaming_conn, adjust_data=True)
+                _, test_data = cache_requests.request(symbol=f.ticker)
 
                 assert_frame_equal(datum, test_data)
 
             for datum, f in zip(adjusted, filters):
-                cache_requests = IQFeedInfluxDBOHLCRequest(client=self._client, interval_len=f.interval_len, interval_type=f.interval_type, streaming_conn=history.streaming_conn)
-                _, test_data = cache_requests.request(symbol=f.ticker, adjust_data=True)
-                _, test_data_limit = cache_requests.request(symbol=f.ticker, bgn_prd=f.bgn_prd + relativedelta(days=7), end_prd=f.end_prd - relativedelta(days=7), adjust_data=True)
+                cache_requests = IQFeedInfluxDBOHLCRequest(client=self._client, interval_len=f.interval_len, interval_type=f.interval_type, streaming_conn=history.streaming_conn, adjust_data=True)
+                _, test_data = cache_requests.request(symbol=f.ticker)
+                _, test_data_limit = cache_requests.request(symbol=f.ticker, bgn_prd=f.bgn_prd + relativedelta(days=7), end_prd=f.end_prd - relativedelta(days=7))
 
                 self.assertGreater(len(test_data_limit), 0)
                 self.assertLess(len(test_data_limit), len(test_data))
 
             # test multisymbol request
             requested_data = history.request_data(BarsInPeriodFilter(ticker=["AAPL", "IBM"], bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, interval_len=3600, ascend=True, interval_type='s'), synchronize_timestamps=False, adjust_data=True)
-            cache_requests = IQFeedInfluxDBOHLCRequest(client=self._client, interval_len=3600, streaming_conn=history.streaming_conn)
-            _, test_data = cache_requests.request(symbol=['IBM', 'AAPL', 'TSG'], bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, adjust_data=True)
+            cache_requests = IQFeedInfluxDBOHLCRequest(client=self._client, interval_len=3600, streaming_conn=history.streaming_conn, adjust_data=True)
+            _, test_data = cache_requests.request(symbol=['IBM', 'AAPL', 'TSG'], bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd)
             assert_frame_equal(requested_data, test_data)
 
             # test any symbol request
@@ -77,7 +77,7 @@ class TestInfluxDBCacheRequests(unittest.TestCase):
                     assert_frame_equal(requested_data, event['data'][0])
                     e.set()
 
-            cache_requests.on_event({'type': 'request_ohlc', 'data': {'bgn_prd': datetime.datetime(2017, 4, 1), 'end_prd': end_prd, 'adjust_data': True}})
+            cache_requests.on_event({'type': 'request_ohlc', 'data': {'bgn_prd': datetime.datetime(2017, 4, 1), 'end_prd': end_prd}})
 
             e.wait()
 

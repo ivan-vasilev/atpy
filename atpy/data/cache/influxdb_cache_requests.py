@@ -8,7 +8,7 @@ import pyevents.events as events
 
 
 class InfluxDBOHLCRequest(object, metaclass=events.GlobalRegister):
-    def __init__(self, client: DataFrameClient, interval_len: int, interval_type: str = 's', default_timezone: str = 'US/Eastern'):
+    def __init__(self, client: DataFrameClient, interval_len: int, interval_type: str='s', default_timezone: str='US/Eastern'):
         """
         :param client: influxdb client
         :param interval_len: interval length
@@ -29,7 +29,7 @@ class InfluxDBOHLCRequest(object, metaclass=events.GlobalRegister):
     def request_result(self, data):
         return {'type': 'cache_result', 'data': data}
 
-    def request(self, symbol: typing.Union[list, str] = None, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None, ascending: bool = True):
+    def _request_raw_data(self, symbol: typing.Union[list, str] = None, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None, ascending: bool = True):
         """
         :param symbol: symbol or symbol list
         :param bgn_prd: start datetime (excluding)
@@ -66,10 +66,14 @@ class InfluxDBOHLCRequest(object, metaclass=events.GlobalRegister):
 
             result = result[['open', 'high', 'low', 'close', 'total_volume', 'period_volume', 'number_of_trades', 'timestamp', 'symbol']]
 
-        return result, self.postprocess_data(result)
+        return result
 
-    def postprocess_data(self, data):
+    def _postprocess_data(self, data):
         return data
+
+    def request(self, symbol: typing.Union[list, str]=None, bgn_prd: datetime.datetime=None, end_prd: datetime.datetime=None, ascending: bool=True, synchronize_timestamps: bool=False):
+        data = self._request_raw_data(symbol=symbol, bgn_prd=bgn_prd, end_prd=end_prd, ascending=ascending)
+        return data, self._postprocess_data(data)
 
 
 class InfluxDBValueRequest(object, metaclass=events.GlobalRegister):
@@ -100,7 +104,7 @@ class InfluxDBValueRequest(object, metaclass=events.GlobalRegister):
     def request_result(self, data):
         return {'type': 'cache_result', 'data': data}
 
-    def request(self, symbol: typing.Union[list, str] = None, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None, ascending: bool = True):
+    def _request_raw_data(self, symbol: typing.Union[list, str] = None, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None, ascending: bool = True):
         """
         :param symbol: symbol or symbol list
         :param bgn_prd: start datetime (excluding)
@@ -133,9 +137,9 @@ class InfluxDBValueRequest(object, metaclass=events.GlobalRegister):
                 result = result.swaplevel(0, 1, axis=0)
                 result.sort_index(inplace=True, ascending=ascending)
 
-        return result, self.postprocess_data(result)
+        return result
 
-    def postprocess_data(self, data):
+    def _postprocess_data(self, data):
         if self.means is not None or self.stddev is not None:
             data = data.copy(deep=True)
 
@@ -153,6 +157,10 @@ class InfluxDBValueRequest(object, metaclass=events.GlobalRegister):
                 data['delta'] = data['delta'] / self.stddev[data['symbol'][0]]
 
         return data
+
+    def request(self, symbol: typing.Union[list, str] = None, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None, ascending: bool = True):
+        data = self._request_raw_data(symbol=symbol, bgn_prd=bgn_prd, end_prd=end_prd, ascending=ascending)
+        return data, self._postprocess_data(data)
 
     def enable_mean(self, symbol: typing.Union[list, str] = None, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None):
         """
