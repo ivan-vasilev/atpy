@@ -140,6 +140,36 @@ class TestInfluxDBCacheRequests(unittest.TestCase):
 
             e.wait()
 
+    def test_synchronize_timestamps(self):
+        with IQFeedHistoryProvider(exclude_nan_ratio=None, num_connections=2) as history, \
+                IQFeedInfluxDBCache(use_stream_events=True, client=self._client, history=history, time_delta_back=relativedelta(days=3)) as cache:
+            end_prd = datetime.datetime(2017, 5, 1)
+
+            # test single symbol request
+            filters = (BarsInPeriodFilter(ticker="IBM", bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, interval_len=3600, ascend=True, interval_type='s'),
+                       BarsInPeriodFilter(ticker="AAPL", bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, interval_len=3600, ascend=True, interval_type='s'),
+                       BarsInPeriodFilter(ticker="AAPL", bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, interval_len=600, ascend=True, interval_type='s'))
+
+            for f in filters:
+                data = history.request_data(f, synchronize_timestamps=False, adjust_data=False)
+                data.drop('timestamp', axis=1, inplace=True)
+                data['interval'] = str(f.interval_len) + '_' + f.interval_type
+                cache.client.write_points(data, 'bars', protocol='line', tag_columns=['symbol', 'interval'])
+
+            # test multisymbol request
+            requested_data = history.request_data(BarsInPeriodFilter(ticker=["AAPL", "IBM"], bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, interval_len=3600, ascend=True, interval_type='s'), synchronize_timestamps=False, adjust_data=False)
+            self.assertNotEqual(requested_data.loc['AAPL'].shape, requested_data.loc['IBM'].shape)
+
+            requested_data = history.request_data(BarsInPeriodFilter(ticker=["AAPL", "IBM"], bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, interval_len=3600, ascend=True, interval_type='s'), synchronize_timestamps=True, adjust_data=False)
+            self.assertEqual(requested_data.loc['AAPL'].shape, requested_data.loc['IBM'].shape)
+
+            delta = (requested_data['close'] - requested_data['open']) / requested_data['open']
+
+            cache_requests = InfluxDBDeltaAdjustedRequest(client=self._client, interval_len=3600, interval_type='s')
+
+            _, test_delta = cache_requests.request(symbol=['IBM', 'AAPL', 'TSG'], bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, synchronize_timestamps=True)
+            self.assertEqual(test_delta.loc['AAPL'].shape, test_delta.loc['IBM'].shape)
+
 
 if __name__ == '__main__':
     unittest.main()

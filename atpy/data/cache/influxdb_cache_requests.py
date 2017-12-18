@@ -5,6 +5,7 @@ import numpy as np
 from influxdb import DataFrameClient
 
 import pyevents.events as events
+import atpy.data.iqfeed.bar_util as bars
 
 
 class InfluxDBOHLCRequest(object, metaclass=events.GlobalRegister):
@@ -73,6 +74,10 @@ class InfluxDBOHLCRequest(object, metaclass=events.GlobalRegister):
 
     def request(self, symbol: typing.Union[list, str]=None, bgn_prd: datetime.datetime=None, end_prd: datetime.datetime=None, ascending: bool=True, synchronize_timestamps: bool=False):
         data = self._request_raw_data(symbol=symbol, bgn_prd=bgn_prd, end_prd=end_prd, ascending=ascending)
+
+        if synchronize_timestamps:
+            data = bars.synchronize_timestamps(data)
+
         return data, self._postprocess_data(data)
 
 
@@ -158,8 +163,12 @@ class InfluxDBValueRequest(object, metaclass=events.GlobalRegister):
 
         return data
 
-    def request(self, symbol: typing.Union[list, str] = None, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None, ascending: bool = True):
+    def request(self, symbol: typing.Union[list, str] = None, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None, ascending: bool = True, synchronize_timestamps: bool=False):
         data = self._request_raw_data(symbol=symbol, bgn_prd=bgn_prd, end_prd=end_prd, ascending=ascending)
+
+        if synchronize_timestamps:
+            data = bars.synchronize_timestamps(data)
+
         return data, self._postprocess_data(data)
 
     def enable_mean(self, symbol: typing.Union[list, str] = None, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None):
