@@ -3,8 +3,6 @@ import pickle
 import threading
 from typing import List
 
-import lmdb
-
 import atpy.data.iqfeed.util as iqfeedutil
 import pyevents.events as events
 import pyiqfeed as iq
@@ -37,7 +35,7 @@ class IQFeedNewsListener(object, metaclass=events.GlobalRegister):
     IQFeed news listener (not streaming). See the unit test on how to use
     """
 
-    def __init__(self, minibatch=None, attach_text=False, random_order=False, key_suffix='', filter_provider=DefaultNewsFilterProvider(), column_mode=True, lmdb_path=None):
+    def __init__(self, minibatch=None, attach_text=False, random_order=False, key_suffix='', filter_provider=DefaultNewsFilterProvider(), column_mode=True):
         """
         :param minibatch: minibatch size
         :param attach_text: attach news text (separate request for each news item)
@@ -45,7 +43,6 @@ class IQFeedNewsListener(object, metaclass=events.GlobalRegister):
         :param key_suffix: suffix in the output dictionary
         :param filter_provider: iterator for filters
         :param column_mode: column/row mode
-        :param lmdb_path: path to lmdb folder. If specified, requests will be cached
         """
         self.minibatch = minibatch
         self.attach_text = attach_text
@@ -54,8 +51,6 @@ class IQFeedNewsListener(object, metaclass=events.GlobalRegister):
         self.key_suffix = key_suffix
         self.filter_provider = filter_provider
         self.column_mode = column_mode
-
-        self.db = lmdb.open(lmdb_path) if lmdb_path is not None else None
 
         self.current_minibatch = None
 
@@ -94,21 +89,8 @@ class IQFeedNewsListener(object, metaclass=events.GlobalRegister):
             ids = list()
             titles = list()
 
-            if self.db is not None:
-                with self.db.begin() as txn:
-                    headlines = txn.get(bytearray(f.__str__(), encoding='ascii'))
-
-                if headlines is None:
-                    _headlines = self.conn.request_news_headlines(sources=f.sources, symbols=f.symbols, date=f.date, limit=f.limit, timeout=f.timeout)
-                    headlines = [h._asdict() for h in _headlines]
-
-                    with self.db.begin(write=True) as txn:
-                        txn.put(bytearray(f.__str__(), encoding='ascii'), pickle.dumps(headlines))
-                else:
-                    headlines = pickle.loads(headlines)
-            else:
-                _headlines = self.conn.request_news_headlines(sources=f.sources, symbols=f.symbols, date=f.date, limit=f.limit, timeout=f.timeout)
-                headlines = [h._asdict() for h in _headlines]
+            _headlines = self.conn.request_news_headlines(sources=f.sources, symbols=f.symbols, date=f.date, limit=f.limit, timeout=f.timeout)
+            headlines = [h._asdict() for h in _headlines]
 
             processed_data = None
 
@@ -118,17 +100,7 @@ class IQFeedNewsListener(object, metaclass=events.GlobalRegister):
                     titles.append(h['headline'])
 
                     if self.attach_text:
-                        if self.db is not None:
-                            with self.db.begin() as txn:
-                                h['text'] = txn.get(bytearray('news_story_' + h['story_id'], encoding='ascii'))
-
-                            if h['text'] is None:
-                                h['text'] = self.conn.request_news_story(h['story_id'])._asdict()
-
-                                with self.db.begin(write=True) as txn:
-                                    txn.put(bytearray('news_story_' + h['story_id'], encoding='ascii'), pickle.dumps(h['text']))
-                        else:
-                            h['text'] = self.conn.request_news_story(h['story_id'])
+                        h['text'] = self.conn.request_news_story(h['story_id'])
 
                     if self.column_mode:
                         if processed_data is None:

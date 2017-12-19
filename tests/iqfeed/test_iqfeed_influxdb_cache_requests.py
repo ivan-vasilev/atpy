@@ -163,8 +163,6 @@ class TestInfluxDBCacheRequests(unittest.TestCase):
             requested_data = history.request_data(BarsInPeriodFilter(ticker=["AAPL", "IBM"], bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, interval_len=3600, ascend=True, interval_type='s'), synchronize_timestamps=True, adjust_data=False)
             self.assertEqual(requested_data.loc['AAPL'].shape, requested_data.loc['IBM'].shape)
 
-            delta = (requested_data['close'] - requested_data['open']) / requested_data['open']
-
             cache_requests = InfluxDBDeltaAdjustedRequest(client=self._client, interval_len=3600, interval_type='s')
 
             _, test_delta = cache_requests.request(symbol=['IBM', 'AAPL', 'TSG'], bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, synchronize_timestamps=True)
