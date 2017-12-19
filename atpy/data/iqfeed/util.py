@@ -8,6 +8,7 @@ import pandas as pd
 import pyiqfeed as iq
 import pytz
 from passwords import dtn_product_id, dtn_login, dtn_password
+import os
 
 
 def launch_service():
@@ -17,7 +18,8 @@ def launch_service():
                          version="Debugging",
                          login=dtn_login,
                          password=dtn_password)
-    svc.launch()
+
+    svc.launch(headless="DISPLAY" not in os.environ)
 
 
 def create_batch(data, key_suffix=''):
