@@ -8,6 +8,7 @@ import pandas as pd
 import pyiqfeed as iq
 import pytz
 import os
+import logging
 
 
 def dtn_credentials():
@@ -23,7 +24,10 @@ def launch_service():
                          login=dtn_login,
                          password=dtn_password)
 
-    svc.launch(headless="DISPLAY" not in os.environ)
+    headless = "DISPLAY" not in os.environ
+    logging.getLogger(__name__).info("Launching IQFeed service in " + ("headless mode" if headless else "non headless mode"))
+
+    svc.launch(headless=headless)
 
 
 def create_batch(data, key_suffix=''):
