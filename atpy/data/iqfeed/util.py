@@ -8,23 +8,10 @@ import pandas as pd
 import pyiqfeed as iq
 import pytz
 import os
-import sys
 
 
 def dtn_credentials():
-    pass
-    # parser = argparse.ArgumentParser(description='example code to play with InfluxDB')
-    # parser.add_argument('-dtn_product_id', type=str, default=None, help="IQFeed product id")
-    # parser.add_argument('-dtn_login', type=str, default=None, help="IQFeed login")
-    # parser.add_argument('-dtn_password', type=str, default=None, help="IQFeed password")
-    # parser.add_argument('-version', type=str, default='Debugging', help="My product version")
-    #
-    # results = parser.parse_args()
-    # if None in (results.dtn_product_id, results.dtn_login, results.dtn_password):
-    from passwords import dtn_product_id, dtn_login, dtn_password
-    return dtn_product_id, dtn_login, dtn_password, 'Debugging'
-    # else:
-    #     return results.dtn_product_id, results.dtn_login, results.dtn_password, results.version
+    return os.environ['DTN_PRODUCT_ID'], os.environ['DTN_LOGIN'], os.environ['DTN_PASSWORD'], 'Debugging'
 
 
 def launch_service():
