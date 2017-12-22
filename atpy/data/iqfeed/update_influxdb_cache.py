@@ -24,9 +24,6 @@ if __name__ == "__main__":
     parser.add_argument('-drop', action='store_true', help="Drop the database")
     parser.add_argument('-interval_len', type=int, default=None, required=True, help="Interval length")
     parser.add_argument('-interval_type', type=str, default='s', help="Interval type (seconds, days, etc)")
-    parser.add_argument('-dtn_product', type=str, default=None, help="DTN Product ID")
-    parser.add_argument('-dtn_login', type=str, default=None, help="DTN Login")
-    parser.add_argument('-dtn_password', type=str, default=None, help="DTN Password")
     parser.add_argument('-iqfeed_conn', type=int, default=10, help="Number of historical connections to IQFeed")
     parser.add_argument('-delta_back', type=int, default=10, help="Default number of years to look back")
 
