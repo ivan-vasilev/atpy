@@ -296,7 +296,7 @@ class IQFeedHistoryProvider(object):
                     if self._global_counter == len(filters):
                         q.put(None)
 
-                    if self._global_counter % 200 == 0 or self._global_counter == len(filters):
+                    if self._global_counter % 20 == 0 or self._global_counter == len(filters):
                         logging.getLogger(__name__).info("Loaded " + str(self._global_counter) + " symbols")
                         if len(no_data) > 0:
                             no_data_list = list(no_data)

@@ -2,6 +2,7 @@ import unittest
 
 from atpy.data.iqfeed.iqfeed_bar_data_provider import *
 from atpy.data.iqfeed.iqfeed_influxdb_cache import *
+from atpy.data.cache.influxdb_cache import ClientFactory
 
 
 class TestInfluxDBCache(unittest.TestCase):
@@ -12,13 +13,16 @@ class TestInfluxDBCache(unittest.TestCase):
     def setUp(self):
         events.reset()
         events.use_global_event_bus()
-        self._client = DataFrameClient('localhost', 8086, 'root', 'root', retries=100)
+        self._client_factory = ClientFactory(host='localhost', port=8086, username='root', password='root', database='test_cache')
+
+        self._client = self._client_factory.new_df_client()
 
         self._client.create_database('test_cache')
         self._client.switch_database('test_cache')
 
     def tearDown(self):
         self._client.drop_database('test_cache')
+        self._client.close()
 
     def test_streaming_cache(self):
         client = self._client
@@ -43,7 +47,7 @@ class TestInfluxDBCache(unittest.TestCase):
 
                         e.set()
 
-        with IQFeedBarDataListener(mkt_snapshot_depth=3, interval_len=3600), InfluxDBCacheTest(use_stream_events=True, client=client, time_delta_back=relativedelta(days=3)):
+        with IQFeedBarDataListener(mkt_snapshot_depth=3, interval_len=3600), InfluxDBCacheTest(client_factory=self._client_factory, use_stream_events=True, time_delta_back=relativedelta(days=3)):
             watch_bars = events.after(lambda: {'type': 'watch_bars', 'data': {'symbol': ['GOOG', 'IBM'], 'update': 1}})
             watch_bars()
 
@@ -55,7 +59,7 @@ class TestInfluxDBCache(unittest.TestCase):
                    BarsInPeriodFilter(ticker="AAPL", bgn_prd=datetime.datetime(2017, 3, 1), end_prd=end_prd, interval_len=3600, ascend=True, interval_type='s'),
                    BarsInPeriodFilter(ticker="AAPL", bgn_prd=datetime.datetime(2017, 3, 1), end_prd=end_prd, interval_len=600, ascend=True, interval_type='s'))
 
-        with IQFeedHistoryProvider(exclude_nan_ratio=None, num_connections=2) as history, IQFeedInfluxDBCache(use_stream_events=True, client=self._client, history=history, time_delta_back=relativedelta(days=30)) as cache:
+        with IQFeedHistoryProvider(exclude_nan_ratio=None, num_connections=2) as history, IQFeedInfluxDBCache(client_factory=self._client_factory, use_stream_events=True, history=history, time_delta_back=relativedelta(days=30)) as cache:
             data = [history.request_data(f, synchronize_timestamps=False, adjust_data=False) for f in filters]
 
             for datum, f in zip(data, filters):
@@ -78,7 +82,7 @@ class TestInfluxDBCache(unittest.TestCase):
                    BarsInPeriodFilter(ticker="AAPL", bgn_prd=datetime.datetime(2017, 3, 1), end_prd=end_prd, interval_len=3600, ascend=True, interval_type='s'),
                    BarsInPeriodFilter(ticker="AAPL", bgn_prd=datetime.datetime(2017, 3, 1), end_prd=end_prd, interval_len=600, ascend=True, interval_type='s'))
 
-        with IQFeedHistoryProvider(exclude_nan_ratio=None, num_connections=2) as history, IQFeedInfluxDBCache(use_stream_events=True, client=self._client, history=history, time_delta_back=relativedelta(days=3)) as cache:
+        with IQFeedHistoryProvider(exclude_nan_ratio=None, num_connections=2) as history, IQFeedInfluxDBCache(client_factory=self._client_factory, use_stream_events=True, history=history, time_delta_back=relativedelta(days=3)) as cache:
             data = [history.request_data(f, synchronize_timestamps=False, adjust_data=False) for f in filters]
 
             for datum, f in zip(data, filters):

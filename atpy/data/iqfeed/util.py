@@ -7,15 +7,32 @@ import pandas as pd
 
 import pyiqfeed as iq
 import pytz
-from passwords import dtn_product_id, dtn_login, dtn_password
 import os
+import sys
+
+
+def dtn_credentials():
+    pass
+    # parser = argparse.ArgumentParser(description='example code to play with InfluxDB')
+    # parser.add_argument('-dtn_product_id', type=str, default=None, help="IQFeed product id")
+    # parser.add_argument('-dtn_login', type=str, default=None, help="IQFeed login")
+    # parser.add_argument('-dtn_password', type=str, default=None, help="IQFeed password")
+    # parser.add_argument('-version', type=str, default='Debugging', help="My product version")
+    #
+    # results = parser.parse_args()
+    # if None in (results.dtn_product_id, results.dtn_login, results.dtn_password):
+    from passwords import dtn_product_id, dtn_login, dtn_password
+    return dtn_product_id, dtn_login, dtn_password, 'Debugging'
+    # else:
+    #     return results.dtn_product_id, results.dtn_login, results.dtn_password, results.version
 
 
 def launch_service():
     """Check if IQFeed.exe is running and start if not"""
+    dtn_product_id, dtn_login, dtn_password, version = dtn_credentials()
 
     svc = iq.FeedService(product=dtn_product_id,
-                         version="Debugging",
+                         version=version,
                          login=dtn_login,
                          password=dtn_password)
 

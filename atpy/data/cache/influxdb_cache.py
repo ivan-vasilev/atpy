@@ -1,16 +1,12 @@
 import datetime
 import logging
 import multiprocessing
-import os
 import queue
-import tempfile
 import threading
 import typing
-import zipfile
 from abc import abstractmethod
 
 import numpy as np
-import requests
 from dateutil import tz
 from dateutil.parser import parse
 from dateutil.relativedelta import relativedelta
@@ -26,18 +22,36 @@ class BarsFilter(typing.NamedTuple):
     bgn_prd: datetime.datetime
 
 
+class ClientFactory(object):
+    def __init__(self, **kwargs):
+        self.kwargs = kwargs
+
+    def new_client(self):
+        return InfluxDBClient(**self.kwargs)
+
+    def new_df_client(self):
+        return DataFrameClient(**self.kwargs)
+
+
 class InfluxDBCache(object, metaclass=events.GlobalRegister):
     """
     InfluxDB bar data cache using abstract data provider
     """
 
-    def __init__(self, client: DataFrameClient, use_stream_events=True, time_delta_back: relativedelta = relativedelta(years=5), default_timezone: str = 'US/Eastern'):
-        self.client = client
+    def __init__(self, client_factory: ClientFactory, use_stream_events=True, time_delta_back: relativedelta = relativedelta(years=5), default_timezone: str = 'US/Eastern'):
+        self.client_factory = client_factory
         self._use_stream_events = use_stream_events
         self._time_delta_back = time_delta_back
         self._default_timezone = default_timezone
         self._synchronized_symbols = set()
         self._lock = threading.RLock()
+
+    def __enter__(self):
+        self.client = self.client_factory.new_df_client()
+        return self
+
+    def __exit__(self, exception_type, exception_value, traceback):
+        self.client.close()
 
     @events.listener
     def on_event(self, event):
@@ -47,7 +61,7 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
                 interval = str(event['interval_len']) + '_' + event['interval_type']
 
                 if data['symbol'] not in self._synchronized_symbols:
-                    self.verify_timeseries_integrity(data['symbol'], event['interval_len'], event['interval_type'])
+                    self.verify_timeseries_integrity(self.client, data['symbol'], event['interval_len'], event['interval_type'])
                     self._synchronized_symbols.add(data['symbol'])
 
                 json_body = [
@@ -72,20 +86,20 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
         """
         parse_time = lambda t: parse(t) if self._default_timezone is None else parse(t).replace(tzinfo=tz.gettz(self._default_timezone))
 
-        points = InfluxDBClient.query(self.client, "select FIRST(close), time from bars group by symbol, interval").get_points()
-        firsts = {entry['first']['Tags']['symbol'] + '_' + entry['first']['Tags']['interval']: parse_time(entry['time']) for entry in points}
+        points = InfluxDBClient.query(self.client, "select FIRST(close), symbol, interval, time from bars group by symbol, interval").get_points()
+        firsts = {entry['symbol'] + '_' + entry['interval']: parse_time(entry['time']) for entry in points}
 
-        points = InfluxDBClient.query(self.client, "select LAST(close), time from bars group by symbol, interval").get_points()
-        lasts = {entry['last']['Tags']['symbol'] + '_' + entry['last']['Tags']['interval']: parse_time(entry['time']) for entry in points}
+        points = InfluxDBClient.query(self.client, "select LAST(close), symbol, interval, time from bars group by symbol, interval").get_points()
+        lasts = {entry['symbol'] + '_' + entry['interval']: parse_time(entry['time']) for entry in points}
 
         result = {k: (firsts[k], lasts[k]) for k in firsts.keys() & lasts.keys()}
 
         return result
 
-    def verify_timeseries_integrity(self, symbol: str, interval_len: int, interval_type: str = 's'):
+    def verify_timeseries_integrity(self, client: DataFrameClient, symbol: str, interval_len: int, interval_type: str = 's'):
         interval = str(interval_len) + '_' + interval_type
 
-        cached = list(InfluxDBClient.query(self.client, 'select LAST(close) from bars where symbol="{}" and interval="{}"'.format(symbol, interval)).get_points())
+        cached = list(InfluxDBClient.query(client, 'select LAST(close) from bars where symbol="{}" and interval="{}"'.format(symbol, interval)).get_points())
 
         if len(cached) > 0:
             d = parse(cached[0]['time'])
@@ -101,7 +115,7 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
             to_cache.drop('timestamp', axis=1, inplace=True)
             to_cache['interval'] = interval
 
-            self.client.write_points(to_cache, 'bars', protocol='line', tag_columns=['symbol', 'interval'])
+            client.write_points(to_cache, 'bars', protocol='line', tag_columns=['symbol', 'interval'])
 
     @abstractmethod
     def _request_noncache_data(self, filters: typing.List[BarsFilter], q: queue.Queue):
@@ -131,82 +145,42 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
         for symbol, interval in new_symbols.items():
             filters += [BarsFilter(ticker=symbol, bgn_prd=d, interval_len=int(i[0]), interval_type=i[1]) for i in interval]
 
-        q = queue.Queue()
-        self._request_noncache_data(filters, q)
+        logging.getLogger(__name__).info("Updating " + str(len(filters)) + " total symbols and intervals; New symbols and intervals: " + str(len(new_symbols)))
 
-        lock = threading.Lock()
-
-        stop_request = threading.Event()
-
-        global_counter = {'counter': 0}
+        q = queue.Queue(maxsize=100)
 
         def worker():
-            while not stop_request.is_set():
-                tupl = q.get()
+            client = self.client_factory.new_df_client()
 
-                if tupl is None:
-                    stop_request.set()
-                    return
-                else:
+            try:
+                for i, tupl in enumerate(iter(q.get, None)):
+                    if tupl is None:
+                        return
+
                     ft, to_cache = tupl
 
-                if to_cache is not None and not to_cache.empty:
-                    to_cache.drop('timestamp', axis=1, inplace=True)
-                    to_cache['interval'] = str(ft.interval_len) + '_' + ft.interval_type
+                    if to_cache is not None and not to_cache.empty:
+                        to_cache.drop('timestamp', axis=1, inplace=True)
+                        to_cache['interval'] = str(ft.interval_len) + '_' + ft.interval_type
 
-                try:
-                    self.client.write_points(to_cache, 'bars', protocol='line', tag_columns=['symbol', 'interval'])
-                except Exception as err:
-                    logging.getLogger(__name__).exception(err)
+                    try:
+                        client.write_points(to_cache, 'bars', protocol='line', tag_columns=['symbol', 'interval'])
+                    except Exception as err:
+                        logging.getLogger(__name__).exception(err)
 
-                with lock:
-                    global_counter['counter'] += 1
-                    gc = global_counter['counter']
+                    if i > 0 and (i % 10 == 0 or i == len(filters)):
+                        logging.getLogger(__name__).info("Cached " + str(i) + " queries")
 
-                if gc % 1 == 0 or gc == len(filters):
-                    logging.getLogger(__name__).info("Cached " + str(gc) + " queries")
+                    if i > 0 and i % 100 == 0:
+                        client.close()
+                        client = self.client_factory.new_df_client()
 
-        threads = [threading.Thread(target=worker) for _ in range(multiprocessing.cpu_count())]
+            finally:
+                client.close()
 
-        for t in threads:
-            t.start()
+        t = threading.Thread(target=worker)
+        t.start()
 
-        for t in threads:
-            t.join()
+        self._request_noncache_data(filters, q)
 
-    def get_missing_symbols(self, intervals):
-        """
-        :param intervals: [(interval_len, interval_type), ...]
-        """
-        with tempfile.TemporaryFile() as tf, tempfile.TemporaryDirectory() as td:
-            r = requests.get('http://www.dtniq.com/product/mktsymbols_v2.zip', allow_redirects=True)
-            tf.write(r.content)
-
-            zip_ref = zipfile.ZipFile(tf)
-            zip_ref.extractall(td)
-
-            with open(os.path.join(td, 'mktsymbols_v2.txt')) as f:
-                content = f.readlines()
-
-        content = [c for c in content if '\tEQUITY' in c and ('\tNYSE' in c or '\tNASDAQ' in c)]
-
-        all_symbols = {s.split('\t')[0] for s in content}
-
-        result = dict()
-        for i in intervals:
-            existing_symbols = {e['symbol'] for e in InfluxDBClient.query(self.client, "select FIRST(close), symbol from bars where interval = '{}' group by symbol".format(str(i[0]) + '_' + i[1])).get_points()}
-
-            for s in all_symbols - existing_symbols:
-                if s not in result:
-                    result[s] = list()
-
-                result[s].append(i)
-
-        return result
-
-    def populate_db(self, intervals):
-        """
-        :param intervals: [(interval_len, interval_type), ...]
-        """
-        missing = self.get_missing_symbols(intervals)
-        self.update_to_latest(missing)
+        t.join()
