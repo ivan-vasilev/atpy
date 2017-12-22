@@ -58,15 +58,15 @@ class IQFeedInfluxDBCache(InfluxDBCache):
         :param symbols_file: Symbols zip file location to prevent download every time
         """
 
-        with tempfile.TemporaryFile() if symbols_file is None else zipfile.ZipFile(symbols_file) as zip_ref, tempfile.TemporaryDirectory() as td:
+        with tempfile.TemporaryDirectory() as td:
             if symbols_file is not None:
                 logging.getLogger(__name__).info("Symbols: " + symbols_file)
+                zipfile.ZipFile(symbols_file).extractall(td)
             else:
-                logging.getLogger(__name__).info("Downloading symbol list... ")
-                zip_ref.write(requests.get('http://www.dtniq.com/product/mktsymbols_v2.zip', allow_redirects=True).content)
-                zip_ref = zipfile.ZipFile(zip_ref)
-
-            zip_ref.extractall(td)
+                with tempfile.TemporaryFile() as tf:
+                    logging.getLogger(__name__).info("Downloading symbol list... ")
+                    tf.write(requests.get('http://www.dtniq.com/product/mktsymbols_v2.zip', allow_redirects=True).content)
+                    zipfile.ZipFile(tf).extractall(td)
 
             with open(os.path.join(td, 'mktsymbols_v2.txt')) as f:
                 content = f.readlines()
