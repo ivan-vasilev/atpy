@@ -24,7 +24,7 @@ def launch_service():
                          login=dtn_login,
                          password=dtn_password)
 
-    headless = "DISPLAY" not in os.environ
+    headless = "DTN_HEADLESS" not in os.environ or bool(os.environ["DTN_HEADLESS"])
     logging.getLogger(__name__).info("Launching IQFeed service in " + ("headless mode" if headless else "non headless mode"))
 
     svc.launch(headless=headless)
