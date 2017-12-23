@@ -1,6 +1,5 @@
 import datetime
 import logging
-import multiprocessing
 import queue
 import threading
 import typing
@@ -164,17 +163,12 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
                         to_cache['interval'] = str(ft.interval_len) + '_' + ft.interval_type
 
                     try:
-                        client.write_points(to_cache, 'bars', protocol='line', tag_columns=['symbol', 'interval'])
+                        client.write_points(to_cache, 'bars', protocol='line', tag_columns=['symbol', 'interval'], batch_size=5000)
                     except Exception as err:
                         logging.getLogger(__name__).exception(err)
 
-                    if i > 0 and (i % 10 == 0 or i == len(filters)):
+                    if i > 0 and (i % 20 == 0 or i == len(filters)):
                         logging.getLogger(__name__).info("Cached " + str(i) + " queries")
-
-                    if i > 0 and i % 100 == 0:
-                        client.close()
-                        client = self.client_factory.new_df_client()
-
             finally:
                 client.close()
 
