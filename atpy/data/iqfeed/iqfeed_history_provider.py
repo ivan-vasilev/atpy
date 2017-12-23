@@ -445,7 +445,7 @@ class IQFeedHistoryProvider(object):
         result.set_index('timestamp' + sf, inplace=True, drop=False)
         result.drop(['date', 'time'], axis=1, inplace=True)
 
-        result.rename_axis({"last": "last" + sf, "last_sz": "last_size" + sf, "tot_vlm": "total_volume" + sf, "bid": "bid" + sf, "ask": "ask" + sf, "tick_id": "tick_id" + sf, "last_type": "basis_for_last" + sf, "mkt_ctr": "trade_market_center" + sf}, axis="columns", copy=False, inplace=True)
+        result.rename({"last": "last" + sf, "last_sz": "last_size" + sf, "tot_vlm": "total_volume" + sf, "bid": "bid" + sf, "ask": "ask" + sf, "tick_id": "tick_id" + sf, "last_type": "basis_for_last" + sf, "mkt_ctr": "trade_market_center" + sf}, axis="columns", copy=False, inplace=True)
         result['symbol'] = data_filter.ticker
 
         result.set_index("tick_id" + sf, inplace=True, drop=False)
@@ -463,7 +463,7 @@ class IQFeedHistoryProvider(object):
         result.set_index('timestamp' + sf, inplace=True, drop=False)
         result.drop(['date', 'time'], axis=1, inplace=True)
 
-        result.rename_axis({"high_p": "high" + sf, "low_p": "low" + sf, "open_p": "open" + sf, "close_p": "close" + sf, "tot_vlm": "total_volume" + sf, "prd_vlm": "period_volume" + sf, "num_trds": "number_of_trades" + sf}, axis="columns", copy=False, inplace=True)
+        result.rename({"high_p": "high" + sf, "low_p": "low" + sf, "open_p": "open" + sf, "close_p": "close" + sf, "tot_vlm": "total_volume" + sf, "prd_vlm": "period_volume" + sf, "num_trds": "number_of_trades" + sf}, axis="columns", copy=False, inplace=True)
         result['symbol'] = data_filter.ticker
 
         if adjust_data:
@@ -474,7 +474,7 @@ class IQFeedHistoryProvider(object):
     def _process_daily(self, data, data_filter):
         result = pd.DataFrame(data)
         sf = self.key_suffix
-        result.rename_axis({"date": "date" + sf, "high_p": "high" + sf, "low_p": "low" + sf, "open_p": "open" + sf, "close_p": "close" + sf, "prd_vlm": "period_volume" + sf, "open_int": "open_interest" + sf}, axis="columns", copy=False, inplace=True)
+        result.rename({"date": "date" + sf, "high_p": "high" + sf, "low_p": "low" + sf, "open_p": "open" + sf, "close_p": "close" + sf, "prd_vlm": "period_volume" + sf, "open_int": "open_interest" + sf}, axis="columns", copy=False, inplace=True)
         result['symbol'] = data_filter.ticker
 
         result.set_index('date' + sf, inplace=True, drop=False)

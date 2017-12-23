@@ -216,7 +216,7 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
             result.set_index('timestamp' + sf, inplace=True, drop=False)
 
             result.drop(['date', 'time'], axis=1, inplace=True)
-            result.rename_axis({"symbol": "symbol" + sf, "high_p": "high" + sf, "low_p": "low" + sf, "open_p": "open" + sf, "close_p": "close" + sf, "tot_vlm": "total_volume" + sf, "prd_vlm": "period_volume" + sf, "num_trds": "number_of_trades" + sf}, axis="columns", copy=False, inplace=True)
+            result.rename({"symbol": "symbol" + sf, "high_p": "high" + sf, "low_p": "low" + sf, "open_p": "open" + sf, "close_p": "close" + sf, "tot_vlm": "total_volume" + sf, "prd_vlm": "period_volume" + sf, "num_trds": "number_of_trades" + sf}, axis="columns", copy=False, inplace=True)
 
         return result
 
