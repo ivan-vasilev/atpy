@@ -163,7 +163,7 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
                         to_cache['interval'] = str(ft.interval_len) + '_' + ft.interval_type
 
                     try:
-                        client.write_points(to_cache, 'bars', protocol='line', tag_columns=['symbol', 'interval'], batch_size=5000)
+                        client.write_points(to_cache, 'bars', protocol='line', tag_columns=['symbol', 'interval'])
                     except Exception as err:
                         logging.getLogger(__name__).exception(err)
 

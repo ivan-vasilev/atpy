@@ -37,6 +37,7 @@ if __name__ == "__main__":
 
     if args.database not in [d['name'] for d in client.get_list_database()]:
         client.create_database(args.database)
+        client.query("ALTER RETENTION POLICY autogen ON cache DURATION 520w REPLICATION 1 SHARD DURATION 520w DEFAULT")
 
     client.switch_database(args.database)
 
