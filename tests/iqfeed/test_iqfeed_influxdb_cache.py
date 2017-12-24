@@ -2,7 +2,8 @@ import unittest
 
 from atpy.data.iqfeed.iqfeed_bar_data_provider import *
 from atpy.data.iqfeed.iqfeed_influxdb_cache import *
-from atpy.data.cache.influxdb_cache import ClientFactory
+from atpy.data.cache.influxdb_cache_requests import InfluxDBOHLCRequest
+from pandas.util.testing import assert_frame_equal
 
 
 class TestInfluxDBCache(unittest.TestCase):
@@ -17,6 +18,7 @@ class TestInfluxDBCache(unittest.TestCase):
 
         self._client = self._client_factory.new_df_client()
 
+        self._client.drop_database('test_cache')
         self._client.create_database('test_cache')
         self._client.switch_database('test_cache')
 
@@ -54,12 +56,19 @@ class TestInfluxDBCache(unittest.TestCase):
             e.wait()
 
     def test_update_to_latest(self):
-        end_prd = datetime.datetime(2017, 3, 2)
-        filters = (BarsInPeriodFilter(ticker="IBM", bgn_prd=datetime.datetime(2017, 3, 1), end_prd=end_prd, interval_len=3600, ascend=True, interval_type='s'),
-                   BarsInPeriodFilter(ticker="AAPL", bgn_prd=datetime.datetime(2017, 3, 1), end_prd=end_prd, interval_len=3600, ascend=True, interval_type='s'),
-                   BarsInPeriodFilter(ticker="AAPL", bgn_prd=datetime.datetime(2017, 3, 1), end_prd=end_prd, interval_len=600, ascend=True, interval_type='s'))
+        with IQFeedHistoryProvider(exclude_nan_ratio=None, num_connections=2) as history, \
+                IQFeedInfluxDBCache(client_factory=self._client_factory, use_stream_events=True, history=history, time_delta_back=relativedelta(days=30)) as cache:
 
-        with IQFeedHistoryProvider(exclude_nan_ratio=None, num_connections=2) as history, IQFeedInfluxDBCache(client_factory=self._client_factory, use_stream_events=True, history=history, time_delta_back=relativedelta(days=30)) as cache:
+            cache_requests = InfluxDBOHLCRequest(client=self._client, interval_len=3600, interval_type='s')
+
+            end_prd = datetime.datetime(2017, 3, 2)
+            filters = (BarsInPeriodFilter(ticker="IBM", bgn_prd=datetime.datetime(2017, 3, 1), end_prd=end_prd, interval_len=3600, ascend=True, interval_type='s'),
+                       BarsInPeriodFilter(ticker="AAPL", bgn_prd=datetime.datetime(2017, 3, 1), end_prd=end_prd, interval_len=3600, ascend=True, interval_type='s'),
+                       BarsInPeriodFilter(ticker="AAPL", bgn_prd=datetime.datetime(2017, 3, 1), end_prd=end_prd, interval_len=600, ascend=True, interval_type='s'))
+
+            filters_no_limit = (BarsInPeriodFilter(ticker="IBM", bgn_prd=datetime.datetime(2017, 3, 1), end_prd=None, interval_len=3600, ascend=True, interval_type='s'),
+                                BarsInPeriodFilter(ticker="AAPL", bgn_prd=datetime.datetime(2017, 3, 1), end_prd=None, interval_len=3600, ascend=True, interval_type='s'))
+
             data = [history.request_data(f, synchronize_timestamps=False, adjust_data=False) for f in filters]
 
             for datum, f in zip(data, filters):
@@ -68,13 +77,18 @@ class TestInfluxDBCache(unittest.TestCase):
                 cache.client.write_points(datum, 'bars', protocol='line', tag_columns=['symbol', 'interval'])
 
             latest_old = cache.ranges
-            cache.update_to_latest({'AAPL': [(3600, 's')], 'MSFT': [(3600, 's'), (600, 's')]})
+            cache.update_to_latest({'AAPL': {(3600, 's')}, 'MSFT': {(3600, 's'), (600, 's')}})
 
-        latest_current = cache.ranges
-        self.assertEqual(len(latest_current), len(latest_old) + 2)
-        self.assertEqual(len([k for k in latest_current.keys() & latest_old.keys()]) + 2, len(latest_current))
-        for k in latest_current.keys() & latest_old.keys():
-            self.assertGreater(latest_current[k][1], latest_old[k][1])
+            latest_current = cache.ranges
+            self.assertEqual(len(latest_current), len(latest_old) + 2)
+            self.assertEqual(len([k for k in latest_current.keys() & latest_old.keys()]) + 2, len(latest_current))
+            for k in latest_current.keys() & latest_old.keys():
+                self.assertGreater(latest_current[k][1], latest_old[k][1])
+
+            data_no_limit = [history.request_data(f, synchronize_timestamps=False, adjust_data=False) for f in filters_no_limit]
+            cache_data_no_limit = [cache_requests.request(symbol=f.ticker, bgn_prd=f.bgn_prd)[0] for f in filters_no_limit]
+            for df1, df2 in zip(data_no_limit, cache_data_no_limit):
+                assert_frame_equal(df1, df2)
 
     def test_get_missing_symbols(self):
         end_prd = datetime.datetime(2017, 3, 2)

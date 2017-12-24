@@ -43,7 +43,7 @@ if __name__ == "__main__":
 
     with IQFeedHistoryProvider(exclude_nan_ratio=None, num_connections=args.iqfeed_conn) as history, \
             IQFeedInfluxDBCache(client_factory=client_factory, use_stream_events=False, history=history, time_delta_back=relativedelta(years=args.delta_back)) as cache:
-        missing = cache.get_missing_symbols([(args.interval_len, args.interval_type)])
+        missing = cache.get_missing_symbols([(args.interval_len, args.interval_type)], symbols_file='/home/hok/Downloads/mktsymbols_v2.zip')
         cache.update_to_latest(missing)
 
     client.close()

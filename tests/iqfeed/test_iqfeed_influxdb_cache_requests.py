@@ -16,17 +16,21 @@ class TestInfluxDBCacheRequests(unittest.TestCase):
     def setUp(self):
         events.reset()
         events.use_global_event_bus()
-        self._client = DataFrameClient('localhost', 8086, 'root', 'root')
+        self._client_factory = ClientFactory(host='localhost', port=8086, username='root', password='root', database='test_cache')
 
+        self._client = self._client_factory.new_df_client()
+
+        self._client.drop_database('test_cache')
         self._client.create_database('test_cache')
         self._client.switch_database('test_cache')
 
     def tearDown(self):
         self._client.drop_database('test_cache')
+        self._client.close()
 
     def test_request_ohlc(self):
         with IQFeedHistoryProvider(exclude_nan_ratio=None, num_connections=2) as history, \
-                IQFeedInfluxDBCache(use_stream_events=True, client=self._client, history=history, time_delta_back=relativedelta(days=3)) as cache:
+                IQFeedInfluxDBCache(client_factory=self._client_factory, use_stream_events=True, history=history, time_delta_back=relativedelta(days=3)) as cache:
 
             end_prd = datetime.datetime(2017, 5, 1)
 
@@ -83,7 +87,7 @@ class TestInfluxDBCacheRequests(unittest.TestCase):
 
     def test_request_deltas(self):
         with IQFeedHistoryProvider(exclude_nan_ratio=None, num_connections=2) as history, \
-                IQFeedInfluxDBCache(use_stream_events=True, client=self._client, history=history, time_delta_back=relativedelta(days=3)) as cache:
+                IQFeedInfluxDBCache(client_factory=self._client_factory, use_stream_events=True, history=history, time_delta_back=relativedelta(days=3)) as cache:
             end_prd = datetime.datetime(2017, 5, 1)
 
             # test single symbol request
@@ -142,7 +146,7 @@ class TestInfluxDBCacheRequests(unittest.TestCase):
 
     def test_synchronize_timestamps(self):
         with IQFeedHistoryProvider(exclude_nan_ratio=None, num_connections=2) as history, \
-                IQFeedInfluxDBCache(use_stream_events=True, client=self._client, history=history, time_delta_back=relativedelta(days=3)) as cache:
+                IQFeedInfluxDBCache(client_factory=self._client_factory, use_stream_events=True, history=history, time_delta_back=relativedelta(days=3)) as cache:
             end_prd = datetime.datetime(2017, 5, 1)
 
             # test single symbol request

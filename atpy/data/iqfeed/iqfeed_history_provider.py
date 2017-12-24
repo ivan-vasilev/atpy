@@ -1,12 +1,14 @@
 import abc
 import datetime
 import logging
+import queue
 import threading
 import typing
 from multiprocessing.pool import ThreadPool
 
 import numpy as np
 import pandas as pd
+import pytz
 
 import pyevents.events as events
 import pyiqfeed
@@ -14,7 +16,6 @@ import pyiqfeed as iq
 from atpy.data.iqfeed.filters import *
 from atpy.data.iqfeed.iqfeed_level_1_provider import Fundamentals
 from atpy.data.iqfeed.util import launch_service, adjust, IQFeedDataProvider
-import queue
 
 
 class TicksFilter(NamedTuple):
@@ -441,7 +442,7 @@ class IQFeedHistoryProvider(object):
         result = pd.DataFrame(data)
         sf = self.key_suffix
 
-        result['timestamp' + sf] = pd.Index(data['date'] + data['time']).tz_localize('US/Eastern')
+        result['timestamp' + sf] = pd.Index(data['date'] + data['time']).tz_localize('US/Eastern').tz_convert(pytz.utc)
         result.set_index('timestamp' + sf, inplace=True, drop=False)
         result.drop(['date', 'time'], axis=1, inplace=True)
 
@@ -459,7 +460,7 @@ class IQFeedHistoryProvider(object):
         result = pd.DataFrame(data)
         sf = self.key_suffix
 
-        result['timestamp' + sf] = pd.Index(data['date'] + data['time']).tz_localize('US/Eastern')
+        result['timestamp' + sf] = pd.Index(data['date'] + data['time']).tz_localize('US/Eastern').tz_convert(pytz.utc)
         result.set_index('timestamp' + sf, inplace=True, drop=False)
         result.drop(['date', 'time'], axis=1, inplace=True)
 

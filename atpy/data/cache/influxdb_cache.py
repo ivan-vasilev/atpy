@@ -6,7 +6,7 @@ import typing
 from abc import abstractmethod
 
 import numpy as np
-from dateutil import tz
+import pytz
 from dateutil.parser import parse
 from dateutil.relativedelta import relativedelta
 from influxdb import InfluxDBClient, DataFrameClient
@@ -37,11 +37,10 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
     InfluxDB bar data cache using abstract data provider
     """
 
-    def __init__(self, client_factory: ClientFactory, use_stream_events=True, time_delta_back: relativedelta = relativedelta(years=5), default_timezone: str = 'US/Eastern'):
+    def __init__(self, client_factory: ClientFactory, use_stream_events=True, time_delta_back: relativedelta = relativedelta(years=5)):
         self.client_factory = client_factory
         self._use_stream_events = use_stream_events
         self._time_delta_back = time_delta_back
-        self._default_timezone = default_timezone
         self._synchronized_symbols = set()
         self._lock = threading.RLock()
 
@@ -83,7 +82,7 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
         """
         :return: list of latest times for each entry grouped by symbol and interval
         """
-        parse_time = lambda t: parse(t) if self._default_timezone is None else parse(t).replace(tzinfo=tz.gettz(self._default_timezone))
+        parse_time = lambda t: parse(t).replace(tzinfo=pytz.utc)
 
         points = InfluxDBClient.query(self.client, "select FIRST(close), symbol, interval, time from bars group by symbol, interval").get_points()
         firsts = {entry['symbol'] + '_' + entry['interval']: parse_time(entry['time']) for entry in points}
@@ -105,8 +104,7 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
         else:
             d = datetime.datetime.now() - self._time_delta_back
 
-        if self._default_timezone is not None:
-            d = d.replace(tzinfo=tz.gettz(self._default_timezone))
+        d = d.tz_localize(pytz.utc)
 
         to_cache = self._request_noncache_datum(symbol, d, interval_len, interval_type)
 
@@ -118,27 +116,36 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
 
     @abstractmethod
     def _request_noncache_data(self, filters: typing.List[BarsFilter], q: queue.Queue):
+        """
+        :return: request data from data provider (has to be UTC localized)
+        """
         pass
 
     @abstractmethod
     def _request_noncache_datum(self, ticker: typing.Union[list, str], bgn_prd: datetime.datetime, interval_len: int, interval_type: str = 's'):
+        """
+        :return: request data from data provider (has to be UTC localized)
+        """
         pass
 
-    def update_to_latest(self, new_symbols: dict = None):
+    def update_to_latest(self, new_symbols: dict=None, skip_if_older_than: datetime.timedelta=None):
         """
         Update existing entries in the database to the most current values
-        :param new_symbols: additional symbols to add {symbol: [(interval_len, interval_type), ...]}
+        :param new_symbols: additional symbols to add {symbol: {(interval_len, interval_type), ...}}
+        :param skip_if_older_than: skip symbol update if the symbol is older than...
         :return:
         """
         filters = list()
 
-        new_symbols = set() if new_symbols is None else new_symbols
+        new_symbols = dict() if new_symbols is None else new_symbols
 
-        for time, symbol, interval_len, interval_type in [(e[1][1], *e[0].split('_')) for e in self.ranges.items()]:
-            if symbol in new_symbols and str(new_symbols[symbol][0]) == interval_len and new_symbols[symbol][1] == interval_type:
-                del new_symbols[symbol]
+        ranges = self.ranges
+        for time, symbol, interval_len, interval_type in [(e[1][1], *e[0].split('_')) for e in ranges.items()]:
+            interval = (int(interval_len), interval_type)
+            if symbol in new_symbols and interval in new_symbols[symbol]:
+                new_symbols[symbol].remove(interval)
 
-            filters.append(BarsFilter(ticker=symbol, bgn_prd=time, interval_len=int(interval_len), interval_type=interval_type))
+            filters.append(BarsFilter(ticker=symbol, bgn_prd=datetime.datetime.combine(time.date(), datetime.datetime.min.time()), interval_len=int(interval_len), interval_type=interval_type))
 
         d = datetime.datetime.now() - self._time_delta_back
         for symbol, interval in new_symbols.items():

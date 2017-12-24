@@ -4,22 +4,20 @@ import typing
 import numpy as np
 from influxdb import DataFrameClient
 
-import pyevents.events as events
 import atpy.data.iqfeed.bar_util as bars
+import pyevents.events as events
 
 
 class InfluxDBOHLCRequest(object, metaclass=events.GlobalRegister):
-    def __init__(self, client: DataFrameClient, interval_len: int, interval_type: str='s', default_timezone: str='US/Eastern'):
+    def __init__(self, client: DataFrameClient, interval_len: int, interval_type: str = 's'):
         """
         :param client: influxdb client
         :param interval_len: interval length
         :param interval_type: interval type
-        :param default_timezone: timezone
         """
         self.interval_len = interval_len
         self.interval_type = interval_type
         self.client = client
-        self._default_timezone = default_timezone
 
     @events.listener
     def on_event(self, event):
@@ -52,9 +50,6 @@ class InfluxDBOHLCRequest(object, metaclass=events.GlobalRegister):
             result.index.name = 'timestamp'
             result = result[['open', 'high', 'low', 'close', 'total_volume', 'period_volume', 'number_of_trades', 'symbol']]
 
-            if self._default_timezone is not None:
-                result.index = result.index.tz_convert(self._default_timezone)
-
             for c in [c for c in result.columns if result[c].dtype == np.int64]:
                 result[c] = result[c].astype(np.uint64, copy=False)
 
@@ -72,7 +67,7 @@ class InfluxDBOHLCRequest(object, metaclass=events.GlobalRegister):
     def _postprocess_data(self, data):
         return data
 
-    def request(self, symbol: typing.Union[list, str]=None, bgn_prd: datetime.datetime=None, end_prd: datetime.datetime=None, ascending: bool=True, synchronize_timestamps: bool=False):
+    def request(self, symbol: typing.Union[list, str] = None, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None, ascending: bool = True, synchronize_timestamps: bool = False):
         data = self._request_raw_data(symbol=symbol, bgn_prd=bgn_prd, end_prd=end_prd, ascending=ascending)
 
         if synchronize_timestamps:
@@ -84,19 +79,17 @@ class InfluxDBOHLCRequest(object, metaclass=events.GlobalRegister):
 class InfluxDBValueRequest(object, metaclass=events.GlobalRegister):
     """abstract class for single value selection"""
 
-    def __init__(self, value: str, client: DataFrameClient, interval_len: int, interval_type: str = 's', default_timezone: str = 'US/Eastern'):
+    def __init__(self, value: str, client: DataFrameClient, interval_len: int, interval_type: str = 's'):
         """
         :param value: value to select. value is a part of query
         :param client: influxdb client
         :param interval_len: interval length
         :param interval_type: interval type
-        :param default_timezone: timezone
         """
         self.value = value
         self.interval_len = interval_len
         self.interval_type = interval_type
         self.client = client
-        self._default_timezone = default_timezone
         self.means = None
         self.stddev = None
 
@@ -129,9 +122,6 @@ class InfluxDBValueRequest(object, metaclass=events.GlobalRegister):
             result = result['bars']
             result.index.name = 'timestamp'
 
-            if self._default_timezone is not None:
-                result.index = result.index.tz_convert(self._default_timezone)
-
             for c in [c for c in result.columns if result[c].dtype == np.int64]:
                 result[c] = result[c].astype(np.uint64, copy=False)
 
@@ -163,7 +153,7 @@ class InfluxDBValueRequest(object, metaclass=events.GlobalRegister):
 
         return data
 
-    def request(self, symbol: typing.Union[list, str] = None, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None, ascending: bool = True, synchronize_timestamps: bool=False):
+    def request(self, symbol: typing.Union[list, str] = None, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None, ascending: bool = True, synchronize_timestamps: bool = False):
         data = self._request_raw_data(symbol=symbol, bgn_prd=bgn_prd, end_prd=end_prd, ascending=ascending)
 
         if synchronize_timestamps:
@@ -201,13 +191,13 @@ class InfluxDBValueRequest(object, metaclass=events.GlobalRegister):
 
 
 class InfluxDBDeltaAdjustedRequest(InfluxDBValueRequest, metaclass=events.GlobalRegister):
-    def __init__(self, client: DataFrameClient, interval_len: int, interval_type: str = 's', default_timezone: str = 'US/Eastern'):
-        super().__init__(value='(close - open) / open', client=client, interval_len=interval_len, interval_type=interval_type, default_timezone=default_timezone)
+    def __init__(self, client: DataFrameClient, interval_len: int, interval_type: str = 's'):
+        super().__init__(value='(close - open) / open', client=client, interval_len=interval_len, interval_type=interval_type)
 
 
 class InfluxDBDeltaRequest(InfluxDBValueRequest, metaclass=events.GlobalRegister):
-    def __init__(self, client: DataFrameClient, interval_len: int, interval_type: str = 's', default_timezone: str = 'US/Eastern'):
-        super().__init__(value='close - open', client=client, interval_len=interval_len, interval_type=interval_type, default_timezone=default_timezone)
+    def __init__(self, client: DataFrameClient, interval_len: int, interval_type: str = 's'):
+        super().__init__(value='close - open', client=client, interval_len=interval_len, interval_type=interval_type)
 
 
 def _query_where(interval_len: int, interval_type: str, symbol: typing.Union[list, str] = None, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None):

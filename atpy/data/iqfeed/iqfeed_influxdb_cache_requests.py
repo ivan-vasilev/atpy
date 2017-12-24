@@ -13,8 +13,8 @@ from atpy.data.iqfeed.util import adjust
 
 class IQFeedInfluxDBOHLCRequest(InfluxDBOHLCRequest):
 
-    def __init__(self, client: DataFrameClient, streaming_conn: iq.QuoteConn, interval_len: int, interval_type: str='s', adjust_data: bool=True, default_timezone: str = 'US/Eastern'):
-        super().__init__(client=client, interval_len=interval_len, interval_type=interval_type, default_timezone=default_timezone)
+    def __init__(self, client: DataFrameClient, streaming_conn: iq.QuoteConn, interval_len: int, interval_type: str='s', adjust_data: bool=True):
+        super().__init__(client=client, interval_len=interval_len, interval_type=interval_type)
         self.streaming_conn = streaming_conn
         self.adjust_data = adjust_data
 
