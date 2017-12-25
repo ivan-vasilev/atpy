@@ -102,7 +102,7 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
         if len(cached) > 0:
             d = parse(cached[0]['time'])
         else:
-            d = datetime.datetime.now() - self._time_delta_back
+            d = datetime.datetime.utcnow().replace(tzinfo=pytz.utc) - self._time_delta_back
 
         d = d.tz_localize(pytz.utc)
 
@@ -140,7 +140,7 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
         new_symbols = dict() if new_symbols is None else new_symbols
 
         if skip_if_older_than is not None:
-            skip_if_older_than = datetime.datetime.utcnow() - skip_if_older_than
+            skip_if_older_than = datetime.datetime.utcnow().replace(tzinfo=pytz.utc) - skip_if_older_than
 
         ranges = self.ranges
         for time, symbol, interval_len, interval_type in [(e[1][1], *e[0].split('_')) for e in ranges.items()]:
@@ -151,7 +151,7 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
             if skip_if_older_than is None or time > skip_if_older_than:
                 filters.append(BarsFilter(ticker=symbol, bgn_prd=datetime.datetime.combine(time.date(), datetime.datetime.min.time()), interval_len=int(interval_len), interval_type=interval_type))
 
-        d = datetime.datetime.utcnow() - self._time_delta_back
+        d = datetime.datetime.utcnow().replace(tzinfo=pytz.utc) - self._time_delta_back
         for symbol, interval in new_symbols.items():
             filters += [BarsFilter(ticker=symbol, bgn_prd=d, interval_len=int(i[0]), interval_type=i[1]) for i in interval]
 

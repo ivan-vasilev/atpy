@@ -1,7 +1,9 @@
-from enum import Enum
-import uuid
 import datetime
+import uuid
 from abc import ABCMeta
+from enum import Enum
+
+import pytz
 
 
 class Type(Enum):
@@ -17,7 +19,7 @@ class BaseOrder(object, metaclass=ABCMeta):
         self.quantity = quantity
 
         self.__obtained_positions = list()
-        self.request_time = datetime.datetime.now()
+        self.request_time = datetime.datetime.utcnow().replace(tzinfo=pytz.utc)
         self.__fulfill_time = None
         self.__cached_cost = None
 
@@ -43,7 +45,7 @@ class BaseOrder(object, metaclass=ABCMeta):
         self.__obtained_positions.append((quantity if self.quantity - self.obtained_quantity >= quantity else self.quantity - self.obtained_quantity, price))
 
         if self.obtained_quantity >= self.quantity:
-            self.__fulfill_time = datetime.datetime.now()
+            self.__fulfill_time = datetime.datetime.utcnow().replace(tzinfo=pytz.utc)
 
         self.__cached_cost = None
 
