@@ -73,7 +73,12 @@ setup(
     # your project is installed. For an analysis of "install_requires" vs pip's
     # requirements files see:
     # https://packaging.python.org/en/latest/requirements.html
-    install_requires=['pyevents_util', 'pyiqfeed', 'pandas', 'numpy', 'influxdb'],
+    install_requires=['pyiqfeed', 'pandas', 'numpy'],
+
+    extras_require={
+        'pyevents_util': ['pyevents_util'],
+        'influxdb': ['influxdb'],
+    },
 
     dependency_links=[
         "git+https://github.com/ivan-vasilev/pyevents_util#egg=pyevents_util",
