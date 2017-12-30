@@ -74,7 +74,7 @@ class TestInfluxDBCache(unittest.TestCase):
             for datum, f in zip(data, filters):
                 datum.drop('timestamp', axis=1, inplace=True)
                 datum['interval'] = str(f.interval_len) + '_' + f.interval_type
-                cache.client.write_points(datum, 'bars', protocol='line', tag_columns=['symbol', 'interval'])
+                cache.client.write_points(datum, 'bars', protocol='line', tag_columns=['symbol', 'interval'], time_precision='s')
 
             latest_old = cache.ranges
             cache.update_to_latest({'AAPL': {(3600, 's')}, 'MSFT': {(3600, 's'), (600, 's')}})
@@ -102,7 +102,7 @@ class TestInfluxDBCache(unittest.TestCase):
             for datum, f in zip(data, filters):
                 datum.drop('timestamp', axis=1, inplace=True)
                 datum['interval'] = str(f.interval_len) + '_' + f.interval_type
-                cache.client.write_points(datum, 'bars', protocol='line', tag_columns=['symbol', 'interval'])
+                cache.client.write_points(datum, 'bars', protocol='line', tag_columns=['symbol', 'interval'], time_precision='s')
 
         symbols = cache.get_missing_symbols([(3600, 's'), (600, 's')])
         self.assertTrue(len(symbols) > 0)

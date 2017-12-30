@@ -75,7 +75,7 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
                     }
                 ]
 
-                InfluxDBClient.write_points(self.client, json_body, protocol='json')
+                InfluxDBClient.write_points(self.client, json_body, protocol='json', time_precision='s')
 
     @property
     def ranges(self):
@@ -112,7 +112,7 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
             to_cache.drop('timestamp', axis=1, inplace=True)
             to_cache['interval'] = interval
 
-            client.write_points(to_cache, 'bars', protocol='line', tag_columns=['symbol', 'interval'])
+            client.write_points(to_cache, 'bars', protocol='line', tag_columns=['symbol', 'interval'], time_precision='s')
 
     @abstractmethod
     def _request_noncache_data(self, filters: typing.List[BarsFilter], q: queue.Queue):
@@ -174,7 +174,7 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
                         to_cache['interval'] = str(ft.interval_len) + '_' + ft.interval_type
 
                     try:
-                        client.write_points(to_cache, 'bars', protocol='line', tag_columns=['symbol', 'interval'])
+                        client.write_points(to_cache, 'bars', protocol='line', tag_columns=['symbol', 'interval'], time_precision='s')
                     except Exception as err:
                         logging.getLogger(__name__).exception(err)
 

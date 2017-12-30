@@ -45,7 +45,7 @@ class TestInfluxDBCacheRequests(unittest.TestCase):
                 datum = history.request_data(f, synchronize_timestamps=False, adjust_data=False)
                 datum.drop('timestamp', axis=1, inplace=True)
                 datum['interval'] = str(f.interval_len) + '_' + f.interval_type
-                cache.client.write_points(datum, 'bars', protocol='line', tag_columns=['symbol', 'interval'])
+                cache.client.write_points(datum, 'bars', protocol='line', tag_columns=['symbol', 'interval'], time_precision='s')
                 datum.drop('interval', axis=1, inplace=True)
 
                 datum = history.request_data(f, synchronize_timestamps=False, adjust_data=True)
@@ -99,7 +99,7 @@ class TestInfluxDBCacheRequests(unittest.TestCase):
                 data = history.request_data(f, synchronize_timestamps=False, adjust_data=False)
                 data.drop('timestamp', axis=1, inplace=True)
                 data['interval'] = str(f.interval_len) + '_' + f.interval_type
-                cache.client.write_points(data, 'bars', protocol='line', tag_columns=['symbol', 'interval'])
+                cache.client.write_points(data, 'bars', protocol='line', tag_columns=['symbol', 'interval'], time_precision='s')
 
                 delta = (data['close'] - data['open']) / data['open']
                 delta = (delta - delta.mean()) / delta.std()
@@ -158,7 +158,7 @@ class TestInfluxDBCacheRequests(unittest.TestCase):
                 data = history.request_data(f, synchronize_timestamps=False, adjust_data=False)
                 data.drop('timestamp', axis=1, inplace=True)
                 data['interval'] = str(f.interval_len) + '_' + f.interval_type
-                cache.client.write_points(data, 'bars', protocol='line', tag_columns=['symbol', 'interval'])
+                cache.client.write_points(data, 'bars', protocol='line', tag_columns=['symbol', 'interval'], time_precision='s')
 
             # test multisymbol request
             requested_data = history.request_data(BarsInPeriodFilter(ticker=["AAPL", "IBM"], bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, interval_len=3600, ascend=True, interval_type='s'), synchronize_timestamps=False, adjust_data=False)
