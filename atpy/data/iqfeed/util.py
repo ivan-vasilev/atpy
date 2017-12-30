@@ -1,14 +1,17 @@
-import queue
-import threading
 import datetime
+import logging
+import os
+import queue
+import tempfile
+import threading
+import zipfile
 
 import numpy as np
 import pandas as pd
+import pytz
+import requests
 
 import pyiqfeed as iq
-import pytz
-import os
-import logging
 
 
 def dtn_credentials():
@@ -170,6 +173,24 @@ def adjust_split(data, symbol, split_factor, split_date):
                 data['last'] *= split_factor
                 data['last_size'] *= int(1 / split_factor)
                 data['total_volume'] *= int(1 / split_factor)
+
+
+def get_symbols(symbols_file: str = None):
+    with tempfile.TemporaryDirectory() as td:
+        if symbols_file is not None:
+            logging.getLogger(__name__).info("Symbols: " + symbols_file)
+            zipfile.ZipFile(symbols_file).extractall(td)
+        else:
+            with tempfile.TemporaryFile() as tf:
+                logging.getLogger(__name__).info("Downloading symbol list... ")
+                tf.write(requests.get('http://www.dtniq.com/product/mktsymbols_v2.zip', allow_redirects=True).content)
+                zipfile.ZipFile(tf).extractall(td)
+
+        with open(os.path.join(td, 'mktsymbols_v2.txt')) as f:
+            content = f.readlines()
+
+    content = [c for c in content if '\tEQUITY' in c and ('\tNYSE' in c or '\tNASDAQ' in c)]
+    return {s.split('\t')[0] for s in content}
 
 
 class IQFeedDataProvider(object):

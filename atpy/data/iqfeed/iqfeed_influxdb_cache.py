@@ -1,15 +1,8 @@
-import logging
-import os
-import tempfile
-import zipfile
-
-import requests
+from dateutil import tz
 from dateutil.relativedelta import relativedelta
-from influxdb import InfluxDBClient
 
 from atpy.data.cache.influxdb_cache import InfluxDBCache, ClientFactory
 from atpy.data.iqfeed.iqfeed_history_provider import IQFeedHistoryProvider, BarsInPeriodFilter
-from dateutil import tz
 
 
 class IQFeedInfluxDBCache(InfluxDBCache):
@@ -61,38 +54,3 @@ class IQFeedInfluxDBCache(InfluxDBCache):
                 new_filters.append(BarsInPeriodFilter(ticker=f.ticker, bgn_prd=f.bgn_prd, end_prd=None, interval_len=f.interval_len, interval_type=f.interval_type))
 
         self.history.request_data_by_filters(new_filters, q, adjust_data=False)
-
-    def get_missing_symbols(self, intervals, symbols_file: str = None):
-        """
-        :param intervals: [(interval_len, interval_type), ...]
-        :param symbols_file: Symbols zip file location to prevent download every time
-        """
-
-        with tempfile.TemporaryDirectory() as td:
-            if symbols_file is not None:
-                logging.getLogger(__name__).info("Symbols: " + symbols_file)
-                zipfile.ZipFile(symbols_file).extractall(td)
-            else:
-                with tempfile.TemporaryFile() as tf:
-                    logging.getLogger(__name__).info("Downloading symbol list... ")
-                    tf.write(requests.get('http://www.dtniq.com/product/mktsymbols_v2.zip', allow_redirects=True).content)
-                    zipfile.ZipFile(tf).extractall(td)
-
-            with open(os.path.join(td, 'mktsymbols_v2.txt')) as f:
-                content = f.readlines()
-
-        content = [c for c in content if '\tEQUITY' in c and ('\tNYSE' in c or '\tNASDAQ' in c)]
-
-        all_symbols = {s.split('\t')[0] for s in content}
-
-        result = dict()
-        for i in intervals:
-            existing_symbols = {e['symbol'] for e in InfluxDBClient.query(self.client, "select FIRST(close), symbol from bars where interval = '{}' group by symbol".format(str(i[0]) + '_' + i[1])).get_points()}
-
-            for s in all_symbols - existing_symbols:
-                if s not in result:
-                    result[s] = set()
-
-                result[s].add(i)
-
-        return result

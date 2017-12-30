@@ -77,7 +77,7 @@ class TestInfluxDBCache(unittest.TestCase):
                 cache.client.write_points(datum, 'bars', protocol='line', tag_columns=['symbol', 'interval'], time_precision='s')
 
             latest_old = cache.ranges
-            cache.update_to_latest({'AAPL': {(3600, 's')}, 'MSFT': {(3600, 's'), (600, 's')}})
+            cache.update_to_latest({('AAPL', 3600, 's'), ('MSFT', 3600, 's'), ('MSFT', 600, 's')})
 
             latest_current = cache.ranges
             self.assertEqual(len(latest_current), len(latest_old) + 2)
@@ -89,25 +89,6 @@ class TestInfluxDBCache(unittest.TestCase):
             cache_data_no_limit = [cache_requests.request(symbol=f.ticker, bgn_prd=f.bgn_prd)[0] for f in filters_no_limit]
             for df1, df2 in zip(data_no_limit, cache_data_no_limit):
                 assert_frame_equal(df1, df2)
-
-    def test_get_missing_symbols(self):
-        end_prd = datetime.datetime(2017, 3, 2)
-        filters = (BarsInPeriodFilter(ticker="IBM", bgn_prd=datetime.datetime(2017, 3, 1), end_prd=end_prd, interval_len=3600, ascend=True, interval_type='s'),
-                   BarsInPeriodFilter(ticker="AAPL", bgn_prd=datetime.datetime(2017, 3, 1), end_prd=end_prd, interval_len=3600, ascend=True, interval_type='s'),
-                   BarsInPeriodFilter(ticker="AAPL", bgn_prd=datetime.datetime(2017, 3, 1), end_prd=end_prd, interval_len=600, ascend=True, interval_type='s'))
-
-        with IQFeedHistoryProvider(exclude_nan_ratio=None, num_connections=2) as history, IQFeedInfluxDBCache(client_factory=self._client_factory, use_stream_events=True, history=history, time_delta_back=relativedelta(days=3)) as cache:
-            data = [history.request_data(f, synchronize_timestamps=False, adjust_data=False) for f in filters]
-
-            for datum, f in zip(data, filters):
-                datum.drop('timestamp', axis=1, inplace=True)
-                datum['interval'] = str(f.interval_len) + '_' + f.interval_type
-                cache.client.write_points(datum, 'bars', protocol='line', tag_columns=['symbol', 'interval'], time_precision='s')
-
-        symbols = cache.get_missing_symbols([(3600, 's'), (600, 's')])
-        self.assertTrue(len(symbols) > 0)
-        self.assertFalse('AAPL' in symbols)
-        self.assertEqual(len(symbols['IBM']), 1)
 
 
 if __name__ == '__main__':

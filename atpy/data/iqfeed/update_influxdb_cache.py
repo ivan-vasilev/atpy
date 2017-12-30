@@ -11,6 +11,7 @@ from atpy.data.cache.influxdb_cache import ClientFactory
 from atpy.data.iqfeed.iqfeed_history_provider import IQFeedHistoryProvider
 from atpy.data.iqfeed.iqfeed_influxdb_cache import IQFeedInfluxDBCache
 import datetime
+import atpy.data.iqfeed.util as iqutil
 
 
 if __name__ == "__main__":
@@ -46,7 +47,7 @@ if __name__ == "__main__":
 
     with IQFeedHistoryProvider(exclude_nan_ratio=None, num_connections=args.iqfeed_conn) as history, \
             IQFeedInfluxDBCache(client_factory=client_factory, use_stream_events=False, history=history, time_delta_back=relativedelta(years=args.delta_back)) as cache:
-        missing = cache.get_missing_symbols([(args.interval_len, args.interval_type)], symbols_file=args.symbols_file)
-        cache.update_to_latest(missing, skip_if_older_than=datetime.timedelta(days=args.skip_if_older) if args.skip_if_older is not None else None)
+        all_symbols = {(s, args.interval_len, args.interval_type) for s in iqutil.get_symbols(symbols_file=args.symbols_file)}
+        cache.update_to_latest(all_symbols, skip_if_older_than=datetime.timedelta(days=args.skip_if_older) if args.skip_if_older is not None else None)
 
     client.close()
