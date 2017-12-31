@@ -1,6 +1,7 @@
 import unittest
 
 from atpy.data.iqfeed.iqfeed_history_provider import *
+import atpy.data.iqfeed.util as iqfeedutil
 
 
 class TestIQFeedHistory(unittest.TestCase):
@@ -285,7 +286,7 @@ class TestIQFeedHistory(unittest.TestCase):
         e2.wait()
         e3.wait()
 
-    def test_bar_adjust(self):
+    def test_bar_adjust_1(self):
         filter_provider = DefaultFilterProvider()
         filter_provider += BarsInPeriodFilter(ticker="PLUS", bgn_prd=datetime.datetime(2017, 3, 31), end_prd=datetime.datetime(2017, 4, 5), interval_len=3600, ascend=True, interval_type='s', max_ticks=100)
 
@@ -306,6 +307,22 @@ class TestIQFeedHistory(unittest.TestCase):
             e1.wait()
 
             for i, d in enumerate(provider):
+                self.assertLess(d['open'].max(), 68)
+                self.assertGreater(d['open'].min(), 65)
+
+                if i == 1:
+                    break
+
+    def test_bar_adjust_2(self):
+        filter_provider = DefaultFilterProvider()
+        filter_provider += BarsInPeriodFilter(ticker=["PLUS", "AAPL"], bgn_prd=datetime.datetime(2017, 3, 31), end_prd=datetime.datetime(2017, 4, 5), interval_len=3600, ascend=True, interval_type='s')
+
+        with IQFeedHistoryListener(fire_batches=True, adjust_data=False, exclude_nan_ratio=None, filter_provider=filter_provider) as listener, listener.batch_provider() as provider:
+            listener.start()
+
+            for i, d in enumerate(provider):
+                iqfeedutil.adjust(d, Fundamentals.get("PLUS", listener.streaming_conn))
+                iqfeedutil.adjust(d, Fundamentals.get("AAPL", listener.streaming_conn))
                 self.assertLess(d['open'].max(), 68)
                 self.assertGreater(d['open'].min(), 65)
 

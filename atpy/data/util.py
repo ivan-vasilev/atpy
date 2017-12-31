@@ -153,8 +153,8 @@ def adjust_split(data, symbol, split_factor, split_date):
         if 'open' in data.columns:  # adjust bars
             if isinstance(data.index, pd.MultiIndex):
                 timezone = pytz.timezone(data.index.levels[1].tz.zone)
-                split_date = timezone.localize(datetime.datetime.combine(split_date.astype(datetime.datetime), datetime.datetime.min.time()))
-                mask = data['timestamp'] < split_date
+                split_date = timezone.localize(datetime.datetime.combine(split_date.astype(datetime.datetime), datetime.datetime.max.time()))
+                mask = data['timestamp'] <= split_date
                 mask[data['symbol'] != symbol] = False
 
                 data.loc[mask, 'open'] *= split_factor
