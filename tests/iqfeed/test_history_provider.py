@@ -317,14 +317,16 @@ class TestIQFeedHistory(unittest.TestCase):
         filter_provider = DefaultFilterProvider()
         filter_provider += BarsInPeriodFilter(ticker=["PLUS", "AAPL"], bgn_prd=datetime.datetime(2017, 3, 31), end_prd=datetime.datetime(2017, 4, 5), interval_len=3600, ascend=True, interval_type='s')
 
-        with IQFeedHistoryListener(fire_batches=True, adjust_data=False, exclude_nan_ratio=None, filter_provider=filter_provider) as listener, listener.batch_provider() as provider:
+        with IQFeedHistoryListener(fire_batches=True, adjust_data=False, filter_provider=filter_provider, sync_timestamps=False) as listener, listener.batch_provider() as provider:
             listener.start()
 
             for i, d in enumerate(provider):
                 iqfeedutil.adjust(d, Fundamentals.get("PLUS", listener.streaming_conn))
                 iqfeedutil.adjust(d, Fundamentals.get("AAPL", listener.streaming_conn))
-                self.assertLess(d['open'].max(), 68)
-                self.assertGreater(d['open'].min(), 65)
+
+                self.assertLess(d.loc['PLUS', 'open'].max(), 68)
+                self.assertGreater(d.loc['PLUS', 'open'].min(), 65)
+                self.assertGreater(d.loc['AAPL', 'open'].min(), 142)
 
                 if i == 1:
                     break
@@ -378,7 +380,7 @@ class TestIQFeedHistory(unittest.TestCase):
 
         filter_provider = BarsInPeriodProvider(ticker=['AAPL', 'GOOG'], bgn_prd=datetime.date(now.year - 2, 1, 1), delta=datetime.timedelta(days=10), interval_len=3600, ascend=True, interval_type='s')
 
-        with IQFeedHistoryListener(fire_batches=True, fire_ticks=True, minibatch=10, filter_provider=filter_provider, exclude_nan_ratio=None) as listener:
+        with IQFeedHistoryListener(fire_batches=True, fire_ticks=True, minibatch=10, filter_provider=filter_provider) as listener:
             listener.start()
 
             events_count = {'bars': 0, 'batches': 0, 'minibatches': 0}
@@ -487,7 +489,7 @@ class TestIQFeedHistory(unittest.TestCase):
             ticker=['MMM', 'AXP', 'AAPL', 'BA', 'CAT', 'CVX', 'CSCO', 'KO', 'DO', 'XOM', 'GE', 'GS', 'HD', 'IBM', 'INTC', 'JNJ', 'JPM', 'MCD', 'MRK', 'MSFT', 'NKE', 'PFE', 'PG', 'TRV', 'UNH', 'UTX', 'VZ', 'V', 'WMT', 'DIS'],
             bgn_prd=datetime.date(now.year - 1, month=now.month, day=now.day), delta=datetime.timedelta(days=100), interval_len=300, ascend=True, interval_type='s')
 
-        with IQFeedHistoryListener(fire_batches=True, fire_ticks=False, minibatch=128, num_connections=10, filter_provider=filter_provider, run_async=False, exclude_nan_ratio=None) as listener:
+        with IQFeedHistoryListener(fire_batches=True, fire_ticks=False, minibatch=128, num_connections=10, filter_provider=filter_provider, run_async=False) as listener:
             e1 = threading.Event()
 
             def process_batch_listener(event):

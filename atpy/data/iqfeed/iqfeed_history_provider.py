@@ -175,17 +175,17 @@ class IQFeedHistoryProvider(object):
     IQFeed historical data provider. See the unit test on how to use
     """
 
-    def __init__(self, num_connections=10, key_suffix='', exclude_nan_ratio=0.9, cache=None):
+    def __init__(self, num_connections=10, key_suffix='', cache=None, sync_timestamps=True):
         """
         :param num_connections: number of connections to use when requesting data
         :param key_suffix: suffix for field names
-        :param exclude_nan_ratio: exclude stocks with more nans than the given ration (before synchronization)
+        :param sync_timestamps: synchronize timestamps for each symbol
         :param cache: influxdb client for cache read operations
         """
         self.num_connections = num_connections
         self.key_suffix = key_suffix
-        self.exclude_nan_ratio = exclude_nan_ratio
         self.cache = cache
+        self.sync_timestamps = sync_timestamps
         self.conn = None
         self.streaming_conn = None
         self.current_batch = None
@@ -233,11 +233,10 @@ class IQFeedHistoryProvider(object):
         if self.streaming_conn is not None:
             self.streaming_conn.disconnect()
 
-    def request_data(self, f, synchronize_timestamps=True, adjust_data=True):
+    def request_data(self, f, adjust_data=True):
         """
         request history data
         :param f: filter tuple
-        :param synchronize_timestamps: whether to synchronize timestamps between different signals
         :param adjust_data: whether to adjust the data
         :return:
         """
@@ -256,8 +255,8 @@ class IQFeedHistoryProvider(object):
 
             signals = {d[0].ticker: d[1] for d in iter(q.get, None)}
 
-            if synchronize_timestamps:
-                signals = self.synchronize_timestamps(signals, f, self.exclude_nan_ratio)
+            if self.sync_timestamps:
+                signals = self.synchronize_timestamps(signals, f)
             elif len(signals) > 0:
                 signals = pd.concat(signals)
                 signals.index.set_names('symbol', level=0, inplace=True)
@@ -316,12 +315,11 @@ class IQFeedHistoryProvider(object):
 
             q.put(None)
 
-    def synchronize_timestamps(self, signals: map, f: NamedTuple, exclude_nan_ratio=None):
+    def synchronize_timestamps(self, signals: map, f: NamedTuple):
         """
         synchronize timestamps between historical signals
         :param signals: map of dataframes for each equity
         :param f: filter tuple
-        :param exclude_nan_ratio: exclude stocks with more nans than the given ration (before synchronization)
         :return:
         """
         if signals is None or len(signals) <= 1:
@@ -333,10 +331,6 @@ class IQFeedHistoryProvider(object):
 
             result = signals
         else:
-            if exclude_nan_ratio is not None:
-                mean = np.mean(np.array([signal.shape[0] for signal in signals.values()]))
-                signals = {symbol: signal for symbol, signal in signals.items() if signal.shape[0] >= mean * exclude_nan_ratio}
-
             col = 'timestamp' + self.key_suffix if 'timestamp' + self.key_suffix in list(signals.values())[0] else 'date' + self.key_suffix if 'date' + self.key_suffix in list(signals.values())[0] else None
             if col is not None:
                 signals = pd.concat(signals)
@@ -497,7 +491,7 @@ class IQFeedHistoryListener(IQFeedHistoryProvider, metaclass=events.GlobalRegist
     IQFeed historical data listener. See the unit test on how to use
     """
 
-    def __init__(self, minibatch=None, fire_batches=False, fire_ticks=False, run_async=True, adjust_data=True, num_connections=10, key_suffix='', filter_provider=None, exclude_nan_ratio=0.9):
+    def __init__(self, minibatch=None, fire_batches=False, fire_ticks=False, run_async=True, adjust_data=True, num_connections=10, key_suffix='', filter_provider=None, sync_timestamps=True):
         """
         :param minibatch: size of the minibatch
         :param fire_batches: raise event for each batch
@@ -507,9 +501,9 @@ class IQFeedHistoryListener(IQFeedHistoryProvider, metaclass=events.GlobalRegist
         :param num_connections: number of connections to use when requesting data
         :param key_suffix: suffix for field names
         :param filter_provider: news filter list
-        :param exclude_nan_ratio: exclude stocks with more nans than the given ration (before synchronization)
+        :param sync_timestamps: synchronize timestamps for each symbol
         """
-        super().__init__(num_connections=num_connections, key_suffix=key_suffix, exclude_nan_ratio=exclude_nan_ratio)
+        super().__init__(num_connections=num_connections, key_suffix=key_suffix, sync_timestamps=sync_timestamps)
 
         self.minibatch = minibatch
         self.fire_batches = fire_batches

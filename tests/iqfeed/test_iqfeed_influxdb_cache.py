@@ -56,7 +56,7 @@ class TestInfluxDBCache(unittest.TestCase):
             e.wait()
 
     def test_update_to_latest(self):
-        with IQFeedHistoryProvider(exclude_nan_ratio=None, num_connections=2) as history, \
+        with IQFeedHistoryProvider(num_connections=2) as history, \
                 IQFeedInfluxDBCache(client_factory=self._client_factory, use_stream_events=True, history=history, time_delta_back=relativedelta(days=30)) as cache:
 
             cache_requests = InfluxDBOHLCRequest(client=self._client, interval_len=3600, interval_type='s')

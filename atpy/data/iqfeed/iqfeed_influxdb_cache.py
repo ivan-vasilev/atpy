@@ -19,7 +19,7 @@ class IQFeedInfluxDBCache(InfluxDBCache):
 
         self.own_history = self.history is None
         if self.own_history:
-            self.history = IQFeedHistoryProvider(exclude_nan_ratio=None)
+            self.history = IQFeedHistoryProvider()
             self.history.__enter__()
 
         return self

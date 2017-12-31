@@ -45,7 +45,7 @@ if __name__ == "__main__":
 
     client.switch_database(args.database)
 
-    with IQFeedHistoryProvider(exclude_nan_ratio=None, num_connections=args.iqfeed_conn) as history, \
+    with IQFeedHistoryProvider(num_connections=args.iqfeed_conn) as history, \
             IQFeedInfluxDBCache(client_factory=client_factory, use_stream_events=False, history=history, time_delta_back=relativedelta(years=args.delta_back)) as cache:
         all_symbols = {(s, args.interval_len, args.interval_type) for s in iqutil.get_symbols(symbols_file=args.symbols_file)}
         cache.update_to_latest(all_symbols, skip_if_older_than=datetime.timedelta(days=args.skip_if_older) if args.skip_if_older is not None else None)

@@ -29,7 +29,7 @@ class TestInfluxDBCacheRequests(unittest.TestCase):
         self._client.close()
 
     def test_request_ohlc(self):
-        with IQFeedHistoryProvider(exclude_nan_ratio=None, num_connections=2) as history, \
+        with IQFeedHistoryProvider(num_connections=2) as history, \
                 IQFeedInfluxDBCache(client_factory=self._client_factory, use_stream_events=True, history=history, time_delta_back=relativedelta(days=3)) as cache:
 
             end_prd = datetime.datetime(2017, 5, 1)
@@ -86,7 +86,7 @@ class TestInfluxDBCacheRequests(unittest.TestCase):
             e.wait()
 
     def test_request_deltas(self):
-        with IQFeedHistoryProvider(exclude_nan_ratio=None, num_connections=2) as history, \
+        with IQFeedHistoryProvider(num_connections=2) as history, \
                 IQFeedInfluxDBCache(client_factory=self._client_factory, use_stream_events=True, history=history, time_delta_back=relativedelta(days=3)) as cache:
             end_prd = datetime.datetime(2017, 5, 1)
 
@@ -145,7 +145,7 @@ class TestInfluxDBCacheRequests(unittest.TestCase):
             e.wait()
 
     def test_synchronize_timestamps(self):
-        with IQFeedHistoryProvider(exclude_nan_ratio=None, num_connections=2) as history, \
+        with IQFeedHistoryProvider(num_connections=2) as history, \
                 IQFeedInfluxDBCache(client_factory=self._client_factory, use_stream_events=True, history=history, time_delta_back=relativedelta(days=3)) as cache:
             end_prd = datetime.datetime(2017, 5, 1)
 
