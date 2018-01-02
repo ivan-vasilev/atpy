@@ -192,7 +192,7 @@ class InfluxDBValueRequest(object, metaclass=events.GlobalRegister):
 
 class InfluxDBDeltaAdjustedRequest(InfluxDBValueRequest, metaclass=events.GlobalRegister):
     def __init__(self, client: DataFrameClient, interval_len: int, interval_type: str = 's'):
-        super().__init__(value='(close - open) / open', client=client, interval_len=interval_len, interval_type=interval_type)
+        super().__init__(value='(close - open) / open, period_volume, total_volume', client=client, interval_len=interval_len, interval_type=interval_type)
 
 
 class InfluxDBDeltaRequest(InfluxDBValueRequest, metaclass=events.GlobalRegister):
