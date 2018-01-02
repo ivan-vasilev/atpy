@@ -73,7 +73,7 @@ setup(
     # your project is installed. For an analysis of "install_requires" vs pip's
     # requirements files see:
     # https://packaging.python.org/en/latest/requirements.html
-    install_requires=['pyiqfeed', 'pandas', 'numpy'],
+    install_requires=['pyiqfeed', 'pandas', 'numpy', 'pyevents==0.0.1'],
 
     extras_require={
         'pyevents_util': ['pyevents_util'],
@@ -81,6 +81,7 @@ setup(
     },
 
     dependency_links=[
+        "git+https://github.com/ivan-vasilev/pyevents#egg=pyevents-0.0.1",
         "git+https://github.com/ivan-vasilev/pyevents_util#egg=pyevents_util",
         "git+https://github.com/akapur/pyiqfeed#egg=pyiqfeed"
     ],

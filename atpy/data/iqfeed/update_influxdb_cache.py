@@ -3,16 +3,15 @@ Script that populates the InfluxDB cache initially and the updates it incrementa
 """
 
 import argparse
+import datetime
 import logging
 
 from dateutil.relativedelta import relativedelta
 
+import atpy.data.iqfeed.util as iqutil
 from atpy.data.cache.influxdb_cache import ClientFactory
 from atpy.data.iqfeed.iqfeed_history_provider import IQFeedHistoryProvider
 from atpy.data.iqfeed.iqfeed_influxdb_cache import IQFeedInfluxDBCache
-import datetime
-import atpy.data.iqfeed.util as iqutil
-
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
