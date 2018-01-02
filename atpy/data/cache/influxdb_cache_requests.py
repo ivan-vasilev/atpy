@@ -111,7 +111,7 @@ class InfluxDBValueRequest(object, metaclass=events.GlobalRegister):
         :return: data from the database
         """
 
-        query = "SELECT symbol, " + self.value + " as delta FROM bars" + \
+        query = "SELECT symbol, " + self.value + " FROM bars" + \
                 _query_where(interval_len=self.interval_len, interval_type=self.interval_type, symbol=symbol, bgn_prd=bgn_prd, end_prd=end_prd) + \
                 " ORDER BY time " + "ASC" if ascending else "DESC"
 
@@ -192,12 +192,12 @@ class InfluxDBValueRequest(object, metaclass=events.GlobalRegister):
 
 class InfluxDBDeltaAdjustedRequest(InfluxDBValueRequest, metaclass=events.GlobalRegister):
     def __init__(self, client: DataFrameClient, interval_len: int, interval_type: str = 's'):
-        super().__init__(value='(close - open) / open, period_volume, total_volume', client=client, interval_len=interval_len, interval_type=interval_type)
+        super().__init__(value='(close - open) / open as delta, period_volume, total_volume', client=client, interval_len=interval_len, interval_type=interval_type)
 
 
 class InfluxDBDeltaRequest(InfluxDBValueRequest, metaclass=events.GlobalRegister):
     def __init__(self, client: DataFrameClient, interval_len: int, interval_type: str = 's'):
-        super().__init__(value='close - open', client=client, interval_len=interval_len, interval_type=interval_type)
+        super().__init__(value='close - open as delta, period_volume, total_volume', client=client, interval_len=interval_len, interval_type=interval_type)
 
 
 def _query_where(interval_len: int, interval_type: str, symbol: typing.Union[list, str] = None, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None):
