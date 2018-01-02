@@ -1,12 +1,8 @@
+import datetime
 from ftplib import FTP
 from io import StringIO
 
 import pandas as pd
-import numpy as np
-import datetime
-import pytz
-import multiprocessing
-from multiprocessing.pool import ThreadPool
 
 
 def _get_nasdaq_symbol_file(filename):
@@ -118,8 +114,7 @@ def adjust_dividend(data, symbol, dividend_amount, dividend_date):
     if isinstance(data, pd.DataFrame):
         if 'open' in data.columns:  # adjust bars
             if isinstance(data.index, pd.MultiIndex):
-                timezone = pytz.timezone(data.index.levels[1].tz.zone)
-                dividend_date = timezone.localize(datetime.datetime.combine(dividend_date.astype(datetime.datetime), datetime.datetime.min.time()))
+                dividend_date = datetime.datetime.combine(dividend_date.astype(datetime.datetime), datetime.datetime.min.time()).replace(tzinfo=data.index.levels[1].tz)
                 mask = data['timestamp'] < dividend_date
                 mask[data['symbol'] != symbol] = False
 
@@ -152,8 +147,7 @@ def adjust_split(data, symbol, split_factor, split_date):
     if isinstance(data, pd.DataFrame):
         if 'open' in data.columns:  # adjust bars
             if isinstance(data.index, pd.MultiIndex):
-                timezone = pytz.timezone(data.index.levels[1].tz.zone)
-                split_date = timezone.localize(datetime.datetime.combine(split_date.astype(datetime.datetime), datetime.datetime.min.time()))
+                split_date = datetime.datetime.combine(split_date.astype(datetime.datetime), datetime.datetime.min.time()).replace(tzinfo=data.index.levels[1].tz)
                 mask = data['timestamp'] < split_date
                 mask[data['symbol'] != symbol] = False
 

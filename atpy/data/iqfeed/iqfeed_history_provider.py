@@ -6,9 +6,7 @@ import threading
 import typing
 from multiprocessing.pool import ThreadPool
 
-import numpy as np
 import pandas as pd
-import pytz
 
 import pyevents.events as events
 import pyiqfeed
@@ -175,17 +173,13 @@ class IQFeedHistoryProvider(object):
     IQFeed historical data provider. See the unit test on how to use
     """
 
-    def __init__(self, num_connections=10, key_suffix='', cache=None, sync_timestamps=True):
+    def __init__(self, num_connections=10, key_suffix=''):
         """
         :param num_connections: number of connections to use when requesting data
         :param key_suffix: suffix for field names
-        :param sync_timestamps: synchronize timestamps for each symbol
-        :param cache: influxdb client for cache read operations
         """
         self.num_connections = num_connections
         self.key_suffix = key_suffix
-        self.cache = cache
-        self.sync_timestamps = sync_timestamps
         self.conn = None
         self.streaming_conn = None
         self.current_batch = None
@@ -233,10 +227,11 @@ class IQFeedHistoryProvider(object):
         if self.streaming_conn is not None:
             self.streaming_conn.disconnect()
 
-    def request_data(self, f, adjust_data=True):
+    def request_data(self, f, sync_timestamps=True, adjust_data=True):
         """
         request history data
         :param f: filter tuple
+        :param sync_timestamps: synchronize timestamps between symbols
         :param adjust_data: whether to adjust the data
         :return:
         """
@@ -255,7 +250,7 @@ class IQFeedHistoryProvider(object):
 
             signals = {d[0].ticker: d[1] for d in iter(q.get, None)}
 
-            if self.sync_timestamps:
+            if sync_timestamps:
                 signals = self.synchronize_timestamps(signals, f)
             elif len(signals) > 0:
                 signals = pd.concat(signals)
@@ -269,6 +264,7 @@ class IQFeedHistoryProvider(object):
         request data for multiple filters
         :param filters: list of filters
         :param q: queue to populate the results as they come. When all the results are returned, None is inserted to signal that no more are coming.
+        :param adjust_data: adjust the data or not
         :return: None
         """
         if self.num_connections > 1:
@@ -436,7 +432,7 @@ class IQFeedHistoryProvider(object):
         result = pd.DataFrame(data)
         sf = self.key_suffix
 
-        result['timestamp' + sf] = pd.Index(data['date'] + data['time']).tz_localize('US/Eastern').tz_convert(pytz.utc)
+        result['timestamp' + sf] = pd.Index(data['date'] + data['time']).tz_localize('US/Eastern').tz_convert('UTC')
         result.set_index('timestamp' + sf, inplace=True, drop=False)
         result.drop(['date', 'time'], axis=1, inplace=True)
 
@@ -454,7 +450,7 @@ class IQFeedHistoryProvider(object):
         result = pd.DataFrame(data)
         sf = self.key_suffix
 
-        result['timestamp' + sf] = pd.Index(data['date'] + data['time']).tz_localize('US/Eastern').tz_convert(pytz.utc)
+        result['timestamp' + sf] = pd.Index(data['date'] + data['time']).tz_localize('US/Eastern').tz_convert('UTC')
         result.set_index('timestamp' + sf, inplace=True, drop=False)
         result.drop(['date', 'time'], axis=1, inplace=True)
 
@@ -503,7 +499,7 @@ class IQFeedHistoryListener(IQFeedHistoryProvider, metaclass=events.GlobalRegist
         :param filter_provider: news filter list
         :param sync_timestamps: synchronize timestamps for each symbol
         """
-        super().__init__(num_connections=num_connections, key_suffix=key_suffix, sync_timestamps=sync_timestamps)
+        super().__init__(num_connections=num_connections, key_suffix=key_suffix)
 
         self.minibatch = minibatch
         self.fire_batches = fire_batches
@@ -516,6 +512,7 @@ class IQFeedHistoryListener(IQFeedHistoryProvider, metaclass=events.GlobalRegist
         self._background_thread = None
         self.conn = None
         self.streaming_conn = None
+        self.sync_timestamps = sync_timestamps
 
     def __exit__(self, exception_type, exception_value, traceback):
         if self._background_thread is not None and self._background_thread.is_alive():
@@ -559,7 +556,7 @@ class IQFeedHistoryListener(IQFeedHistoryProvider, metaclass=events.GlobalRegist
         for f in self.filter_provider:
             logging.getLogger(__name__).info("Loading data for filter " + str(f))
 
-            d = self.request_data(f, adjust_data=self.adjust_data)
+            d = self.request_data(f, sync_timestamps=self.sync_timestamps, adjust_data=self.adjust_data)
 
             self.current_filter = f
             self.current_batch = d

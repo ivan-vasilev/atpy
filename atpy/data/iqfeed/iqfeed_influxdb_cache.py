@@ -43,7 +43,7 @@ class IQFeedInfluxDBCache(InfluxDBCache):
             bgn_prd = bgn_prd.astimezone(tz.gettz('US/Eastern'))
 
         f = BarsInPeriodFilter(ticker=symbol, bgn_prd=bgn_prd, end_prd=None, interval_len=interval_len, interval_type=interval_type)
-        return self.history.request_data(f, synchronize_timestamps=False, adjust_data=False)
+        return self.history.request_data(f, adjust_data=False)
 
     def _request_noncache_data(self, filters, q):
         new_filters = list()

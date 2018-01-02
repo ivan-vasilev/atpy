@@ -36,6 +36,8 @@ if __name__ == "__main__":
     client_factory = ClientFactory(host=args.host, port=args.port, username=args.user, password=args.password, database=args.database, pool_size=1)
     client = client_factory.new_client()
 
+    logging.getLogger(__name__).info("Updating database with arguments: " + str(args))
+
     if args.drop:
         client.drop_database(args.database)
 

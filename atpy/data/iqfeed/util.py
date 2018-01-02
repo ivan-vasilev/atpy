@@ -1,4 +1,3 @@
-import datetime
 import logging
 import os
 import queue
@@ -8,11 +7,10 @@ import zipfile
 
 import numpy as np
 import pandas as pd
-import pytz
 import requests
 
-import pyiqfeed as iq
 import atpy.data.util as datautil
+import pyiqfeed as iq
 
 
 def dtn_credentials():

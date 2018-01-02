@@ -1,11 +1,9 @@
-import pyevents.events as events
-from atpy.data.iqfeed.util import *
-import atpy.data.iqfeed.bar_util as bars
-
-from atpy.data.iqfeed.iqfeed_level_1_provider import Fundamentals
-import pandas as pd
-import threading
 from dateutil import tz
+
+import atpy.data.iqfeed.bar_util as bars
+import pyevents.events as events
+from atpy.data.iqfeed.iqfeed_level_1_provider import Fundamentals
+from atpy.data.iqfeed.util import *
 
 
 class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegister):
@@ -198,7 +196,7 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
             sf = self.key_suffix
 
             result['symbol' + sf] = data.pop('symbol')
-            result['timestamp' + sf] = (data['date'] + data['time']).item().replace(tzinfo=tz.gettz('US/Eastern')).astimezone(pytz.utc)
+            result['timestamp' + sf] = (data['date'] + data['time']).item().replace(tzinfo=tz.gettz('US/Eastern')).astimezone(tz.gettz('UTC'))
             result['high' + sf] = data.pop('high_p')
             result['low' + sf] = data.pop('low_p')
             result['open' + sf] = data.pop('open_p')
@@ -211,7 +209,7 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
             result['symbol'] = result['symbol'].str.decode('ascii')
             sf = self.key_suffix
 
-            result['timestamp' + sf] = pd.Index(data['date'] + data['time']).tz_localize('US/Eastern').tz_convert(pytz.utc)
+            result['timestamp' + sf] = pd.Index(data['date'] + data['time']).tz_localize('US/Eastern').tz_convert('UTC')
 
             result.set_index('timestamp' + sf, inplace=True, drop=False)
 
