@@ -217,5 +217,5 @@ def _query_where(interval_len: int, interval_type: str, symbol: typing.Union[lis
              ('' if bgn_prd is None else " AND time > '{}'") + \
              ('' if end_prd is None else " AND time < '{}'")
 
-    args = tuple(filter(lambda x: x is not None, [str(interval_len) + '_' + interval_type, None if symbol is None else "|".join(symbol) if isinstance(symbol, list) else symbol, bgn_prd, end_prd]))
+    args = tuple(filter(lambda x: x is not None, [str(interval_len) + '_' + interval_type, None if symbol is None else "|".join(['^' + s + '$' for s in symbol]) if isinstance(symbol, list) else symbol, bgn_prd, end_prd]))
     return result.format(*args)
