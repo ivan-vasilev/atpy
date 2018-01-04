@@ -1,10 +1,11 @@
 import queue
 import threading
+import typing
 from typing import Sequence
 
 import numpy as np
 import pandas as pd
-
+import logging
 import pyevents.events as events
 import pyiqfeed as iq
 from atpy.data.iqfeed.util import launch_service, iqfeed_to_dict, create_batch, IQFeedDataProvider
@@ -12,27 +13,30 @@ from atpy.data.iqfeed.util import launch_service, iqfeed_to_dict, create_batch, 
 
 class IQFeedLevel1Listener(iq.SilentQuoteListener, metaclass=events.GlobalRegister):
 
-    def __init__(self, fire_ticks=True, minibatch=None, key_suffix=''):
+    def __init__(self, fire_ticks=True, minibatch=None, conn: iq.QuoteConn=None, key_suffix=''):
         super().__init__(name="Level 1 listener")
 
         self.fire_ticks = fire_ticks
         self.minibatch = minibatch
-        self.conn = None
+        self.conn = conn
+        self._own_conn = conn is None
         self.key_suffix = key_suffix
 
-        self.watched_symbols = set()
+        self.fundamentals = dict()
 
-        self.current_fund_mb = list()
         self.current_news_mb = list()
         self.current_regional_mb = None
         self.current_update_mb = None
+        self._lock = threading.RLock()
 
     def __enter__(self):
-        launch_service()
-
-        self.conn = iq.QuoteConn()
-        self.conn.add_listener(self)
-        self.conn.connect()
+        if self._own_conn:
+            launch_service()
+            self.conn = iq.QuoteConn()
+            self.conn.add_listener(self)
+            self.conn.connect()
+        else:
+            self.conn.add_listener(self)
 
         self.queue = queue.Queue()
 
@@ -41,7 +45,10 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener, metaclass=events.GlobalRegist
     def __exit__(self, exception_type, exception_value, traceback):
         """Disconnect connection etc"""
         self.conn.remove_listener(self)
-        self.conn.disconnect()
+
+        if self._own_conn:
+            self.conn.disconnect()
+
         self.conn = None
 
     def __del__(self):
@@ -58,19 +65,24 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener, metaclass=events.GlobalRegist
     @events.listener
     def on_event(self, event):
         if event['type'] == 'watch_ticks':
-            if event['data'] not in self.watched_symbols:
-                self.conn.watch(event['data'])
-                self.watched_symbols.add(event['data'])
+            with self._lock:
+                if event['data'] not in self.fundamentals:
+                    self.conn.watch(event['data'])
 
     def process_invalid_symbol(self, bad_symbol: str) -> None:
         """
         You made a subscription request with an invalid symbol
-
         :param bad_symbol: The bad symbol
-
         """
-        if bad_symbol in self.watched_symbols and bad_symbol in self.watched_symbols:
-            self.watched_symbols.remove(bad_symbol)
+
+        logging.getLogger(__name__).warning("Invalid symbol request: " + str(bad_symbol))
+
+        with self._lock:
+            if bad_symbol in self.fundamentals:
+                if isinstance(self.fundamentals[bad_symbol], threading.Event):
+                    self.fundamentals[bad_symbol].set()
+
+                del self.fundamentals[bad_symbol]
 
     def process_news(self, news_item: iq.QuoteConn.NewsMsg):
         news_item = news_item._asdict()
@@ -98,7 +110,7 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener, metaclass=events.GlobalRegist
         return {'type': 'level_1_news_batch', 'data': news_list}
 
     def news_provider(self):
-        return IQFeedDataProvider(self.on_news_mb)
+        return IQFeedDataProvider(self.on_news)
 
     def process_watched_symbols(self, symbols: Sequence[str]) -> None:
         """List of all watched symbols when requested."""
@@ -174,8 +186,12 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener, metaclass=events.GlobalRegist
 
     def process_fundamentals(self, fund: np.array):
         f = iqfeed_to_dict(fund, self.key_suffix)
+        symbol = f['symbol']
 
-        Fundamentals.fundamentals[f['symbol']] = f
+        if symbol in self.fundamentals and isinstance(self.fundamentals[symbol], threading.Event):
+            self.fundamentals[symbol].set()
+
+        self.fundamentals[symbol] = f
 
         self.on_fundamentals(f)
 
@@ -186,48 +202,33 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener, metaclass=events.GlobalRegist
     def fundamentals_provider(self):
         return IQFeedDataProvider(self.on_fundamentals)
 
+    def get_fundamentals(self, symbol: typing.Union[set, str]):
+        if isinstance(symbol, str):
+            symbol = {symbol}
 
-class Fundamentals(iq.SilentQuoteListener):
+        fund_events = dict()
 
-    fundamentals = dict()
-    lock = threading.RLock()
-
-    @staticmethod
-    def get(symbol: str, conn: iq.QuoteConn=None):
-        if symbol not in Fundamentals.fundamentals:
-            if not hasattr(Fundamentals, 'threading_events'):
-                Fundamentals.threading_events = dict()
-
-            Fundamentals.threading_events[symbol] = threading.Event()
-
-            class FL(iq.SilentQuoteListener):
-                def __init__(self):
-                    super().__init__("fundamental_listener")
-
-                def process_fundamentals(self, fund: np.array):
-                    with Fundamentals.lock:
-                        Fundamentals.fundamentals[symbol] = iqfeed_to_dict(fund)
-                        if symbol in Fundamentals.threading_events:
-                            Fundamentals.threading_events[symbol].set()
-
-            fl = FL()
-
+        with self._lock:
             try:
-                if conn is None:
-                    _conn = iq.QuoteConn()
-                    _conn.connect()
-                else:
-                    _conn = conn
-
-                _conn.add_listener(fl)
-                _conn.watch(symbol)
-                Fundamentals.threading_events[symbol].wait()
+                for s in symbol:
+                    if s not in self.fundamentals:
+                        e = threading.Event()
+                        self.fundamentals[s] = e
+                        fund_events[s] = e
+                        self.conn.watch(s)
             finally:
-                del Fundamentals.threading_events[symbol]
-                _conn.remove_listener(fl)
-                _conn.unwatch(symbol)
+                for i, (k, e) in enumerate(fund_events.items()):
+                    e.wait()
+                    self.conn.unwatch(k)
+                    if i % 20 == 0 and i > 0:
+                        logging.getLogger(__name__).info("Fundamental data for " + str(i) + "/" + str(len(symbol)) + " symbols downloaded")
 
-                if conn is None:
-                    _conn.disconnect()
+        if len(symbol) == 1:
+            return self.fundamentals[next(iter(symbol))]
+        else:
+            return {s: self.fundamentals[s] for s in symbol}
 
-        return Fundamentals.fundamentals[symbol]
+
+def get_fundamentals(symbol: typing.Union[set, str], conn: iq.QuoteConn=None):
+    with IQFeedLevel1Listener(fire_ticks=False, conn=conn) as listener:
+        return listener.get_fundamentals(symbol)

@@ -7,7 +7,7 @@ import pandas as pd
 from influxdb import DataFrameClient
 import pyiqfeed as iq
 from atpy.data.cache.influxdb_cache_requests import InfluxDBOHLCRequest
-from atpy.data.iqfeed.iqfeed_level_1_provider import Fundamentals
+from atpy.data.iqfeed.iqfeed_level_1_provider import get_fundamentals
 from atpy.data.iqfeed.util import adjust
 
 
@@ -23,9 +23,9 @@ class IQFeedInfluxDBOHLCRequest(InfluxDBOHLCRequest):
         if adjust_data:
             if isinstance(result.index, pd.MultiIndex):
                 pool = ThreadPool(multiprocessing.cpu_count())
-                pool.map(lambda s: adjust(result, Fundamentals.get(s, self.streaming_conn)), (s for s in result.index.levels[0]))
+                pool.map(lambda s: adjust(result, get_fundamentals(s, self.streaming_conn)), (s for s in result.index.levels[0]))
                 pool.close()
             elif isinstance(symbol, str):
-                adjust(result, Fundamentals.get(symbol, self.streaming_conn))
+                adjust(result, get_fundamentals(symbol, self.streaming_conn))
 
         return result

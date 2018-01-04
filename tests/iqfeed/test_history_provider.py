@@ -1,6 +1,7 @@
 import unittest
 
 from atpy.data.iqfeed.iqfeed_history_provider import *
+from atpy.data.iqfeed.iqfeed_level_1_provider import get_fundamentals
 import atpy.data.iqfeed.util as iqfeedutil
 
 
@@ -321,8 +322,8 @@ class TestIQFeedHistory(unittest.TestCase):
             listener.start()
 
             for i, d in enumerate(provider):
-                iqfeedutil.adjust(d, Fundamentals.get("PLUS", listener.streaming_conn))
-                iqfeedutil.adjust(d, Fundamentals.get("AAPL", listener.streaming_conn))
+                iqfeedutil.adjust(d, get_fundamentals("PLUS", listener.streaming_conn))
+                iqfeedutil.adjust(d, get_fundamentals("AAPL", listener.streaming_conn))
 
                 self.assertLess(d.loc['PLUS', 'open'].max(), 68)
                 self.assertGreater(d.loc['PLUS', 'open'].min(), 65)

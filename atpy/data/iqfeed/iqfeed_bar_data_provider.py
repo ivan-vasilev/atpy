@@ -2,7 +2,7 @@ from dateutil import tz
 
 import atpy.data.iqfeed.bar_util as bars
 import pyevents.events as events
-from atpy.data.iqfeed.iqfeed_level_1_provider import Fundamentals
+from atpy.data.iqfeed.iqfeed_level_1_provider import get_fundamentals
 from atpy.data.iqfeed.util import *
 
 
@@ -101,14 +101,14 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
         data = None
         if self.fire_bars:
             data = self._process_data(iqfeed_to_dict(bar_data, key_suffix=self.key_suffix))
-            adjust(data, Fundamentals.get(data['symbol'], self.streaming_conn))
+            adjust(data, get_fundamentals(data['symbol'], self.streaming_conn))
 
             self.on_bar(data)
 
         if self.mkt_snapshot_depth > 0 is not None:
             if data is None:
                 data = self._process_data(iqfeed_to_dict(bar_data, key_suffix=self.key_suffix))
-                adjust(data, Fundamentals.get(data['symbol'], self.streaming_conn))
+                adjust(data, get_fundamentals(data['symbol'], self.streaming_conn))
 
             self._update_mkt_snapshot(data)
 

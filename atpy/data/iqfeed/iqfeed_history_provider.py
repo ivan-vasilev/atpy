@@ -12,7 +12,7 @@ import pyevents.events as events
 import pyiqfeed
 import pyiqfeed as iq
 from atpy.data.iqfeed.filters import *
-from atpy.data.iqfeed.iqfeed_level_1_provider import Fundamentals
+from atpy.data.iqfeed.iqfeed_level_1_provider import get_fundamentals
 from atpy.data.iqfeed.util import launch_service, adjust, IQFeedDataProvider
 
 
@@ -442,7 +442,7 @@ class IQFeedHistoryProvider(object):
         result.set_index("tick_id" + sf, inplace=True, drop=False)
 
         if adjust_data:
-            adjust(result, Fundamentals.get(data_filter.ticker, self.streaming_conn))
+            adjust(result, get_fundamentals(data_filter.ticker, self.streaming_conn))
 
         return result
 
@@ -458,7 +458,7 @@ class IQFeedHistoryProvider(object):
         result['symbol'] = data_filter.ticker
 
         if adjust_data:
-            adjust(result, Fundamentals.get(data_filter.ticker, self.streaming_conn))
+            adjust(result, get_fundamentals(data_filter.ticker, self.streaming_conn))
 
         return result
 

@@ -36,6 +36,13 @@ class TestIQFeedLevel1(unittest.TestCase):
                 if i == 1:
                     break
 
+    def test_get_fundamentals(self):
+        with IQFeedLevel1Listener(fire_ticks=False) as listener, listener.fundamentals_provider():
+            funds = listener.get_fundamentals({'IBM', 'AAPL', 'GOOG', 'MSFT'})
+            self.assertTrue('AAPL' in funds and 'IBM' in funds and 'GOOG' in funds and 'MSFT' in funds)
+            for _, v in funds.items():
+                self.assertGreater(len(v), 0)
+
     def test_summary(self):
         with IQFeedLevel1Listener(minibatch=2) as listener, listener.summary_provider() as data_provider:
             listener.watch('IBM')
@@ -126,28 +133,12 @@ class TestIQFeedLevel1(unittest.TestCase):
 
             listener.on_news += on_news_item
 
-            e2 = threading.Event()
-
-            def on_news_mb(event):
-                try:
-                    news_item = event['data']
-                    self.assertEqual(len(news_item), 6)
-                    self.assertEqual(len(news_item['headline']), 2)
-                    self.assertGreater(len(news_item['headline'][0]), 0)
-                    self.assertNotEqual(news_item['story_id'][0], news_item['story_id'][1])
-                finally:
-                    e2.set()
-
-            listener.on_news_mb += on_news_mb
-
             e1.wait()
-            e2.wait()
 
             for i, news_item in enumerate(provider):
                 self.assertEqual(len(news_item), 6)
                 self.assertEqual(len(news_item['headline']), 2)
-                self.assertGreater(len(news_item['headline'][0]), 0)
-                self.assertNotEqual(news_item['story_id'][0], news_item['story_id'][1])
+                self.assertGreater(len(news_item['headline']), 0)
 
                 if i == 1:
                     break
