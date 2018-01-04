@@ -13,7 +13,7 @@ class TestIQFeedHistory(unittest.TestCase):
         filter_provider = DefaultFilterProvider()
         filter_provider += TicksFilter(ticker="IBM", max_ticks=20)
 
-        with IQFeedHistoryListener(minibatch=4, fire_batches=True, fire_ticks=True, filter_provider=filter_provider) as listener, listener.minibatch_provider() as provider:
+        with IQFeedHistoryListener(minibatch=4, fire_batches=True, fire_ticks=True, filter_provider=filter_provider) as listener, listener.batch_provider() as provider:
             listener.start()
 
             e1 = threading.Event()

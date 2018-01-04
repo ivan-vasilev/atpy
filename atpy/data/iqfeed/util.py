@@ -11,6 +11,7 @@ import requests
 
 import atpy.data.util as datautil
 import pyiqfeed as iq
+import datetime
 
 
 def dtn_credentials():
@@ -82,8 +83,8 @@ def adjust(data, fundamentals: dict):
     symbol = fundamentals['symbol']
     datautil.adjust(symbol=symbol,
                     data=data,
-                    splits=[(fundamentals['split_factor_1_date'], fundamentals['split_factor_1']), (fundamentals['split_factor_2_date'], fundamentals['split_factor_2'])],
-                    dividends=[(fundamentals['ex-dividend_date'], fundamentals['dividend_amount'])])
+                    splits=[(fundamentals['split_factor_1_date'].astype(datetime.datetime), fundamentals['split_factor_1']), (fundamentals['split_factor_2_date'].astype(datetime.datetime), fundamentals['split_factor_2'])],
+                    dividends=[(fundamentals['ex-dividend_date'].astype(datetime.datetime), fundamentals['dividend_amount'])])
 
 
 def get_symbols(symbols_file: str = None):

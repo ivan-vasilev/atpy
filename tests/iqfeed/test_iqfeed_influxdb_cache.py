@@ -1,9 +1,11 @@
+import datetime
 import unittest
 
+from pandas.util.testing import assert_frame_equal
+
+from atpy.data.cache.influxdb_cache_requests import InfluxDBOHLCRequest
 from atpy.data.iqfeed.iqfeed_bar_data_provider import *
 from atpy.data.iqfeed.iqfeed_influxdb_cache import *
-from atpy.data.cache.influxdb_cache_requests import InfluxDBOHLCRequest
-from pandas.util.testing import assert_frame_equal
 
 
 class TestInfluxDBCache(unittest.TestCase):
@@ -69,7 +71,7 @@ class TestInfluxDBCache(unittest.TestCase):
             filters_no_limit = (BarsInPeriodFilter(ticker="IBM", bgn_prd=datetime.datetime(2017, 3, 1), end_prd=None, interval_len=3600, ascend=True, interval_type='s'),
                                 BarsInPeriodFilter(ticker="AAPL", bgn_prd=datetime.datetime(2017, 3, 1), end_prd=None, interval_len=3600, ascend=True, interval_type='s'))
 
-            data = [history.request_data(f, synchronize_timestamps=False, adjust_data=False) for f in filters]
+            data = [history.request_data(f, sync_timestamps=False, adjust_data=False) for f in filters]
 
             for datum, f in zip(data, filters):
                 datum.drop('timestamp', axis=1, inplace=True)
@@ -85,7 +87,7 @@ class TestInfluxDBCache(unittest.TestCase):
             for k in latest_current.keys() & latest_old.keys():
                 self.assertGreater(latest_current[k][1], latest_old[k][1])
 
-            data_no_limit = [history.request_data(f, synchronize_timestamps=False, adjust_data=False) for f in filters_no_limit]
+            data_no_limit = [history.request_data(f, sync_timestamps=False, adjust_data=False) for f in filters_no_limit]
             cache_data_no_limit = [cache_requests.request(symbol=f.ticker, bgn_prd=f.bgn_prd)[0] for f in filters_no_limit]
             for df1, df2 in zip(data_no_limit, cache_data_no_limit):
                 assert_frame_equal(df1, df2)

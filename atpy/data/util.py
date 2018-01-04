@@ -86,7 +86,7 @@ def get_us_listed_companies():
     return pd.DataFrame(symbols)
 
 
-def adjust(symbol: str, data: pd.DataFrame, splits: list=None, dividends: list=None):
+def adjust(symbol: str, data, splits: list=None, dividends: list=None):
     """
     :param symbol: string
     :param data: dataframe with data
@@ -110,77 +110,49 @@ def adjust(symbol: str, data: pd.DataFrame, splits: list=None, dividends: list=N
             adjust_dividend(data=data, symbol=symbol, dividend_date=e[0], dividend_amount=e[1])
 
 
-def adjust_dividend(data, symbol, dividend_amount, dividend_date):
+def adjust_dividend(data, symbol: str, dividend_amount: float, dividend_date: datetime.date):
     if isinstance(data, pd.DataFrame):
-        if 'open' in data.columns:  # adjust bars
-            if isinstance(data.index, pd.MultiIndex):
-                dividend_date = datetime.datetime.combine(dividend_date.astype(datetime.datetime), datetime.datetime.min.time()).replace(tzinfo=data.index.levels[1].tz)
-                mask = data['timestamp'] < dividend_date
-                mask[data['symbol'] != symbol] = False
+        cols = [c for c in {'close', 'high', 'open', 'low', 'ask', 'bid', 'last'} if c in data.columns]
+        if isinstance(data.index, pd.MultiIndex):
+            dividend_date = datetime.datetime.combine(dividend_date, datetime.datetime.min.time()).replace(tzinfo=data.index.levels[1].tz)
+            mask = data['timestamp'] < dividend_date
+            mask[data['symbol'] != symbol] = False
 
-                data.loc[mask, 'close'] -= dividend_amount
-                data.loc[mask, 'high'] -= dividend_amount
-                data.loc[mask, 'open'] -= dividend_amount
-                data.loc[mask, 'low'] -= dividend_amount
-            else:
-                data.loc[data.index < dividend_date, 'close'] -= dividend_amount
-                data.loc[data.index < dividend_date, 'high'] -= dividend_amount
-                data.loc[data.index < dividend_date, 'open'] -= dividend_amount
-                data.loc[data.index < dividend_date, 'low'] -= dividend_amount
-        elif 'ask' in data.columns:  # adjust ticks:
-            data.loc[data['timestamp'] < dividend_date, 'ask'] -= dividend_amount
-            data.loc[data['timestamp'] < dividend_date, 'bid'] -= dividend_amount
-            data.loc[data['timestamp'] < dividend_date, 'last'] -= dividend_amount
+            for c in cols:
+                data.loc[mask, c] -= dividend_amount
+        else:
+            dividend_date = datetime.datetime.combine(dividend_date, datetime.datetime.min.time()).replace(tzinfo=data.index.tz)
+            for c in [c for c in {'close', 'high', 'open', 'low', 'ask', 'bid', 'last'} if c in data.columns]:
+                data.loc[data.index < dividend_date, c] -= dividend_amount
     elif dividend_date > data['timestamp']:
-        if 'open' in data:  # adjust bars
-            data['open'] -= dividend_amount
-            data['close'] -= dividend_amount
-            data['high'] -= dividend_amount
-            data['low'] -= dividend_amount
-        elif 'ask' in data:  # adjust ticks:
-            data['ask'] -= dividend_amount
-            data['bid'] -= dividend_amount
-            data['last'] -= dividend_amount
+        for c in [c for c in {'close', 'high', 'open', 'low', 'ask', 'bid', 'last'} if c in data.keys()]:
+            data[c] -= dividend_amount
 
 
-def adjust_split(data, symbol, split_factor, split_date):
+def adjust_split(data, symbol: str, split_factor: float, split_date: datetime.date):
     if isinstance(data, pd.DataFrame):
-        if 'open' in data.columns:  # adjust bars
-            if isinstance(data.index, pd.MultiIndex):
-                split_date = datetime.datetime.combine(split_date.astype(datetime.datetime), datetime.datetime.min.time()).replace(tzinfo=data.index.levels[1].tz)
-                mask = data['timestamp'] < split_date
-                mask[data['symbol'] != symbol] = False
+        cols = [c for c in {'close', 'high', 'open', 'low', 'period_volume', 'total_volume', 'ask', 'bid', 'last', 'last_size'} if c in data.columns]
 
-                data.loc[mask, 'open'] *= split_factor
-                data.loc[mask, 'close'] *= split_factor
-                data.loc[mask, 'high'] *= split_factor
-                data.loc[mask, 'low'] *= split_factor
-                data.loc[mask, 'period_volume'] *= int(1 / split_factor)
-                data.loc[mask, 'total_volume'] *= int(1 / split_factor)
-            else:
-                data.loc[data.index < split_date, 'open'] *= split_factor
-                data.loc[data.index < split_date, 'close'] *= split_factor
-                data.loc[data.index < split_date, 'high'] *= split_factor
-                data.loc[data.index < split_date, 'low'] *= split_factor
-                data.loc[data.index < split_date, 'period_volume'] *= int(1 / split_factor)
-                data.loc[data.index < split_date, 'total_volume'] *= int(1 / split_factor)
-        elif 'ask' in data.columns:  # adjust ticks:
-            data.loc[data['timestamp'] < split_date, 'ask'] *= split_factor
-            data.loc[data['timestamp'] < split_date, 'bid'] *= split_factor
-            data.loc[data['timestamp'] < split_date, 'last'] *= split_factor
-            data.loc[data['timestamp'] < split_date, 'last_size'] *= int(1 / split_factor)
-            data.loc[data['timestamp'] < split_date, 'total_volume'] *= int(1 / split_factor)
+        if isinstance(data.index, pd.MultiIndex):
+            split_date = datetime.datetime.combine(split_date, datetime.datetime.min.time()).replace(tzinfo=data.index.levels[1].tz)
+            mask = data['timestamp'] < split_date
+            mask[data['symbol'] != symbol] = False
+
+            for c in cols:
+                if c in ('period_volume', 'total_volume', 'last_size'):
+                    data.loc[mask, c] = (data.loc[mask, c] * (1 / split_factor)).astype(int)
+                else:
+                    data.loc[mask, c] *= split_factor
+        else:
+            split_date = datetime.datetime.combine(split_date, datetime.datetime.min.time()).replace(tzinfo=data.index.tz)
+            for c in cols:
+                if c in ('period_volume', 'total_volume', 'last_size'):
+                    data.loc[data.index < split_date, c] *= int(1 / split_factor)
+                else:
+                    data.loc[data.index < split_date, c] *= split_factor
     elif split_factor > 0 and split_date > data['timestamp']:
-        if 'open' in data:  # adjust bars
-            data['open'] *= split_factor
-            data['close'] *= split_factor
-            data['high'] *= split_factor
-            data['low'] *= split_factor
-            data['period_volume'] *= int(1 / split_factor)
-            data['total_volume'] *= int(1 / split_factor)
-        elif 'ask' in data:  # adjust ticks:
-            data['ask'] *= split_factor
-            data['bid'] *= split_factor
-            data['last'] *= split_factor
-            data['last_size'] *= int(1 / split_factor)
-            data['total_volume'] *= int(1 / split_factor)
+        for c in [c for c in {'close', 'high', 'open', 'low', 'period_volume', 'total_volume', 'ask', 'bid', 'last', 'last_size'} if c in data.keys()]:
+            if c in ('period_volume', 'total_volume', 'last_size'):
+                data[c] = int(data[c] * (1 / split_factor))
+            else:
+                data[c] *= split_factor
