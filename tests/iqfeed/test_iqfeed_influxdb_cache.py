@@ -96,7 +96,7 @@ class TestInfluxDBCache(unittest.TestCase):
         with IQFeedInfluxDBCache(client_factory=self._client_factory) as cache:
             funds = get_fundamentals({'IBM', 'AAPL', 'GOOG', 'MSFT'})
             cache.update_fundamentals(list(funds.values()))
-            result = inf_cache.get_fundamentals(['IBM', 'AAPL', 'GOOG', 'MSFT'], cache.client)
+            result = inf_cache.get_cache_fundamentals(['IBM', 'AAPL', 'GOOG', 'MSFT'], cache.client)
 
         self.assertEqual(len(result), 4)
         self.assertEqual({k for k in result.keys()}, {'IBM', 'AAPL', 'GOOG', 'MSFT'})

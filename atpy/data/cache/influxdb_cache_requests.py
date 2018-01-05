@@ -200,7 +200,7 @@ class InfluxDBDeltaRequest(InfluxDBValueRequest, metaclass=events.GlobalRegister
         super().__init__(value='close - open as delta, period_volume, total_volume', client=client, interval_len=interval_len, interval_type=interval_type)
 
 
-def get_fundamentals(symbol: typing.Union[list, str], client: InfluxDBClient):
+def get_cache_fundamentals(symbol: typing.Union[list, str], client: InfluxDBClient):
     query = "SELECT * FROM iqfeed_fundamentals WHERE "
     if isinstance(symbol, list):
         query += "symbol =~ /{}/".format("|".join(['^' + s + '$' for s in symbol]))
