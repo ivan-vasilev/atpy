@@ -86,24 +86,16 @@ def get_us_listed_companies():
     return pd.DataFrame(symbols)
 
 
-def adjust(symbol: str, data, splits: list=None, dividends: list=None):
+def adjust(symbol: str, data, adjustments: list):
     """
     :param symbol: string
     :param data: dataframe with data
-    :param splits: [(split_date, split_ratio), ...]
-    :param dividends: [(dividend_date, dividend_amount), ...]
+    :param adjustments: list of adjustments in the form of [(date, split_factor/dividend_amount, 'split'/'dividend'), ...]
     :return None, the data is adjusted inplace
     """
-    by_date = list()
-    if splits:
-        by_date += [(s[0], s[1], 'split') for s in splits if s is not None and None not in s]
+    adjustments.sort(key=lambda x: x[0], reverse=True)
 
-    if dividends:
-        by_date += [(d[0], d[1], 'dividend') for d in dividends if d is not None and None not in d]
-
-    by_date.sort(key=lambda x: x[0], reverse=True)
-
-    for e in by_date:
+    for e in adjustments:
         if e[2] == 'split':
             adjust_split(data=data, symbol=symbol, split_date=e[0], split_factor=e[1])
         elif e[2] == 'dividend':

@@ -1,3 +1,4 @@
+import datetime
 import logging
 import os
 import queue
@@ -11,7 +12,6 @@ import requests
 
 import atpy.data.util as datautil
 import pyiqfeed as iq
-import datetime
 
 
 def dtn_credentials():
@@ -85,10 +85,17 @@ def adjust(data, fundamentals: dict):
 
     fundamentals = {k: None if pd.isnull(v) else v for k, v in fundamentals.items()}
     symbol = fundamentals['symbol']
-    datautil.adjust(symbol=symbol,
-                    data=data,
-                    splits=[(fundamentals['split_factor_1_date'], fundamentals['split_factor_1']), (fundamentals['split_factor_2_date'], fundamentals['split_factor_2'])],
-                    dividends=[(fundamentals['ex-dividend_date'], fundamentals['dividend_amount'])])
+    adjustments = list()
+    if fundamentals['split_factor_1'] is not None:
+        adjustments.append((fundamentals['split_factor_1_date'], fundamentals['split_factor_1'], 'split'))
+
+    if fundamentals['split_factor_2'] is not None:
+        adjustments.append((fundamentals['split_factor_2_date'], fundamentals['split_factor_2'], 'split'))
+
+    if fundamentals['dividend_amount'] is not None:
+        adjustments.append((fundamentals['ex-dividend_date'], fundamentals['dividend_amount'], 'dividend'))
+
+    datautil.adjust(symbol=symbol, data=data, adjustments=adjustments)
 
 
 def get_symbols(symbols_file: str = None):
