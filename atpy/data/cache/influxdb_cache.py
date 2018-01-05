@@ -223,30 +223,3 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
             "time": datetime.datetime.combine(timestamp, datetime.datetime.min.time()),
             "fields": {'value': value, 'type': typ}
         }
-
-    def get_adjustments(self, symbol: typing.Union[list, str] = None, typ: str = None, data_provider: str = None):
-        query = "SELECT * FROM splits_dividends"
-
-        where = list()
-        if symbol is not None:
-            if isinstance(symbol, list):
-                where.append("symbol =~ /{}/".format("|".join(['^' + s + '$' for s in symbol])))
-            else:
-                where.append("symbol = '{}'".format(symbol))
-
-        if typ is not None:
-            where.append("type='{}'".format(typ))
-
-        if data_provider is not None:
-            where.append("data_provider='{}'".format(data_provider))
-
-        if len(where) > 0:
-            query += " WHERE " + " AND ".join(where)
-
-        result = dict()
-        for sd in InfluxDBClient.query(self.client, query).get_points():
-            if sd['symbol'] not in result:
-                result[sd['symbol']] = list()
-                result[sd['symbol']].append((sd['time'], sd['value'], sd['type']))
-
-        return result

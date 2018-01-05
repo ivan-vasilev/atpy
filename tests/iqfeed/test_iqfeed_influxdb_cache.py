@@ -108,7 +108,7 @@ class TestInfluxDBCache(unittest.TestCase):
             cache.update_splits_dividends(list(funds.values()))
             result = list(InfluxDBClient.query(self._client, "SELECT * FROM splits_dividends").get_points())
 
-            adjustments = cache.get_adjustments(symbol=['IBM', 'AAPL'], data_provider='iqfeed')
+            adjustments = inf_cache.get_adjustments(client=self._client, symbol=['IBM', 'AAPL'], data_provider='iqfeed')
 
         self.assertEqual(len(adjustments), 2)
         self.assertTrue(result[0]['symbol'] in {'IBM', 'AAPL'})

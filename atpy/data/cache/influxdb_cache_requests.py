@@ -1,9 +1,10 @@
 import datetime
+import json
 import typing
 
 import numpy as np
 from influxdb import InfluxDBClient, DataFrameClient
-import json
+
 import atpy.data.iqfeed.bar_util as bars
 import pyevents.events as events
 
@@ -208,6 +209,34 @@ def get_cache_fundamentals(symbol: typing.Union[list, str], client: InfluxDBClie
         query += "symbol = '{}'".format(symbol)
 
     return {f['symbol']: {**json.loads(f['data']), **{'last_update': f['time']}} for f in list(InfluxDBClient.query(client, query).get_points())}
+
+
+def get_adjustments(client: InfluxDBClient, symbol: typing.Union[list, str] = None, typ: str = None, data_provider: str = None):
+    query = "SELECT * FROM splits_dividends"
+
+    where = list()
+    if symbol is not None:
+        if isinstance(symbol, list):
+            where.append("symbol =~ /{}/".format("|".join(['^' + s + '$' for s in symbol])))
+        else:
+            where.append("symbol = '{}'".format(symbol))
+
+    if typ is not None:
+        where.append("type='{}'".format(typ))
+
+    if data_provider is not None:
+        where.append("data_provider='{}'".format(data_provider))
+
+    if len(where) > 0:
+        query += " WHERE " + " AND ".join(where)
+
+    result = dict()
+    for sd in InfluxDBClient.query(client, query).get_points():
+        if sd['symbol'] not in result:
+            result[sd['symbol']] = list()
+            result[sd['symbol']].append((sd['time'], sd['value'], sd['type']))
+
+    return result
 
 
 def _query_where(interval_len: int, interval_type: str, symbol: typing.Union[list, str] = None, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None):
