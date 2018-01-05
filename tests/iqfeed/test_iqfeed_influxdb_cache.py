@@ -2,7 +2,7 @@ import unittest
 
 from pandas.util.testing import assert_frame_equal
 
-from atpy.data.cache.influxdb_cache_requests import InfluxDBOHLCRequest
+import atpy.data.cache.influxdb_cache_requests as inf_cache
 from atpy.data.iqfeed.iqfeed_bar_data_provider import *
 from atpy.data.iqfeed.iqfeed_influxdb_cache import *
 from influxdb import InfluxDBClient
@@ -61,7 +61,7 @@ class TestInfluxDBCache(unittest.TestCase):
         with IQFeedHistoryProvider(num_connections=2) as history, \
                 IQFeedInfluxDBCache(client_factory=self._client_factory, use_stream_events=True, history=history, time_delta_back=relativedelta(days=30)) as cache:
 
-            cache_requests = InfluxDBOHLCRequest(client=self._client, interval_len=3600, interval_type='s')
+            cache_requests = inf_cache.InfluxDBOHLCRequest(client=self._client, interval_len=3600, interval_type='s')
 
             end_prd = datetime.datetime(2017, 3, 2)
             filters = (BarsInPeriodFilter(ticker="IBM", bgn_prd=datetime.datetime(2017, 3, 1), end_prd=end_prd, interval_len=3600, ascend=True, interval_type='s'),
@@ -96,11 +96,11 @@ class TestInfluxDBCache(unittest.TestCase):
         with IQFeedInfluxDBCache(client_factory=self._client_factory) as cache:
             funds = get_fundamentals({'IBM', 'AAPL', 'GOOG', 'MSFT'})
             cache.update_fundamentals(list(funds.values()))
-            result = list(InfluxDBClient.query(self._client, "SELECT * FROM iqfeed_fundamentals").get_points())
+            result = inf_cache.get_fundamentals(['IBM', 'AAPL', 'GOOG', 'MSFT'], cache.client)
 
         self.assertEqual(len(result), 4)
-        self.assertTrue(result[0]['symbol'] in {'IBM', 'AAPL', 'GOOG', 'MSFT'})
-        self.assertGreater(len(result[0]['data']), 0)
+        self.assertEqual({k for k in result.keys()}, {'IBM', 'AAPL', 'GOOG', 'MSFT'})
+        self.assertGreater(len(result['IBM']), 0)
 
     def test_update_adjustments(self):
         with IQFeedInfluxDBCache(client_factory=self._client_factory) as cache:

@@ -2,7 +2,7 @@ import datetime
 import typing
 
 import numpy as np
-from influxdb import DataFrameClient
+from influxdb import InfluxDBClient, DataFrameClient
 
 import atpy.data.iqfeed.bar_util as bars
 import pyevents.events as events
@@ -198,6 +198,16 @@ class InfluxDBDeltaAdjustedRequest(InfluxDBValueRequest, metaclass=events.Global
 class InfluxDBDeltaRequest(InfluxDBValueRequest, metaclass=events.GlobalRegister):
     def __init__(self, client: DataFrameClient, interval_len: int, interval_type: str = 's'):
         super().__init__(value='close - open as delta, period_volume, total_volume', client=client, interval_len=interval_len, interval_type=interval_type)
+
+
+def get_fundamentals(symbol: typing.Union[list, str], client: InfluxDBClient):
+    query = "SELECT * FROM iqfeed_fundamentals WHERE "
+    if isinstance(symbol, list):
+        query += "symbol =~ /{}/".format("|".join(['^' + s + '$' for s in symbol]))
+    else:
+        query += "symbol = '{}'".format(symbol)
+
+    return {f['symbol']: f['data'] for f in list(InfluxDBClient.query(client, query).get_points())}
 
 
 def _query_where(interval_len: int, interval_type: str, symbol: typing.Union[list, str] = None, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None):
