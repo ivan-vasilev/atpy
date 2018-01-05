@@ -5,8 +5,6 @@ Script that updates the splits/dividends/fundamentals cache
 import argparse
 import logging
 
-from dateutil.relativedelta import relativedelta
-
 import atpy.data.iqfeed.util as iqutil
 from atpy.data.cache.influxdb_cache import ClientFactory
 from atpy.data.iqfeed.iqfeed_influxdb_cache import IQFeedInfluxDBCache
@@ -45,15 +43,15 @@ if __name__ == "__main__":
     client.switch_database(args.database)
 
     with IQFeedLevel1Listener(fire_ticks=False) as listener, \
-            IQFeedInfluxDBCache(client_factory=client_factory, use_stream_events=False, time_delta_back=relativedelta(years=args.delta_back)) as cache:
+            IQFeedInfluxDBCache(client_factory=client_factory, use_stream_events=False) as cache:
         all_symbols = iqutil.get_symbols(symbols_file=args.symbols_file)
 
-        fundamentals = get_fundamentals(all_symbols)
+        fundamentals = get_fundamentals(set(list(all_symbols)[:100]))
 
         if args.update_fundamentals:
             cache.update_fundamentals(fundamentals=fundamentals.values())
 
-        if args.splits_dividends:
+        if args.update_splits_dividends:
             cache.update_splits_dividends(fundamentals=fundamentals.values())
 
     client.close()

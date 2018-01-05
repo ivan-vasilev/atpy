@@ -77,12 +77,11 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener, metaclass=events.GlobalRegist
 
         logging.getLogger(__name__).warning("Invalid symbol request: " + str(bad_symbol))
 
-        with self._lock:
-            if bad_symbol in self.fundamentals:
-                if isinstance(self.fundamentals[bad_symbol], threading.Event):
-                    self.fundamentals[bad_symbol].set()
-
+        if bad_symbol in self.fundamentals:
+            if isinstance(self.fundamentals[bad_symbol], threading.Event):
+                e = self.fundamentals[bad_symbol]
                 del self.fundamentals[bad_symbol]
+                e.set()
 
     def process_news(self, news_item: iq.QuoteConn.NewsMsg):
         news_item = news_item._asdict()
@@ -111,10 +110,6 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener, metaclass=events.GlobalRegist
 
     def news_provider(self):
         return IQFeedDataProvider(self.on_news)
-
-    def process_watched_symbols(self, symbols: Sequence[str]) -> None:
-        """List of all watched symbols when requested."""
-        self.watched_symbols = symbols
 
     def process_regional_quote(self, quote: np.array):
         if self.fire_ticks:
@@ -189,9 +184,12 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener, metaclass=events.GlobalRegist
         symbol = f['symbol']
 
         if symbol in self.fundamentals and isinstance(self.fundamentals[symbol], threading.Event):
-            self.fundamentals[symbol].set()
-
-        self.fundamentals[symbol] = f
+            e = self.fundamentals[symbol]
+            self.fundamentals[symbol] = f
+            e.set()
+            self.conn.unwatch(symbol)
+        else:
+            self.fundamentals[symbol] = f
 
         self.on_fundamentals(f)
 
@@ -206,27 +204,30 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener, metaclass=events.GlobalRegist
         if isinstance(symbol, str):
             symbol = {symbol}
 
-        fund_events = dict()
-
         with self._lock:
-            try:
-                for s in symbol:
-                    if s not in self.fundamentals:
-                        e = threading.Event()
-                        self.fundamentals[s] = e
-                        fund_events[s] = e
-                        self.conn.watch(s)
-            finally:
-                for i, (k, e) in enumerate(fund_events.items()):
-                    e.wait()
-                    self.conn.unwatch(k)
-                    if i % 20 == 0 and i > 0:
-                        logging.getLogger(__name__).info("Fundamental data for " + str(i) + "/" + str(len(symbol)) + " symbols downloaded")
+            batch = list()
+            for i, s in enumerate(symbol):
+                if s not in self.fundamentals:
+                    e = threading.Event()
+                    self.fundamentals[s] = e
+                    batch.append((s, e))
+
+                    if len(batch) == 10 or i == len(symbol) - 1:
+                        for batch_sym, _ in batch:
+                            self.conn.watch(batch_sym)
+
+                        for _, e in batch:
+                            e.wait()
+
+                        batch = list()
+
+                    if i % 100 == 0 and i > 0:
+                        logging.getLogger(__name__).info("Fundamentals loaded: " + str(i))
 
         if len(symbol) == 1:
             return self.fundamentals[next(iter(symbol))]
         else:
-            return {s: self.fundamentals[s] for s in symbol}
+            return {s: self.fundamentals[s] for s in symbol if s in self.fundamentals}
 
 
 def get_fundamentals(symbol: typing.Union[set, str], conn: iq.QuoteConn=None):

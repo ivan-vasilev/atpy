@@ -3,7 +3,7 @@ import typing
 
 import numpy as np
 from influxdb import InfluxDBClient, DataFrameClient
-
+import json
 import atpy.data.iqfeed.bar_util as bars
 import pyevents.events as events
 
@@ -207,7 +207,7 @@ def get_fundamentals(symbol: typing.Union[list, str], client: InfluxDBClient):
     else:
         query += "symbol = '{}'".format(symbol)
 
-    return {f['symbol']: f['data'] for f in list(InfluxDBClient.query(client, query).get_points())}
+    return {f['symbol']: {**json.loads(f['data']), **{'last_update': f['time']}} for f in list(InfluxDBClient.query(client, query).get_points())}
 
 
 def _query_where(interval_len: int, interval_type: str, symbol: typing.Union[list, str] = None, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None):
