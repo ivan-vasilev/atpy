@@ -1,4 +1,3 @@
-import datetime
 import unittest
 
 from pandas.util.testing import assert_frame_equal
@@ -6,6 +5,7 @@ from pandas.util.testing import assert_frame_equal
 from atpy.data.cache.influxdb_cache_requests import InfluxDBOHLCRequest
 from atpy.data.iqfeed.iqfeed_bar_data_provider import *
 from atpy.data.iqfeed.iqfeed_influxdb_cache import *
+from influxdb import InfluxDBClient
 
 
 class TestInfluxDBCache(unittest.TestCase):
@@ -91,6 +91,28 @@ class TestInfluxDBCache(unittest.TestCase):
             cache_data_no_limit = [cache_requests.request(symbol=f.ticker, bgn_prd=f.bgn_prd)[0] for f in filters_no_limit]
             for df1, df2 in zip(data_no_limit, cache_data_no_limit):
                 assert_frame_equal(df1, df2)
+
+    def test_update_fundamentals(self):
+        with IQFeedInfluxDBCache(client_factory=self._client_factory) as cache:
+            funds = get_fundamentals({'IBM', 'AAPL', 'GOOG', 'MSFT'})
+            cache.update_fundamentals(list(funds.values()))
+            result = list(InfluxDBClient.query(self._client, "SELECT * FROM iqfeed_fundamentals").get_points())
+
+        self.assertEqual(len(result), 4)
+        self.assertTrue(result[0]['symbol'] in {'IBM', 'AAPL', 'GOOG', 'MSFT'})
+        self.assertGreater(len(result[0]['data']), 0)
+
+    def test_update_adjustments(self):
+        with IQFeedInfluxDBCache(client_factory=self._client_factory) as cache:
+            funds = get_fundamentals({'IBM', 'AAPL', 'GOOG', 'MSFT'})
+            cache.update_splits_dividends(list(funds.values()))
+            result = list(InfluxDBClient.query(self._client, "SELECT * FROM splits_dividends").get_points())
+
+            adjustments = cache.get_adjustments(symbol=['IBM', 'AAPL'], data_provider='iqfeed')
+
+        self.assertEqual(len(adjustments), 2)
+        self.assertTrue(result[0]['symbol'] in {'IBM', 'AAPL'})
+        self.assertTrue(isinstance(result[0]['value'], float))
 
 
 if __name__ == '__main__':

@@ -189,3 +189,64 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
         self._request_noncache_data(filters, q)
 
         t.join()
+
+    def add_adjustments(self, adjustments: list, data_provider: str):
+        """
+        add a list of splits/dividends to the database
+        :param adjustments: list of adjustments of the type [(timestamp: datetime.date, symbol: str, typ: str, value), ...]
+        :param data_provider: data provider
+        """
+        points = [self._get_adjustment_json_query(*a, data_provider) for a in adjustments]
+        InfluxDBClient.write_points(self.client, points, protocol='json', time_precision='s')
+
+    def add_adjustment(self, timestamp: datetime.date, symbol: str, typ: str, value: float, data_provider: str):
+        """
+        add splits/dividends to the database
+        :param timestamp: date of the adjustment
+        :param symbol: symbol
+        :param typ: 'split' or 'dividend'
+        :param value: split_factor/dividend_rate
+        :param data_provider: data provider
+        """
+        json_body = self._get_adjustment_json_query(timestamp=timestamp, symbol=symbol, typ=typ, value=value, data_provider=data_provider)
+        InfluxDBClient.write_points(self.client, [json_body], protocol='json', time_precision='s')
+
+    @staticmethod
+    def _get_adjustment_json_query(timestamp: datetime.date, symbol: str, typ: str, value: float, data_provider: str):
+        return {
+            "measurement": "splits_dividends",
+            "tags": {
+                "symbol": symbol,
+                "data_provider": data_provider,
+            },
+
+            "time": datetime.datetime.combine(timestamp, datetime.datetime.min.time()),
+            "fields": {'value': value, 'type': typ}
+        }
+
+    def get_adjustments(self, symbol: typing.Union[list, str] = None, typ: str = None, data_provider: str = None):
+        query = "SELECT * FROM splits_dividends"
+
+        where = list()
+        if symbol is not None:
+            if isinstance(symbol, list):
+                where.append("symbol =~ /{}/".format("|".join(['^' + s + '$' for s in symbol])))
+            else:
+                where.append("symbol = '{}'".format(symbol))
+
+        if typ is not None:
+            where.append("type='{}'".format(typ))
+
+        if data_provider is not None:
+            where.append("data_provider='{}'".format(data_provider))
+
+        if len(where) > 0:
+            query += " WHERE " + " AND ".join(where)
+
+        result = dict()
+        for sd in InfluxDBClient.query(self.client, query).get_points():
+            if sd['symbol'] not in result:
+                result[sd['symbol']] = list()
+                result[sd['symbol']].append((sd['time'], sd['value'], sd['type']))
+
+        return result
