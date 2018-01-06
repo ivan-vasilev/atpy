@@ -316,14 +316,40 @@ class TestIQFeedHistory(unittest.TestCase):
 
     def test_bar_adjust_2(self):
         filter_provider = DefaultFilterProvider()
+        filter_provider += BarsInPeriodFilter(ticker="PLUS", bgn_prd=datetime.datetime(2017, 3, 24), end_prd=datetime.datetime(2017, 3, 29), interval_len=3600, ascend=True, interval_type='s', max_ticks=100)
+
+        with IQFeedHistoryListener(fire_batches=True, fire_ticks=True, filter_provider=filter_provider) as listener, listener.batch_provider() as provider:
+            listener.start()
+
+            e1 = threading.Event()
+
+            def process_bar(event):
+                try:
+                    self.assertLess(event['data']['open'], 68)
+                    self.assertGreater(event['data']['open'], 65)
+                finally:
+                    e1.set()
+
+            listener.process_datum += process_bar
+
+            e1.wait()
+
+            for i, d in enumerate(provider):
+                self.assertLess(d['open'].max(), 68)
+                self.assertGreater(d['open'].min(), 65)
+
+                if i == 1:
+                    break
+
+    def test_bar_adjust_3(self):
+        filter_provider = DefaultFilterProvider()
         filter_provider += BarsInPeriodFilter(ticker=["PLUS", "AAPL"], bgn_prd=datetime.datetime(2017, 3, 31), end_prd=datetime.datetime(2017, 4, 5), interval_len=3600, ascend=True, interval_type='s')
 
         with IQFeedHistoryListener(fire_batches=True, adjust_data=False, filter_provider=filter_provider, sync_timestamps=False) as listener, listener.batch_provider() as provider:
             listener.start()
 
             for i, d in enumerate(provider):
-                iqfeedutil.adjust(d, get_fundamentals("PLUS", listener.streaming_conn))
-                iqfeedutil.adjust(d, get_fundamentals("AAPL", listener.streaming_conn))
+                d.update(d.groupby(level=0).apply(lambda x: iqfeedutil.adjust(x, get_fundamentals(x.name, listener.streaming_conn))))
 
                 self.assertLess(d.loc['PLUS', 'open'].max(), 68)
                 self.assertGreater(d.loc['PLUS', 'open'].min(), 65)

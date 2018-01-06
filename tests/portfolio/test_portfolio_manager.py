@@ -182,7 +182,7 @@ class TestPortfolioManager(unittest.TestCase):
     def test_historical_price_updates(self):
         events.use_global_event_bus()
 
-        filter_provider = DefaultFilterProvider()
+        filter_provider = DefaultFilterProvider(repeat=True)
         filter_provider += TicksFilter(ticker="GOOG", max_ticks=1)
         filter_provider += TicksFilter(ticker="AAPL", max_ticks=1)
 
@@ -302,7 +302,7 @@ class TestPortfolioManager(unittest.TestCase):
         o4 = StopLimitOrder(Type.SELL, 'AAPL', 1, 1, 99999)
         mock_orders.on_event({'type': 'order_request', 'data': o4})
 
-        filter_provider = DefaultFilterProvider()
+        filter_provider = DefaultFilterProvider(repeat=True)
         filter_provider += TicksFilter(ticker="GOOG", max_ticks=1)
         filter_provider += TicksFilter(ticker="AAPL", max_ticks=1)
         filter_provider += TicksFilter(ticker="IBM", max_ticks=1)
@@ -353,7 +353,7 @@ class TestPortfolioManager(unittest.TestCase):
         o4 = StopLimitOrder(Type.SELL, 'AAPL', 1, 1, 99999)
         mock_orders.on_event({'type': 'order_request', 'data': o4})
 
-        filter_provider = DefaultFilterProvider()
+        filter_provider = DefaultFilterProvider(repeat=True)
         filter_provider += BarsFilter(ticker="GOOG", interval_len=60, interval_type='s', max_bars=20)
         filter_provider += BarsFilter(ticker="AAPL", interval_len=60, interval_type='s', max_bars=20)
         filter_provider += BarsFilter(ticker="IBM", interval_len=60, interval_type='s', max_bars=20)

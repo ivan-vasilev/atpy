@@ -87,12 +87,12 @@ def get_us_listed_companies():
     return pd.DataFrame(symbols)
 
 
-def adjust(symbol: str, data, adjustments: list):
+def adjust(data, adjustments: list):
     """
-    :param symbol: string
-    :param data: dataframe with data
+    IMPORTANT !!! This method supports MultiIndex dataframes, but the first level of the index has to be of ONLY ONE symbol
+    :param data: dataframe with data.
     :param adjustments: list of adjustments in the form of [(date, split_factor/dividend_amount, 'split'/'dividend'), ...]
-    :return None, the data is adjusted inplace
+    :return adjusted data
     """
     adjustments.sort(key=lambda x: x[0], reverse=True)
 
@@ -102,19 +102,20 @@ def adjust(symbol: str, data, adjustments: list):
         elif e[2] == 'dividend':
             adjust_dividend(data=data, dividend_date=e[0], dividend_amount=e[1])
 
+    return data
+
 
 def adjust_dividend(data, dividend_amount: float, dividend_date: datetime.date):
     if isinstance(data, pd.DataFrame):
-        cols = [c for c in {'close', 'high', 'open', 'low', 'ask', 'bid', 'last'} if c in data.columns]
-        if isinstance(data.index, pd.MultiIndex):
-            dividend_date = datetime.datetime.combine(dividend_date, datetime.datetime.min.time()).replace(tzinfo=data.index.levels[1].tz)
+        tzinfo = data.index.levels[1].tz if isinstance(data.index, pd.MultiIndex) else data.index.tz
+        dividend_date = datetime.datetime.combine(dividend_date, datetime.datetime.min.time()).replace(tzinfo=tzinfo)
 
-            for c in cols:
+        if dividend_date > data.iloc[0]['timestamp']:
+            for c in [c for c in ['close', 'high', 'open', 'low', 'ask', 'bid', 'last'] if c in data.columns]:
+                data[c] -= dividend_amount
+        elif dividend_date > data.iloc[-1]['timestamp']:
+            for c in [c for c in ['close', 'high', 'open', 'low', 'ask', 'bid', 'last'] if c in data.columns]:
                 data.loc[data['timestamp'] < dividend_date, c] -= dividend_amount
-        else:
-            dividend_date = datetime.datetime.combine(dividend_date, datetime.datetime.min.time()).replace(tzinfo=data.index.tz)
-            for c in [c for c in {'close', 'high', 'open', 'low', 'ask', 'bid', 'last'} if c in data.columns]:
-                data.loc[data.index < dividend_date, c] -= dividend_amount
     elif dividend_date > data['timestamp']:
         for c in [c for c in {'close', 'high', 'open', 'low', 'ask', 'bid', 'last'} if c in data.keys()]:
             data[c] -= dividend_amount
@@ -123,25 +124,22 @@ def adjust_dividend(data, dividend_amount: float, dividend_date: datetime.date):
 def adjust_split(data, split_factor: float, split_date: datetime.date):
     if split_factor > 0:
         if isinstance(data, pd.DataFrame):
-            cols = [c for c in {'close', 'high', 'open', 'low', 'period_volume', 'total_volume', 'ask', 'bid', 'last', 'last_size'} if c in data.columns]
+            tzinfo = data.index.levels[1].tz if isinstance(data.index, pd.MultiIndex) else data.index.tz
+            split_date = datetime.datetime.combine(split_date, datetime.datetime.min.time()).replace(tzinfo=tzinfo)
 
-            if isinstance(data.index, pd.MultiIndex):
-                split_date = datetime.datetime.combine(split_date, datetime.datetime.min.time()).replace(tzinfo=data.index.levels[1].tz)
+            if split_date > data.iloc[-1]['timestamp']:
+                for c in [c for c in ['period_volume', 'total_volume', 'last_size'] if c in data.columns]:
+                    data[c] = (data[c] * (1 / split_factor)).astype(np.uint64)
 
-                for c in cols:
-                    if c in ('period_volume', 'total_volume', 'last_size'):
-                        col = data.loc[data.index.levels[1] < split_date]
-                        col *= (1 / split_factor)
-                        data.loc[data.index.levels[1] < split_date] = col.astype(np.uint64)
-                    else:
-                        data.loc[data.index.levels[1] < split_date, c] *= split_factor
-            else:
-                split_date = datetime.datetime.combine(split_date, datetime.datetime.min.time()).replace(tzinfo=data.index.tz)
-                for c in cols:
-                    if c in ('period_volume', 'total_volume', 'last_size'):
-                        data.loc[data.index < split_date, c] = (data.loc[data.index < split_date, c] * (1 / split_factor)).astype(np.uint64)
-                    else:
-                        data.loc[data.index < split_date, c] *= split_factor
+                for c in [c for c in ['close', 'high', 'open', 'low', 'ask', 'bid', 'last'] if c in data.columns]:
+                    data[c] *= split_factor
+            elif split_date > data.iloc[0]['timestamp']:
+                for c in [c for c in ['period_volume', 'total_volume', 'last_size'] if c in data.columns]:
+                    data.loc[data['timestamp'] < split_date, c] *= (1 / split_factor)
+                    data[c] = data[c].astype(np.uint64)
+
+                for c in [c for c in ['close', 'high', 'open', 'low', 'ask', 'bid', 'last'] if c in data.columns]:
+                    data.loc[data['timestamp'] < split_date, c] *= split_factor
         elif split_date > data['timestamp']:
             for c in [c for c in {'close', 'high', 'open', 'low', 'period_volume', 'total_volume', 'ask', 'bid', 'last', 'last_size'} if c in data.keys()]:
                 if c in ('period_volume', 'total_volume', 'last_size'):

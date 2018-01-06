@@ -20,19 +20,14 @@ class IQFeedInfluxDBOHLCRequest(InfluxDBOHLCRequest):
         if self.adjust_data:
             if isinstance(result.index, pd.MultiIndex):
                 adjustments = get_adjustments(self.client, symbol=symbol, data_provider='iqfeed')
-
-                def adj(x):
-                    if x.name in adjustments:
-                        adjust(x.name, x, adjustments=adjustments[x.name])
-
-                result.update(result.groupby(level=0).apply(adj))
+                result.update(result.groupby(level=0).apply(lambda x: adjust(x, adjustments=adjustments[x.name]) if x.name in adjustments else x))
             elif isinstance(symbol, str):
-                adjust(symbol, result, get_adjustments(self.client, symbol, data_provider='iqfeed'))
+                adjust(result, get_adjustments(self.client, symbol, data_provider='iqfeed'))
 
         return result
 
 
-def get_cache_fundamentals(client: InfluxDBClient, symbol: typing.Union[list, str]=None):
+def get_cache_fundamentals(client: InfluxDBClient, symbol: typing.Union[list, str] = None):
     query = "SELECT * FROM iqfeed_fundamentals"
     if isinstance(symbol, list) and len(symbol) > 0:
         query += " WHERE symbol =~ /{}/".format("|".join(['^' + s + '$' for s in symbol]))
