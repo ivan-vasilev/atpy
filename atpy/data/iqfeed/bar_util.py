@@ -34,11 +34,11 @@ def reindex_and_fill(df: pd.DataFrame, index) -> pd.DataFrame:
     for c in [c for c in ['period_volume', 'number_of_trades'] if c in df.columns]:
         df[c].fillna(0, inplace=True)
 
-    if 'open' in df.columns:
-        df['open'] = df.groupby(level=0)['open'].fillna(method='ffill')
-        op = df['open']
+    if 'close' in df.columns:
+        df['close'] = df.groupby(level=0)['close'].fillna(method='close')
+        op = df['close']
 
-        for c in [c for c in ['close', 'high', 'low'] if c in df.columns]:
+        for c in [c for c in ['open', 'high', 'low'] if c in df.columns]:
             df[c].fillna(op, inplace=True)
 
     df = df.groupby(level=0).fillna(method='ffill')

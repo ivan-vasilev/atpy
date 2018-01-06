@@ -346,18 +346,18 @@ class IQFeedHistoryProvider(object):
                 for c in [c for c in ['period_volume', 'number_of_trades'] if c in signals.columns]:
                     signals[c].fillna(0, inplace=True)
 
-                if 'open' in signals.columns:
-                    signals['open'] = signals.groupby(level=0)['open'].fillna(method='ffill')
+                if 'close' in signals.columns:
+                    signals['close'] = signals.groupby(level=0)['close'].fillna(method='ffill')
 
                     if self.current_filter is not None and type(self.current_filter) == type(f) and self.current_batch is not None and f.ascend is True and self.current_batch.index.levels[0].equals(signals.index.levels[0]):
-                        last = self.current_batch.groupby(level=0)['open'].last()
-                        signals['open'] = signals.groupby(level=0)['open'].apply(lambda x: x.fillna(last[last.index.get_loc(x.name)]))
+                        last = self.current_batch.groupby(level=0)['close'].last()
+                        signals['close'] = signals.groupby(level=0)['close'].apply(lambda x: x.fillna(last[last.index.get_loc(x.name)]))
 
-                    signals['open'] = signals.groupby(level=0)['open'].fillna(method='backfill')
+                    signals['close'] = signals.groupby(level=0)['close'].fillna(method='backfill')
 
-                    op = signals['open']
+                    op = signals['close']
 
-                    for c in [c for c in ['close', 'high', 'low'] if c in signals.columns]:
+                    for c in [c for c in ['open', 'high', 'low'] if c in signals.columns]:
                         signals[c].fillna(op, inplace=True)
 
                 signals = signals.groupby(level=0).fillna(method='ffill')

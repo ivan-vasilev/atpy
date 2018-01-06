@@ -123,29 +123,30 @@ def adjust_dividend(data, symbol: str, dividend_amount: float, dividend_date: da
 
 
 def adjust_split(data, symbol: str, split_factor: float, split_date: datetime.date):
-    if isinstance(data, pd.DataFrame):
-        cols = [c for c in {'close', 'high', 'open', 'low', 'period_volume', 'total_volume', 'ask', 'bid', 'last', 'last_size'} if c in data.columns]
+    if split_factor > 0:
+        if isinstance(data, pd.DataFrame):
+            cols = [c for c in {'close', 'high', 'open', 'low', 'period_volume', 'total_volume', 'ask', 'bid', 'last', 'last_size'} if c in data.columns]
 
-        if isinstance(data.index, pd.MultiIndex):
-            split_date = datetime.datetime.combine(split_date, datetime.datetime.min.time()).replace(tzinfo=data.index.levels[1].tz)
-            mask = data['timestamp'] < split_date
-            mask[data['symbol'] != symbol] = False
+            if isinstance(data.index, pd.MultiIndex):
+                split_date = datetime.datetime.combine(split_date, datetime.datetime.min.time()).replace(tzinfo=data.index.levels[1].tz)
+                mask = data['timestamp'] < split_date
+                mask[data['symbol'] != symbol] = False
 
-            for c in cols:
-                if c in ('period_volume', 'total_volume', 'last_size'):
-                    data.loc[mask, c] = (data.loc[mask, c] * (1 / split_factor)).astype(np.uint64)
-                else:
-                    data.loc[mask, c] *= split_factor
-        else:
-            split_date = datetime.datetime.combine(split_date, datetime.datetime.min.time()).replace(tzinfo=data.index.tz)
-            for c in cols:
-                if c in ('period_volume', 'total_volume', 'last_size'):
-                    data.loc[data.index < split_date, c] = (data.loc[data.index < split_date, c] * (1 / split_factor)).astype(np.uint64)
-                else:
-                    data.loc[data.index < split_date, c] *= split_factor
-    elif split_factor > 0 and split_date > data['timestamp']:
-        for c in [c for c in {'close', 'high', 'open', 'low', 'period_volume', 'total_volume', 'ask', 'bid', 'last', 'last_size'} if c in data.keys()]:
-            if c in ('period_volume', 'total_volume', 'last_size'):
-                data[c] = int(data[c] * (1 / split_factor))
+                for c in cols:
+                    if c in ('period_volume', 'total_volume', 'last_size'):
+                        data.loc[mask, c] = (data.loc[mask, c] * (1 / split_factor)).astype(np.uint64)
+                    else:
+                        data.loc[mask, c] *= split_factor
             else:
-                data[c] *= split_factor
+                split_date = datetime.datetime.combine(split_date, datetime.datetime.min.time()).replace(tzinfo=data.index.tz)
+                for c in cols:
+                    if c in ('period_volume', 'total_volume', 'last_size'):
+                        data.loc[data.index < split_date, c] = (data.loc[data.index < split_date, c] * (1 / split_factor)).astype(np.uint64)
+                    else:
+                        data.loc[data.index < split_date, c] *= split_factor
+        elif split_date > data['timestamp']:
+            for c in [c for c in {'close', 'high', 'open', 'low', 'period_volume', 'total_volume', 'ask', 'bid', 'last', 'last_size'} if c in data.keys()]:
+                if c in ('period_volume', 'total_volume', 'last_size'):
+                    data[c] = int(data[c] * (1 / split_factor))
+                else:
+                    data[c] *= split_factor

@@ -1,7 +1,5 @@
 import datetime
-import multiprocessing
 import typing
-from multiprocessing.pool import ThreadPool
 
 import pandas as pd
 from influxdb import DataFrameClient
@@ -21,9 +19,12 @@ class IQFeedInfluxDBOHLCRequest(InfluxDBOHLCRequest):
         if self.adjust_data:
             if isinstance(result.index, pd.MultiIndex):
                 adjustments = get_adjustments(self.client, symbol=symbol, data_provider='iqfeed')
-                pool = ThreadPool(multiprocessing.cpu_count())
-                pool.map(lambda s: adjust(s, result, adjustments=adjustments[s]), (s for s in result.index.levels[0]))
-                pool.close()
+
+                def adj(x):
+                    if x.name in adjustments:
+                        adjust(x.name, x, adjustments=adjustments[x.name])
+
+                result = result.groupby(level=0).apply(adj)
             elif isinstance(symbol, str):
                 adjust(symbol, result, get_adjustments(self.client, symbol, data_provider='iqfeed'))
 

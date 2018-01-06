@@ -234,7 +234,7 @@ def get_adjustments(client: InfluxDBClient, symbol: typing.Union[list, str] = No
         query += " WHERE " + " AND ".join(where)
 
     result = dict()
-    for sd in InfluxDBClient.query(client, query, chunked=True).get_points():
+    for sd in InfluxDBClient.query(client, query).get_points():
         if sd['symbol'] not in result:
             result[sd['symbol']] = list()
 
