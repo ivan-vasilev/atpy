@@ -35,7 +35,7 @@ def reindex_and_fill(df: pd.DataFrame, index) -> pd.DataFrame:
         df[c].fillna(0, inplace=True)
 
     if 'close' in df.columns:
-        df['close'] = df.groupby(level=0)['close'].fillna(method='close')
+        df['close'] = df.groupby(level=0)['close'].fillna(method='ffill')
         op = df['close']
 
         for c in [c for c in ['open', 'high', 'low'] if c in df.columns]:
