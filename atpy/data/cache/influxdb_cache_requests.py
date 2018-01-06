@@ -1,13 +1,12 @@
 import datetime
-import json
 import typing
 
 import numpy as np
+from dateutil.parser import parse
 from influxdb import InfluxDBClient, DataFrameClient
 
 import atpy.data.iqfeed.bar_util as bars
 import pyevents.events as events
-from dateutil.parser import parse
 
 
 class InfluxDBOHLCRequest(object, metaclass=events.GlobalRegister):
@@ -202,26 +201,14 @@ class InfluxDBDeltaRequest(InfluxDBValueRequest, metaclass=events.GlobalRegister
         super().__init__(value='close - open as delta, period_volume, total_volume', client=client, interval_len=interval_len, interval_type=interval_type)
 
 
-def get_cache_fundamentals(symbol: typing.Union[list, str], client: InfluxDBClient):
-    query = "SELECT * FROM iqfeed_fundamentals WHERE "
-    if isinstance(symbol, list):
-        query += "symbol =~ /{}/".format("|".join(['^' + s + '$' for s in symbol]))
-    else:
-        query += "symbol = '{}'".format(symbol)
-
-    result = {f['symbol']: {**json.loads(f['data']), **{'last_update': f['time']}} for f in list(InfluxDBClient.query(client, query, chunked=True).get_points())}
-
-    return result[symbol] if isinstance(symbol, str) else result
-
-
 def get_adjustments(client: InfluxDBClient, symbol: typing.Union[list, str] = None, typ: str = None, data_provider: str = None):
     query = "SELECT * FROM splits_dividends"
 
     where = list()
     if symbol is not None:
-        if isinstance(symbol, list):
+        if isinstance(symbol, list) and len(symbol) > 0:
             where.append("symbol =~ /{}/".format("|".join(['^' + s + '$' for s in symbol])))
-        else:
+        elif isinstance(symbol, str) and len(symbol) > 0:
             where.append("symbol = '{}'".format(symbol))
 
     if typ is not None:

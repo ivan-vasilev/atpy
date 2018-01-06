@@ -5,6 +5,7 @@ from pandas.util.testing import assert_frame_equal
 import atpy.data.cache.influxdb_cache_requests as inf_cache
 from atpy.data.iqfeed.iqfeed_bar_data_provider import *
 from atpy.data.iqfeed.iqfeed_influxdb_cache import *
+from atpy.data.iqfeed.iqfeed_influxdb_cache_requests import get_cache_fundamentals
 from influxdb import InfluxDBClient
 
 
@@ -96,7 +97,7 @@ class TestInfluxDBCache(unittest.TestCase):
         with IQFeedInfluxDBCache(client_factory=self._client_factory) as cache:
             funds = get_fundamentals({'IBM', 'AAPL', 'GOOG', 'MSFT'})
             cache.update_fundamentals(list(funds.values()))
-            result = inf_cache.get_cache_fundamentals(['IBM', 'AAPL', 'GOOG', 'MSFT'], cache.client)
+            result = get_cache_fundamentals(cache.client, ['IBM', 'AAPL', 'GOOG', 'MSFT'])
 
         self.assertEqual(len(result), 4)
         self.assertEqual({k for k in result.keys()}, {'IBM', 'AAPL', 'GOOG', 'MSFT'})
