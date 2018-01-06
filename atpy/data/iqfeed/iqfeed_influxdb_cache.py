@@ -69,7 +69,4 @@ class IQFeedInfluxDBCache(InfluxDBCache):
             if f['ex-dividend_date'] is not None and f['dividend_amount'] is not None:
                 points.append((f['ex-dividend_date'], f['symbol'], 'dividend', f['dividend_amount']))
 
-        try:
-            self.add_adjustments(points, 'iqfeed')
-        except Exception as err:
-            logging.getLogger(__name__).error(err)
+        self.add_adjustments(points, 'iqfeed')

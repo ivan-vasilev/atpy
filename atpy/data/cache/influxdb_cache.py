@@ -97,7 +97,7 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
     def verify_timeseries_integrity(self, client: DataFrameClient, symbol: str, interval_len: int, interval_type: str = 's'):
         interval = str(interval_len) + '_' + interval_type
 
-        cached = list(InfluxDBClient.query(client, 'select LAST(close) from bars where symbol="{}" and interval="{}"'.format(symbol, interval)).get_points())
+        cached = list(InfluxDBClient.query(client, 'select LAST(close) from bars where symbol="{}" and interval="{}"'.format(symbol, interval), chunked=True).get_points())
 
         if len(cached) > 0:
             d = parse(cached[0]['time'])
@@ -197,7 +197,7 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
         :param data_provider: data provider
         """
         points = [self._get_adjustment_json_query(*a, data_provider) for a in adjustments]
-        InfluxDBClient.write_points(self.client, points, protocol='json', time_precision='s')
+        return InfluxDBClient.write_points(self.client, points, protocol='json', time_precision='s')
 
     def add_adjustment(self, timestamp: datetime.date, symbol: str, typ: str, value: float, data_provider: str):
         """
@@ -209,7 +209,7 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
         :param data_provider: data provider
         """
         json_body = self._get_adjustment_json_query(timestamp=timestamp, symbol=symbol, typ=typ, value=value, data_provider=data_provider)
-        InfluxDBClient.write_points(self.client, [json_body], protocol='json', time_precision='s')
+        return InfluxDBClient.write_points(self.client, [json_body], protocol='json', time_precision='s')
 
     @staticmethod
     def _get_adjustment_json_query(timestamp: datetime.date, symbol: str, typ: str, value: float, data_provider: str):

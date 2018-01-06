@@ -7,6 +7,7 @@ from influxdb import InfluxDBClient, DataFrameClient
 
 import atpy.data.iqfeed.bar_util as bars
 import pyevents.events as events
+from dateutil.parser import parse
 
 
 class InfluxDBOHLCRequest(object, metaclass=events.GlobalRegister):
@@ -42,7 +43,7 @@ class InfluxDBOHLCRequest(object, metaclass=events.GlobalRegister):
                 _query_where(interval_len=self.interval_len, interval_type=self.interval_type, symbol=symbol, bgn_prd=bgn_prd, end_prd=end_prd) + \
                 " ORDER BY time " + "ASC" if ascending else "DESC"
 
-        result = self.client.query(query)
+        result = self.client.query(query, chunked=True)
         if len(result) == 0:
             result = None
         else:
@@ -116,7 +117,7 @@ class InfluxDBValueRequest(object, metaclass=events.GlobalRegister):
                 _query_where(interval_len=self.interval_len, interval_type=self.interval_type, symbol=symbol, bgn_prd=bgn_prd, end_prd=end_prd) + \
                 " ORDER BY time " + "ASC" if ascending else "DESC"
 
-        result = self.client.query(query)
+        result = self.client.query(query, chunked=True)
         if len(result) == 0:
             result = None
         else:
@@ -173,7 +174,7 @@ class InfluxDBValueRequest(object, metaclass=events.GlobalRegister):
                 _query_where(interval_len=self.interval_len, interval_type=self.interval_type, symbol=symbol, bgn_prd=bgn_prd, end_prd=end_prd) + \
                 ") GROUP BY symbol"
 
-        rs = super(DataFrameClient, self.client).query(query)
+        rs = super(DataFrameClient, self.client).query(query, chunked=True)
         self.means = {k[1]['symbol']: next(data)['mean'] for k, data in rs.items()}
 
     def enable_stddev(self, symbol: typing.Union[list, str] = None, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None):
@@ -187,7 +188,7 @@ class InfluxDBValueRequest(object, metaclass=events.GlobalRegister):
                 _query_where(interval_len=self.interval_len, interval_type=self.interval_type, symbol=symbol, bgn_prd=bgn_prd, end_prd=end_prd) + \
                 ") GROUP BY symbol"
 
-        rs = super(DataFrameClient, self.client).query(query)
+        rs = super(DataFrameClient, self.client).query(query, chunked=True)
         self.stddev = {k[1]['symbol']: next(data)['stddev'] for k, data in rs.items()}
 
 
@@ -208,7 +209,9 @@ def get_cache_fundamentals(symbol: typing.Union[list, str], client: InfluxDBClie
     else:
         query += "symbol = '{}'".format(symbol)
 
-    return {f['symbol']: {**json.loads(f['data']), **{'last_update': f['time']}} for f in list(InfluxDBClient.query(client, query).get_points())}
+    result = {f['symbol']: {**json.loads(f['data']), **{'last_update': f['time']}} for f in list(InfluxDBClient.query(client, query, chunked=True).get_points())}
+
+    return result[symbol] if isinstance(symbol, str) else result
 
 
 def get_adjustments(client: InfluxDBClient, symbol: typing.Union[list, str] = None, typ: str = None, data_provider: str = None):
@@ -231,12 +234,13 @@ def get_adjustments(client: InfluxDBClient, symbol: typing.Union[list, str] = No
         query += " WHERE " + " AND ".join(where)
 
     result = dict()
-    for sd in InfluxDBClient.query(client, query).get_points():
+    for sd in InfluxDBClient.query(client, query, chunked=True).get_points():
         if sd['symbol'] not in result:
             result[sd['symbol']] = list()
-            result[sd['symbol']].append((sd['time'], sd['value'], sd['type']))
 
-    return result
+        result[sd['symbol']].append((parse(sd['time']).date(), sd['value'], sd['type']))
+
+    return result[symbol] if isinstance(symbol, str) else result
 
 
 def _query_where(interval_len: int, interval_type: str, symbol: typing.Union[list, str] = None, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None):

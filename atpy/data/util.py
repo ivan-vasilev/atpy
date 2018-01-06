@@ -2,6 +2,7 @@ import datetime
 from ftplib import FTP
 from io import StringIO
 
+import numpy as np
 import pandas as pd
 
 
@@ -132,14 +133,14 @@ def adjust_split(data, symbol: str, split_factor: float, split_date: datetime.da
 
             for c in cols:
                 if c in ('period_volume', 'total_volume', 'last_size'):
-                    data.loc[mask, c] = (data.loc[mask, c] * (1 / split_factor)).astype(int)
+                    data.loc[mask, c] = (data.loc[mask, c] * (1 / split_factor)).astype(np.uint64)
                 else:
                     data.loc[mask, c] *= split_factor
         else:
             split_date = datetime.datetime.combine(split_date, datetime.datetime.min.time()).replace(tzinfo=data.index.tz)
             for c in cols:
                 if c in ('period_volume', 'total_volume', 'last_size'):
-                    data.loc[data.index < split_date, c] *= int(1 / split_factor)
+                    data.loc[data.index < split_date, c] = (data.loc[data.index < split_date, c] * (1 / split_factor)).astype(np.uint64)
                 else:
                     data.loc[data.index < split_date, c] *= split_factor
     elif split_factor > 0 and split_date > data['timestamp']:
