@@ -177,8 +177,6 @@ class TestPortfolioManager(unittest.TestCase):
             self.assertEqual(len(pm._values), 2)
 
     def test_historical_price_updates(self):
-        events.use_global_event_bus()
-
         filter_provider = DefaultFilterProvider(repeat=True)
         filter_provider += TicksFilter(ticker="GOOG", max_ticks=1)
         filter_provider += TicksFilter(ticker="AAPL", max_ticks=1)
