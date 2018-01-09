@@ -1,7 +1,7 @@
 import unittest
 
 from atpy.data.iqfeed.iqfeed_news_provider import *
-import shutil
+from pyevents.simple_events import AsyncListeners
 
 
 class TestIQFeedNews(unittest.TestCase):
@@ -14,27 +14,31 @@ class TestIQFeedNews(unittest.TestCase):
         filter_provider += NewsFilter(symbols=['AAPL'], limit=10)
         filter_provider += NewsFilter(symbols=['IBM'], limit=10)
 
-        with IQFeedNewsListener(attach_text=True, minibatch=3, filter_provider=filter_provider, column_mode=True) as listener, listener.minibatch_provider() as provider:
+        listeners = AsyncListeners()
+
+        with IQFeedNewsListener(listeners=listeners, attach_text=True, minibatch=3, filter_provider=filter_provider, column_mode=True) as listener, listener.minibatch_provider() as provider:
             e1 = threading.Event()
 
             def process_batch_listener(event):
-                batch = event['data']
-                self.assertEqual(len(list(batch.keys())), 7)
+                if event['type'] == 'news_batch':
+                    batch = event['data']
+                    self.assertEqual(len(list(batch.keys())), 7)
 
-                self.assertTrue(0 < len(batch[list(batch.keys())[0]]) <= 10)
-                e1.set()
+                    self.assertTrue(0 < len(batch[list(batch.keys())[0]]) <= 10)
+                    e1.set()
 
-            listener.process_batch += process_batch_listener
+            listeners += process_batch_listener
 
             e2 = threading.Event()
 
             def process_minibatch_listener(event):
-                batch = event['data']
-                self.assertEqual(len(list(batch.keys())), 7)
-                self.assertEqual(len(batch[list(batch.keys())[0]]), 3)
-                e2.set()
+                if event['type'] == 'news_minibatch':
+                    batch = event['data']
+                    self.assertEqual(len(list(batch.keys())), 7)
+                    self.assertEqual(len(batch[list(batch.keys())[0]]), 3)
+                    e2.set()
 
-            listener.process_minibatch += process_minibatch_listener
+            listeners += process_minibatch_listener
 
             e1.wait()
             e2.wait()
@@ -53,41 +57,44 @@ class TestIQFeedNews(unittest.TestCase):
         filter_provider += NewsFilter(symbols=['AAPL'], limit=10)
         filter_provider += NewsFilter(symbols=['IBM'], limit=10)
 
-        try:
-            with IQFeedNewsListener(attach_text=True, minibatch=3, filter_provider=filter_provider, column_mode=False, lmdb_path='/tmp/test_news_provider') as listener, listener.minibatch_provider() as provider:
-                e1 = threading.Event()
+        listeners = AsyncListeners()
 
-                def process_batch_listener(event):
+        with IQFeedNewsListener(listeners=listeners, attach_text=True, minibatch=3, filter_provider=filter_provider, column_mode=False) as listener, listener.minibatch_provider() as provider:
+            e1 = threading.Event()
+
+            def process_batch_listener(event):
+                if event['type'] == 'news_batch':
                     batch = event['data']
-                    self.assertTrue(0 < len(batch) < 10)
+                    print(len(batch))
+                    self.assertTrue(0 < len(batch) <= 10)
                     self.assertEqual(len(batch[0].keys()), 7)
                     e1.set()
 
-                listener.process_batch += process_batch_listener
+            listeners += process_batch_listener
 
-                e2 = threading.Event()
+            e2 = threading.Event()
 
-                def process_minibatch_listener(event):
+            def process_minibatch_listener(event):
+                if event['type'] == 'news_minibatch':
                     batch = event['data']
                     self.assertEqual(len(batch), 3)
                     self.assertEqual(len(batch[0].keys()), 7)
                     e2.set()
 
-                listener.process_minibatch += process_minibatch_listener
+            listeners += process_minibatch_listener
 
-                for i, d in enumerate(provider):
-                    self.assertEqual(len(d), 3)
-                    self.assertEqual(len(list(d[0].keys())), 7)
-                    self.assertGreater(len(d[0]['text']), 0)
-                    self.assertTrue('AAPL' in d[0]['symbol_list'] or 'IBM' in d[0]['symbol_list'])
+            for i, d in enumerate(provider):
+                self.assertEqual(len(d), 3)
+                self.assertEqual(len(list(d[0].keys())), 7)
+                self.assertGreater(len(d[0]['text']), 0)
+                self.assertTrue('AAPL' in d[0]['symbol_list'] or 'IBM' in d[0]['symbol_list'])
 
-                    if i == 1:
-                        break
+                if i == 1:
+                    break
 
-                e1.wait()
-                e2.wait()
-        finally:
-            shutil.rmtree('/tmp/test_news_provider')
+            e1.wait()
+            e2.wait()
+
 
 if __name__ == '__main__':
     unittest.main()

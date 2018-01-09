@@ -252,7 +252,8 @@ class IQFeedHistoryProvider(object):
 
             if sync_timestamps:
                 signals = self.synchronize_timestamps(signals, f)
-            elif len(signals) > 0:
+
+            if isinstance(signals, dict) and len(signals) > 0:
                 signals = pd.concat(signals)
                 signals.index.set_names('symbol', level=0, inplace=True)
                 signals.sort_index(inplace=True, ascending=f.ascend)
@@ -482,13 +483,14 @@ class IQFeedHistoryProvider(object):
             return 'daily'
 
 
-class IQFeedHistoryListener(IQFeedHistoryProvider, metaclass=events.GlobalRegister):
+class IQFeedHistoryEvents(IQFeedHistoryProvider):
     """
-    IQFeed historical data listener. See the unit test on how to use
+    IQFeed historical data events. See the unit test on how to use
     """
 
-    def __init__(self, minibatch=None, fire_batches=False, fire_ticks=False, run_async=True, adjust_data=True, num_connections=10, key_suffix='', filter_provider=None, sync_timestamps=True):
+    def __init__(self, listeners, minibatch=None, fire_batches=False, fire_ticks=False, run_async=True, adjust_data=True, num_connections=10, key_suffix='', filter_provider=None, sync_timestamps=True):
         """
+        :param listeners: event listeners
         :param minibatch: size of the minibatch
         :param fire_batches: raise event for each batch
         :param fire_ticks: raise event for each tick
@@ -501,6 +503,7 @@ class IQFeedHistoryListener(IQFeedHistoryProvider, metaclass=events.GlobalRegist
         """
         super().__init__(num_connections=num_connections, key_suffix=key_suffix)
 
+        self.listeners = listeners
         self.minibatch = minibatch
         self.fire_batches = fire_batches
         self.fire_ticks = fire_ticks
@@ -523,7 +526,7 @@ class IQFeedHistoryListener(IQFeedHistoryProvider, metaclass=events.GlobalRegist
 
         self._background_thread = None
 
-        self.no_more_data()
+        self.listeners({'type': 'no_data'})
 
         super().__exit__(exception_type, exception_value, traceback)
 
@@ -541,7 +544,7 @@ class IQFeedHistoryListener(IQFeedHistoryProvider, metaclass=events.GlobalRegist
                         self._is_running = False
 
                     self._is_running = False
-                    self.no_more_data()
+                    self.listeners({'type': 'no_data'})
 
                 self._is_running = True
                 self._background_thread = threading.Thread(target=produce_async, daemon=True)
@@ -550,7 +553,7 @@ class IQFeedHistoryListener(IQFeedHistoryProvider, metaclass=events.GlobalRegist
                 for d, f in self.next_batch():
                     self.fire_events(d, f)
 
-                self.no_more_data()
+                self.listeners({'type': 'no_data'})
 
     def next_batch(self):
         for f in self.filter_provider:
@@ -563,7 +566,7 @@ class IQFeedHistoryListener(IQFeedHistoryProvider, metaclass=events.GlobalRegist
 
             yield d, f
 
-        self.no_more_data()
+        self.listeners({'type': 'no_data'})
 
     def stop(self):
         self._is_running = False
@@ -576,7 +579,7 @@ class IQFeedHistoryListener(IQFeedHistoryProvider, metaclass=events.GlobalRegist
         if isinstance(data.index, pd.DatetimeIndex):
             if self.fire_ticks:
                 for i in range(data.shape[0]):
-                    self.process_datum({'type': event_type, 'data': data.iloc[i]})
+                    self.listeners({'type': event_type, 'data': data.iloc[i]})
 
             if self.minibatch is not None:
                 if self.current_minibatch is None or (self.current_filter is not None and type(self.current_filter) != type(f)):
@@ -588,19 +591,19 @@ class IQFeedHistoryListener(IQFeedHistoryProvider, metaclass=events.GlobalRegist
                 for i in range(self.minibatch, self.current_minibatch.shape[0] - self.current_minibatch.shape[0] % self.minibatch + 1, self.minibatch):
                     mb = self.current_minibatch.iloc[i - self.minibatch: i]
                     mb.set_index(keys='tick_id' if 'tick_id' in mb.columns else 'timestamp' if 'timestamp' in mb.columns else 'date', drop=False, inplace=True)
-                    self.process_minibatch({'type': event_type + '_mb', 'data': mb})
+                    self.listeners({'type': event_type + '_mb', 'data': mb})
 
                 self.current_minibatch = None if self.current_minibatch.shape[0] - i == 0 else self.current_minibatch.iloc[i:]
                 if self.current_minibatch is not None:
                     self.current_minibatch.set_index(keys='tick_id' if 'tick_id' in self.current_minibatch.columns else 'timestamp' if 'timestamp' in self.current_minibatch.columns else 'date', drop=False, inplace=True)
 
             if self.fire_batches:
-                self.process_batch({'type': event_type + '_batch', 'data': data})
+                self.listeners({'type': event_type + '_batch', 'data': data})
 
         elif 'timestamp' in data.index.names:
             if self.fire_ticks:
                 for i in range(data.index.levels[1].shape[0]):
-                    self.process_datum({'type': event_type, 'data': data.groupby(level=0).nth(i)})
+                    self.listeners({'type': event_type, 'data': data.groupby(level=0).nth(i)})
 
             if self.minibatch is not None:
                 if self.current_minibatch is None or (self.current_filter is not None and type(self.current_filter) != type(f)):
@@ -610,16 +613,16 @@ class IQFeedHistoryListener(IQFeedHistoryProvider, metaclass=events.GlobalRegist
                     self.current_minibatch.sort_index(inplace=True, ascending=f.ascend)
 
                 for i in range(self.minibatch, self.current_minibatch.index.levels[1].shape[0] - self.current_minibatch.index.levels[1].shape[0] % self.minibatch + 1, self.minibatch):
-                    self.process_minibatch({'type': event_type + '_mb', 'data': self.current_minibatch.loc[pd.IndexSlice[:, data.index.levels[1][i - self.minibatch: i]], :]})
+                    self.listeners({'type': event_type + '_mb', 'data': self.current_minibatch.loc[pd.IndexSlice[:, data.index.levels[1][i - self.minibatch: i]], :]})
 
                 self.current_minibatch = None if self.current_minibatch.index.levels[1].shape[0] - i == 0 else self.current_minibatch.groupby(level=0).tail(self.current_minibatch.index.levels[1].shape[0] - i)
 
             if self.fire_batches:
-                self.process_batch({'type': event_type + '_batch', 'data': data})
+                self.listeners({'type': event_type + '_batch', 'data': data})
         elif 'tick_id' in data.index.names:
             if self.fire_ticks:
                 for i in range(data.shape[0]):
-                    self.process_datum({'type': event_type, 'data': data.iloc[i]})
+                    self.listeners({'type': event_type, 'data': data.iloc[i]})
 
             if self.minibatch is not None:
                 if self.current_minibatch is None or (self.current_filter is not None and type(self.current_filter) != type(f)):
@@ -631,14 +634,14 @@ class IQFeedHistoryListener(IQFeedHistoryProvider, metaclass=events.GlobalRegist
                 for i in range(self.minibatch, self.current_minibatch.shape[0] - self.current_minibatch.shape[0] % self.minibatch + 1, self.minibatch):
                     mb = self.current_minibatch.iloc[i - self.minibatch: i]
                     mb.set_index(keys=['symbol', 'tick_id'], drop=False, inplace=True)
-                    self.process_minibatch({'type': event_type + '_mb', 'data': mb})
+                    self.listeners({'type': event_type + '_mb', 'data': mb})
 
                 self.current_minibatch = None if self.current_minibatch.shape[0] - i == 0 else self.current_minibatch.iloc[i:]
                 if self.current_minibatch is not None:
                     self.current_minibatch.set_index(keys=['symbol', 'tick_id'], drop=False, inplace=True)
 
             if self.fire_batches:
-                self.process_batch({'type': event_type + '_batch', 'data': data})
+                self.listeners({'type': event_type + '_batch', 'data': data})
 
     @staticmethod
     def _event_type(data_filter):
@@ -649,27 +652,11 @@ class IQFeedHistoryListener(IQFeedHistoryProvider, metaclass=events.GlobalRegist
         elif isinstance(data_filter, BarsDailyFilter) or isinstance(data_filter, BarsWeeklyFilter) or isinstance(data_filter, BarsMonthlyFilter):
             return 'daily'
 
-    @events.after
-    def no_more_data(self):
-        return {'type': 'no_data'}
-
-    @events.after
-    def process_datum(self, data):
-        return data
-
-    @events.after
-    def process_batch(self, data):
-        return data
-
     def batch_provider(self):
-        return IQFeedDataProvider(self.process_batch)
-
-    @events.after
-    def process_minibatch(self, data):
-        return data
+        return IQFeedDataProvider(self.listeners, accept_event=lambda e: True if e['type'].endswith('_batch') else False)
 
     def minibatch_provider(self):
-        return IQFeedDataProvider(self.process_minibatch)
+        return IQFeedDataProvider(self.listeners, accept_event=lambda e: True if e['type'].endswith('_mb') else False)
 
 
 class InPeriodProvider(FilterProvider, metaclass=ABCMeta):

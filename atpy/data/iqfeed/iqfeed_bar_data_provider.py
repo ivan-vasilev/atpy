@@ -6,15 +6,18 @@ from atpy.data.iqfeed.iqfeed_level_1_provider import get_fundamentals
 from atpy.data.iqfeed.util import *
 
 
-class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegister):
+class IQFeedBarDataListener(iq.SilentBarListener):
 
-    def __init__(self, interval_len, interval_type='s', fire_bars=True, mkt_snapshot_depth=0, key_suffix=''):
+    def __init__(self, listeners, interval_len, interval_type='s', fire_bars=True, mkt_snapshot_depth=0, key_suffix=''):
         """
         :param fire_bars: raise event for each individual bar if True
         :param mkt_snapshot_depth: construct and maintain dataframe representing the current market snapshot with depth. If 0, then don't construct, otherwise construct for the past periods
         :param key_suffix: suffix to the fieldnames
         """
         super().__init__(name="Bar data listener")
+
+        self.listeners = listeners
+        self.listeners += self.on_event
 
         self.fire_bars = fire_bars
         self.key_suffix = key_suffix
@@ -79,7 +82,7 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
 
         if self.fire_bars:
             data = self._process_data(iqfeed_to_dict(bar_data, key_suffix=self.key_suffix))
-            self.on_latest_bar_update(self._process_data(iqfeed_to_dict(np.copy(bar_data), key_suffix=self.key_suffix)))
+            self.listeners({'type': 'latest_bar_update', 'data': data, 'interval_type': self.interval_type, 'interval_len': self.interval_len})
 
         if self.mkt_snapshot_depth > 0:
             data = data if data is not None else self._process_data(iqfeed_to_dict(bar_data, key_suffix=self.key_suffix))
@@ -90,7 +93,7 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
 
         if self.fire_bars:
             data = self._process_data(iqfeed_to_dict(bar_data, key_suffix=self.key_suffix))
-            self.on_bar(data)
+            self.listeners({'type': 'bar', 'data': data, 'interval_type': self.interval_type, 'interval_len': self.interval_len})
         if self.mkt_snapshot_depth > 0:
             data = data if data is not None else self._process_data(iqfeed_to_dict(bar_data, key_suffix=self.key_suffix))
             self._update_mkt_snapshot(data)
@@ -103,7 +106,7 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
             data = self._process_data(iqfeed_to_dict(bar_data, key_suffix=self.key_suffix))
             adjust(data, get_fundamentals(data['symbol'], self.streaming_conn))
 
-            self.on_bar(data)
+            self.listeners({'type': 'bar', 'data': data, 'interval_type': self.interval_type, 'interval_len': self.interval_len})
 
         if self.mkt_snapshot_depth > 0 is not None:
             if data is None:
@@ -112,13 +115,12 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
 
             self._update_mkt_snapshot(data)
 
-    @events.listener
     def on_event(self, event):
         if event['type'] == 'watch_bars':
             self.watch_bars(event['data']['symbol'] if isinstance(event['data'], dict) else event['data'])
         elif event['type'] == 'request_market_snapshot_bars':
             snapshot = self.request_market_snapshot_bars('normalize' in event and event['normalize'] is True)
-            self.on_market_snapshot(snapshot)
+            self.listeners({'type': 'bar_market_snapshot', 'data': snapshot, 'interval_type': self.interval_type, 'interval_len': self.interval_len})
 
     def watch_bars(self, symbol):
         if isinstance(symbol, str) and symbol not in self.watched_symbols:
@@ -196,7 +198,7 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
             sf = self.key_suffix
 
             result['symbol' + sf] = data.pop('symbol')
-            result['timestamp' + sf] = (data['date'] + data['time']).item().replace(tzinfo=tz.gettz('US/Eastern')).astimezone(tz.gettz('UTC'))
+            result['timestamp' + sf] = (datetime.datetime.combine(data.pop('date'), datetime.datetime.min.time()) + data.pop('time').astype(datetime.datetime)).replace(tzinfo=tz.gettz('US/Eastern')).astimezone(tz.gettz('UTC'))
             result['high' + sf] = data.pop('high_p')
             result['low' + sf] = data.pop('low_p')
             result['open' + sf] = data.pop('open_p')
@@ -209,7 +211,7 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
             result['symbol'] = result['symbol'].str.decode('ascii')
             sf = self.key_suffix
 
-            result['timestamp' + sf] = pd.Index(data['date'] + data['time']).tz_localize('US/Eastern').tz_convert('UTC')
+            result['timestamp' + sf] = pd.Index(data['date'] + data['time'].astype(datetime.datetime)).tz_localize('US/Eastern').tz_convert('UTC')
 
             result.set_index('timestamp' + sf, inplace=True, drop=False)
 
@@ -218,17 +220,5 @@ class IQFeedBarDataListener(iq.SilentBarListener, metaclass=events.GlobalRegiste
 
         return result
 
-    @events.after
-    def on_latest_bar_update(self, bar_data):
-        return {'type': 'latest_bar_update', 'data': bar_data, 'interval_type': self.interval_type, 'interval_len': self.interval_len}
-
-    @events.after
-    def on_bar(self, bar_data):
-        return {'type': 'bar', 'data': bar_data, 'interval_type': self.interval_type, 'interval_len': self.interval_len}
-
     def bar_provider(self):
-        return IQFeedDataProvider(self.on_bar)
-
-    @events.after
-    def on_market_snapshot(self, snapshot):
-        return {'type': 'bar_market_snapshot', 'data': snapshot, 'interval_type': self.interval_type, 'interval_len': self.interval_len}
+        return IQFeedDataProvider(self.listeners,  accept_event=lambda e: True if e['type'] == 'bar' else False)

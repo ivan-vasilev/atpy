@@ -6,11 +6,10 @@ from dateutil.parser import parse
 from influxdb import InfluxDBClient, DataFrameClient
 
 import atpy.data.iqfeed.bar_util as bars
-import pyevents.events as events
 
 
-class InfluxDBOHLCRequest(object, metaclass=events.GlobalRegister):
-    def __init__(self, client: DataFrameClient, interval_len: int, interval_type: str = 's'):
+class InfluxDBOHLCRequest(object):
+    def __init__(self, client: DataFrameClient, interval_len: int, interval_type: str = 's', listeners=None):
         """
         :param client: influxdb client
         :param interval_len: interval length
@@ -19,15 +18,15 @@ class InfluxDBOHLCRequest(object, metaclass=events.GlobalRegister):
         self.interval_len = interval_len
         self.interval_type = interval_type
         self.client = client
+        self.listeners = listeners
 
-    @events.listener
+        if self.listeners is not None:
+            self.listeners += self.on_event
+
     def on_event(self, event):
-        if event['type'] == 'request_ohlc':
-            self.request_result(self.request(**event['data']))
-
-    @events.after
-    def request_result(self, data):
-        return {'type': 'cache_result', 'data': data}
+        if event['type'] == 'request_ohlc' and self.listeners is not None:
+            data = self.request(**event['data'])
+            self.listeners({'type': 'cache_result', 'data': data})
 
     def _request_raw_data(self, symbol: typing.Union[list, str] = None, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None, ascending: bool = True):
         """
@@ -77,31 +76,33 @@ class InfluxDBOHLCRequest(object, metaclass=events.GlobalRegister):
         return data, self._postprocess_data(data)
 
 
-class InfluxDBValueRequest(object, metaclass=events.GlobalRegister):
+class InfluxDBValueRequest(object):
     """abstract class for single value selection"""
 
-    def __init__(self, value: str, client: DataFrameClient, interval_len: int, interval_type: str = 's'):
+    def __init__(self, value: str, client: DataFrameClient, interval_len: int, interval_type: str = 's', listeners=None):
         """
         :param value: value to select. value is a part of query
         :param client: influxdb client
         :param interval_len: interval length
         :param interval_type: interval type
+        :param listeners: listeners
         """
         self.value = value
         self.interval_len = interval_len
         self.interval_type = interval_type
         self.client = client
+        self.listeners = listeners
+
+        if self.listeners is not None:
+            self.listeners += self.on_event
+
         self.means = None
         self.stddev = None
 
-    @events.listener
     def on_event(self, event):
         if event['type'] == 'request_value':
-            self.request_result(self.request(**event['data']))
-
-    @events.after
-    def request_result(self, data):
-        return {'type': 'cache_result', 'data': data}
+            data = self.request(**event['data'])
+            self.listeners({'type': 'cache_result', 'data': data})
 
     def _request_raw_data(self, symbol: typing.Union[list, str] = None, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None, ascending: bool = True):
         """
@@ -191,12 +192,12 @@ class InfluxDBValueRequest(object, metaclass=events.GlobalRegister):
         self.stddev = {k[1]['symbol']: next(data)['stddev'] for k, data in rs.items()}
 
 
-class InfluxDBDeltaAdjustedRequest(InfluxDBValueRequest, metaclass=events.GlobalRegister):
+class InfluxDBDeltaAdjustedRequest(InfluxDBValueRequest):
     def __init__(self, client: DataFrameClient, interval_len: int, interval_type: str = 's'):
         super().__init__(value='(close - open) / open as delta, period_volume, total_volume', client=client, interval_len=interval_len, interval_type=interval_type)
 
 
-class InfluxDBDeltaRequest(InfluxDBValueRequest, metaclass=events.GlobalRegister):
+class InfluxDBDeltaRequest(InfluxDBValueRequest):
     def __init__(self, client: DataFrameClient, interval_len: int, interval_type: str = 's'):
         super().__init__(value='close - open as delta, period_volume, total_volume', client=client, interval_len=interval_len, interval_type=interval_type)
 

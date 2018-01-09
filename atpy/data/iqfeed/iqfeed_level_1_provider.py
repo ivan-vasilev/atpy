@@ -1,20 +1,23 @@
+import logging
 import queue
 import threading
 import typing
-from typing import Sequence
 
 import numpy as np
 import pandas as pd
-import logging
-import pyevents.events as events
+
 import pyiqfeed as iq
 from atpy.data.iqfeed.util import launch_service, iqfeed_to_dict, create_batch, IQFeedDataProvider
+from pyevents.simple_events import SyncListeners
 
 
-class IQFeedLevel1Listener(iq.SilentQuoteListener, metaclass=events.GlobalRegister):
+class IQFeedLevel1Listener(iq.SilentQuoteListener):
 
-    def __init__(self, fire_ticks=True, minibatch=None, conn: iq.QuoteConn=None, key_suffix=''):
+    def __init__(self, listeners, fire_ticks=True, minibatch=None, conn: iq.QuoteConn=None, key_suffix=''):
         super().__init__(name="Level 1 listener")
+
+        self.listeners = listeners
+        self.listeners += self.on_event
 
         self.fire_ticks = fire_ticks
         self.minibatch = minibatch
@@ -62,7 +65,6 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener, metaclass=events.GlobalRegist
         else:
             raise AttributeError
 
-    @events.listener
     def on_event(self, event):
         if event['type'] == 'watch_ticks':
             with self._lock:
@@ -86,7 +88,7 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener, metaclass=events.GlobalRegist
     def process_news(self, news_item: iq.QuoteConn.NewsMsg):
         news_item = news_item._asdict()
 
-        self.on_news(news_item)
+        self.listeners({'type': 'level_1_news_item', 'data': news_item})
 
         if self.minibatch is not None:
             self.current_news_mb.append(news_item)
@@ -96,24 +98,16 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener, metaclass=events.GlobalRegist
                     for k, v in ni.items():
                         processed_data[k].append(v)
 
-                self.on_news_mb(processed_data)
+                self.listeners({'type': 'level_1_news_batch', 'data': processed_data})
 
                 self.current_news_mb = list()
 
-    @events.after
-    def on_news(self, news_item: iq.QuoteConn.NewsMsg):
-        return {'type': 'level_1_news_item', 'data': news_item}
-
-    @events.after
-    def on_news_mb(self, news_list):
-        return {'type': 'level_1_news_batch', 'data': news_list}
-
     def news_provider(self):
-        return IQFeedDataProvider(self.on_news)
+        return IQFeedDataProvider(listeners=self.listeners, accept_event=lambda e: True if e['type'] == 'level_1_news_item' else False)
 
     def process_regional_quote(self, quote: np.array):
         if self.fire_ticks:
-            self.on_regional_quote(iqfeed_to_dict(quote, self.key_suffix))
+            self.listeners({'type': 'level_1_regional_quote', 'data': iqfeed_to_dict(quote, self.key_suffix)})
 
         if self.minibatch is not None:
             if self.current_regional_mb is None:
@@ -124,36 +118,23 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener, metaclass=events.GlobalRegist
             self._current_regional_mb_index += 1
 
             if len(self.current_regional_mb) == self.minibatch:
-                mb = pd.DataFrame(create_batch(self.current_regional_mb))
-                self.on_regional_quote_mb(mb)
+                self.listeners({'type': 'level_1_regional_quote_batch', 'data': pd.DataFrame(create_batch(self.current_regional_mb))})
 
                 self._current_regional_mb_index = None
 
-    @events.after
-    def on_regional_quote(self, quote):
-        return {'type': 'level_1_regional_quote', 'data': quote}
-
-    @events.after
-    def on_regional_quote_mb(self, quote_list):
-        return {'type': 'level_1_regional_quote_batch', 'data': quote_list}
-
     def regional_quote_provider(self):
-        return IQFeedDataProvider(self.on_regional_quote_mb)
+        return IQFeedDataProvider(listeners=self.listeners, accept_event=lambda e: True if e['type'] == 'level_1_regional_quote' else False)
 
     def process_summary(self, summary: np.array):
         if self.fire_ticks:
-            self.on_summary(iqfeed_to_dict(summary, self.key_suffix))
-
-    @events.after
-    def on_summary(self, summary):
-        return {'type': 'level_1_tick', 'data': summary}
+            self.listeners({'type': 'level_1_tick', 'data': iqfeed_to_dict(summary, self.key_suffix)})
 
     def summary_provider(self):
-        return IQFeedDataProvider(self.on_summary)
+        return IQFeedDataProvider(listeners=self.listeners, accept_event=lambda e: True if e['type'] == 'level_1_tick' else False)
 
     def process_update(self, update: np.array):
         if self.fire_ticks:
-            self.on_update(iqfeed_to_dict(update, self.key_suffix))
+            self.listeners({'type': 'level_1_tick', 'data': iqfeed_to_dict(update, self.key_suffix)})
 
         if self.minibatch is not None:
             if self.current_update_mb is None:
@@ -164,20 +145,11 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener, metaclass=events.GlobalRegist
             self._current_update_mb_index += 1
 
             if len(self.current_update_mb) == self.minibatch:
-                mb = pd.DataFrame(create_batch(self.current_update_mb))
-                self.on_update_mb(mb)
+                self.listeners({'type': 'level_1_tick_batch', 'data': pd.DataFrame(create_batch(self.current_update_mb))})
                 self.current_update_mb = None
 
-    @events.after
-    def on_update(self, update):
-        return {'type': 'level_1_tick', 'data': update}
-
-    @events.after
-    def on_update_mb(self, updates_list):
-        return {'type': 'level_1_tick_batch', 'data': updates_list}
-
     def update_provider(self):
-        return IQFeedDataProvider(self.on_update_mb)
+        return IQFeedDataProvider(listeners=self.listeners, accept_event=lambda e: True if e['type'] == 'level_1_tick_batch' else False)
 
     def process_fundamentals(self, fund: np.array):
         f = iqfeed_to_dict(fund, self.key_suffix)
@@ -191,14 +163,10 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener, metaclass=events.GlobalRegist
         else:
             self.fundamentals[symbol] = f
 
-        self.on_fundamentals(f)
-
-    @events.after
-    def on_fundamentals(self, fund: np.array):
-        return {'type': 'level_1_fundamentals', 'data': fund}
+        self.listeners({'type': 'level_1_fundamentals', 'data': f})
 
     def fundamentals_provider(self):
-        return IQFeedDataProvider(self.on_fundamentals)
+        return IQFeedDataProvider(listeners=self.listeners, accept_event=lambda e: True if e['type'] == 'level_1_fundamentals' else False)
 
     def get_fundamentals(self, symbol: typing.Union[set, str]):
         if isinstance(symbol, str):
@@ -231,5 +199,5 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener, metaclass=events.GlobalRegist
 
 
 def get_fundamentals(symbol: typing.Union[set, str], conn: iq.QuoteConn=None):
-    with IQFeedLevel1Listener(fire_ticks=False, conn=conn) as listener:
+    with IQFeedLevel1Listener(listeners=SyncListeners(), fire_ticks=False, conn=conn) as listener:
         return listener.get_fundamentals(symbol)

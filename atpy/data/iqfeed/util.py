@@ -118,17 +118,14 @@ def get_symbols(symbols_file: str = None):
 class IQFeedDataProvider(object):
     """Streaming data provider generator/iterator interface"""
 
-    def __init__(self, producer):
+    def __init__(self, listeners, accept_event):
         self._queue = queue.Queue()
-        self._producer = producer
-        self._lock = threading.RLock()
-
-        with self._lock:
-            self._is_listening = True
-            producer += self._populate_queue
+        self.listeners = listeners
+        self.accept_event = accept_event
 
     def _populate_queue(self, event):
-        self._queue.put(event['data'])
+        if self.accept_event(event):
+            self._queue.put(event['data'])
 
     def __iter__(self):
         return self
@@ -137,15 +134,9 @@ class IQFeedDataProvider(object):
         return self._queue.get()
 
     def __enter__(self):
-        with self._lock:
-            if not self._is_listening:
-                self._is_listening = True
-                self._producer += self._populate_queue
+        self.listeners += self._populate_queue
 
         return self
 
     def __exit__(self, exception_type, exception_value, traceback):
-        with self._lock:
-            if self._is_listening:
-                self._is_listening = False
-                self._producer -= self._populate_queue
+        self.listeners -= self._populate_queue

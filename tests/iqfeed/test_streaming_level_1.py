@@ -1,6 +1,7 @@
 import unittest
 
 from atpy.data.iqfeed.iqfeed_level_1_provider import *
+from pyevents.simple_events import *
 
 
 class TestIQFeedLevel1(unittest.TestCase):
@@ -9,7 +10,8 @@ class TestIQFeedLevel1(unittest.TestCase):
     """
 
     def test_fundamentals(self):
-        with IQFeedLevel1Listener(minibatch=2) as listener, listener.fundamentals_provider() as provider:
+        listeners = AsyncListeners()
+        with IQFeedLevel1Listener(minibatch=2, listeners=listeners) as listener, listener.fundamentals_provider() as provider:
             listener.watch('IBM')
             listener.watch('AAPL')
             listener.watch('GOOG')
@@ -19,12 +21,13 @@ class TestIQFeedLevel1(unittest.TestCase):
             e1 = threading.Event()
 
             def on_fund_item(event):
-                try:
-                    self.assertEqual(len(event['data']), 50)
-                finally:
-                    e1.set()
+                if event['type'] == 'level_1_fundamentals':
+                    try:
+                        self.assertEqual(len(event['data']), 50)
+                    finally:
+                        e1.set()
 
-            listener.on_fundamentals += on_fund_item
+            listeners += on_fund_item
 
             e1.wait()
 
@@ -37,14 +40,18 @@ class TestIQFeedLevel1(unittest.TestCase):
                     break
 
     def test_get_fundamentals(self):
-        with IQFeedLevel1Listener(fire_ticks=False) as listener, listener.fundamentals_provider():
+        listeners = AsyncListeners()
+
+        with IQFeedLevel1Listener(fire_ticks=False, listeners=listeners) as listener, listener.fundamentals_provider():
             funds = listener.get_fundamentals({'IBM', 'AAPL', 'GOOG', 'MSFT'})
             self.assertTrue('AAPL' in funds and 'IBM' in funds and 'GOOG' in funds and 'MSFT' in funds)
             for _, v in funds.items():
                 self.assertGreater(len(v), 0)
 
     def test_summary(self):
-        with IQFeedLevel1Listener(minibatch=2) as listener, listener.summary_provider() as data_provider:
+        listeners = AsyncListeners()
+
+        with IQFeedLevel1Listener(minibatch=2, listeners=listeners) as listener, listener.summary_provider() as data_provider:
             listener.watch('IBM')
             listener.watch('AAPL')
             listener.watch('GOOG')
@@ -54,12 +61,13 @@ class TestIQFeedLevel1(unittest.TestCase):
             e1 = threading.Event()
 
             def on_summary_item(event):
-                try:
-                    self.assertEqual(len(event['data']), 16)
-                finally:
-                    e1.set()
+                if event['type'] == 'level_1_tick':
+                    try:
+                        self.assertEqual(len(event['data']), 16)
+                    finally:
+                        e1.set()
 
-            listener.on_summary += on_summary_item
+            listeners += on_summary_item
 
             e1.wait()
 
@@ -72,7 +80,9 @@ class TestIQFeedLevel1(unittest.TestCase):
                     break
 
     def test_update(self):
-        with IQFeedLevel1Listener(minibatch=2) as listener, listener.update_provider() as update_provider:
+        listeners = AsyncListeners()
+
+        with IQFeedLevel1Listener(minibatch=2, listeners=listeners) as listener, listener.update_provider() as update_provider:
             listener.watch('IBM')
             listener.watch('AAPL')
             listener.watch('GOOG')
@@ -82,25 +92,27 @@ class TestIQFeedLevel1(unittest.TestCase):
             e1 = threading.Event()
 
             def on_update_item(event):
-                try:
-                    self.assertEqual(len(event['data']), 16)
-                finally:
-                    e1.set()
+                if event['type'] == 'level_1_tick':
+                    try:
+                        self.assertEqual(len(event['data']), 16)
+                    finally:
+                        e1.set()
 
-            listener.on_update += on_update_item
+            listeners += on_update_item
 
             e2 = threading.Event()
 
             def on_update_mb(event):
-                try:
-                    update_item = event['data']
-                    self.assertEqual(update_item.shape, (2, 16))
-                    l = list(update_item['symbol'])
-                    self.assertTrue('SPY' in l or 'AAPL' in l or 'IBM' in l or 'GOOG' in l or 'MSFT' in l)
-                finally:
-                    e2.set()
+                if event['type'] == 'level_1_tick_batch':
+                    try:
+                        update_item = event['data']
+                        self.assertEqual(update_item.shape, (2, 16))
+                        l = list(update_item['symbol'])
+                        self.assertTrue('SPY' in l or 'AAPL' in l or 'IBM' in l or 'GOOG' in l or 'MSFT' in l)
+                    finally:
+                        e2.set()
 
-            listener.on_update_mb += on_update_mb
+            listeners += on_update_mb
 
             e1.wait()
             e2.wait()
@@ -114,7 +126,9 @@ class TestIQFeedLevel1(unittest.TestCase):
                     break
 
     def test_news(self):
-        with IQFeedLevel1Listener(minibatch=2) as listener, listener.news_provider() as provider:
+        listeners = AsyncListeners()
+
+        with IQFeedLevel1Listener(minibatch=2, listeners=listeners) as listener, listener.news_provider() as provider:
             listener.watch('IBM')
             listener.watch('AAPL')
             listener.watch('GOOG')
@@ -124,14 +138,15 @@ class TestIQFeedLevel1(unittest.TestCase):
             e1 = threading.Event()
 
             def on_news_item(event):
-                try:
-                    news_item = event['data']
-                    self.assertEqual(len(news_item), 6)
-                    self.assertGreater(len(news_item['headline']), 0)
-                finally:
-                    e1.set()
+                if event['type'] == 'level_1_news_item':
+                    try:
+                        news_item = event['data']
+                        self.assertEqual(len(news_item), 6)
+                        self.assertGreater(len(news_item['headline']), 0)
+                    finally:
+                        e1.set()
 
-            listener.on_news += on_news_item
+            listeners += on_news_item
 
             e1.wait()
 

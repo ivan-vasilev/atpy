@@ -32,17 +32,19 @@ class ClientFactory(object):
         return DataFrameClient(**self.kwargs)
 
 
-class InfluxDBCache(object, metaclass=events.GlobalRegister):
+class InfluxDBCache(object):
     """
     InfluxDB bar data cache using abstract data provider
     """
 
-    def __init__(self, client_factory: ClientFactory, use_stream_events=True, time_delta_back: relativedelta = relativedelta(years=5)):
+    def __init__(self, client_factory: ClientFactory, listeners=None, use_stream_events=True, time_delta_back: relativedelta = relativedelta(years=5)):
         self.client_factory = client_factory
         self._use_stream_events = use_stream_events
         self._time_delta_back = time_delta_back
         self._synchronized_symbols = set()
         self._lock = threading.RLock()
+
+        listeners += self.on_event
 
     def __enter__(self):
         self.client = self.client_factory.new_df_client()
@@ -51,7 +53,6 @@ class InfluxDBCache(object, metaclass=events.GlobalRegister):
     def __exit__(self, exception_type, exception_value, traceback):
         self.client.close()
 
-    @events.listener
     def on_event(self, event):
         if self._use_stream_events and event['type'] == 'bar':
             with self._lock:

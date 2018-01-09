@@ -1,27 +1,23 @@
 import threading
 
-import pyevents.events as events
 import atpy.portfolio.order as orders
 
 
-class MockOrders(object, metaclass=events.GlobalRegister):
+class MockOrders(object):
 
-    def __init__(self, watch_event='watch_ticks'):
+    def __init__(self, listeners, watch_event='watch_ticks'):
+        self.listeners = listeners
+        self.listeners += self.on_event
+
         self._pending_orders = list()
         self._lock = threading.RLock()
         self._watch_event = watch_event
 
-    @events.after
     def process_order_request(self, order):
         with self._lock:
             self._pending_orders.append(order)
-            return {'type': self._watch_event, 'data': order.symbol}
+            self.listeners({'type': self._watch_event, 'data': order.symbol})
 
-    @events.after
-    def order_fulfilled(self, order):
-        return {'type': 'order_fulfilled', 'data': order}
-
-    @events.listener
     def on_event(self, event):
         if event['type'] == 'order_request':
             self.process_order_request(event['data'])
@@ -47,7 +43,7 @@ class MockOrders(object, metaclass=events.GlobalRegister):
 
                 if order.fulfill_time is not None:
                     self._pending_orders.remove(order)
-                    self.order_fulfilled(order)
+                    self.listeners({'type': 'order_fulfilled', 'data': order})
 
     def process_bar_data(self, data):
         with self._lock:
@@ -58,5 +54,5 @@ class MockOrders(object, metaclass=events.GlobalRegister):
 
                 if order.fulfill_time is not None:
                     self._pending_orders.remove(order)
-                    self.order_fulfilled(order)
+                    self.listeners({'type': 'order_fulfilled', 'data': order})
 

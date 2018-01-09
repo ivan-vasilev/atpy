@@ -4,17 +4,19 @@ import threading
 import logging
 
 
-class PortfolioManager(object, metaclass=events.GlobalRegister):
+class PortfolioManager(object):
     """Orders portfolio manager"""
 
-    def __init__(self, initial_capital: float, uid=None, orders=None):
+    def __init__(self, listeners, initial_capital: float, uid=None, orders=None):
+        self.listeners = listeners
+        self.listeners += self.on_event
+
         self.initial_capital = initial_capital
         self._id = uid if uid is not None else uuid.uuid4()
         self.orders = orders if orders is not None else list()
         self._lock = threading.RLock()
         self._values = dict()
 
-    @events.after
     def add_order(self, order):
         with self._lock:
             if order.fulfill_time is None:
@@ -31,7 +33,8 @@ class PortfolioManager(object, metaclass=events.GlobalRegister):
 
             self.orders.append(order)
 
-            return events.CompositeEvent([{'type': 'watch_ticks', 'data': order.symbol}, {'type': 'portfolio_update', 'data': self}])
+            self.listeners({'type': 'watch_ticks', 'data': order.symbol})
+            self.listeners({'type': 'portfolio_update', 'data': self})
 
     @property
     def symbols(self):
@@ -96,24 +99,19 @@ class PortfolioManager(object, metaclass=events.GlobalRegister):
 
             return result
 
-    @events.listener
     def on_event(self, event):
         if event['type'] == 'order_fulfilled':
             self.add_order(event['data'])
         elif event['type'] == 'level_1_tick':
             with self._lock:
                 if event['data']['symbol'] in [o.symbol for o in self.orders]:
-                    self._values[event['data']['symbol']] = event['data']['Bid']
-                    self.portfolio_value_update()
+                    self._values[event['data']['symbol']] = event['data']['bid']
+                    self.listeners({'type': 'portfolio_value_update', 'data': self})
         elif event['type'] == 'bar':
             with self._lock:
                 if event['data']['symbol'] in [o.symbol for o in self.orders]:
                     self._values[event['data']['symbol']] = event['data']['close']
-                    self.portfolio_value_update()
-
-    @events.after
-    def portfolio_value_update(self):
-        return {'type': 'portfolio_value_update', 'data': self}
+                    self.listeners({'type': 'portfolio_value_update', 'data': self})
 
     def __getstate__(self):
         # Copy the object's state from self.__dict__ which contains
@@ -122,6 +120,7 @@ class PortfolioManager(object, metaclass=events.GlobalRegister):
         state = self.__dict__.copy()
         # Remove the unpicklable entries.
         del state['_lock']
+        del state['listeners']
 
         return state
 

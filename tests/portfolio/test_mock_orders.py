@@ -81,7 +81,7 @@ class TestMockOrders(unittest.TestCase):
         filter_provider += TicksFilter(ticker="AAPL", max_ticks=1)
         filter_provider += TicksFilter(ticker="IBM", max_ticks=1)
 
-        with IQFeedHistoryListener(fire_ticks=True, filter_provider=filter_provider) as listener:
+        with IQFeedHistoryEvents(fire_ticks=True, filter_provider=filter_provider) as listener:
             listener.start()
 
             e3.wait()
@@ -166,7 +166,7 @@ class TestMockOrders(unittest.TestCase):
         filter_provider += BarsFilter(ticker="AAPL", interval_len=60, interval_type='s', max_bars=20)
         filter_provider += BarsFilter(ticker="IBM", interval_len=60, interval_type='s', max_bars=20)
 
-        with IQFeedHistoryListener(fire_ticks=True, filter_provider=filter_provider) as listener:
+        with IQFeedHistoryEvents(fire_ticks=True, filter_provider=filter_provider) as listener:
             listener.start()
 
             e3.wait()

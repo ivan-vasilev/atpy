@@ -1,10 +1,8 @@
 import datetime
-import pickle
 import threading
 from typing import List
 
 import atpy.data.iqfeed.util as iqfeedutil
-import pyevents.events as events
 import pyiqfeed as iq
 from atpy.data.iqfeed.filters import *
 
@@ -30,13 +28,14 @@ class DefaultNewsFilterProvider(DefaultFilterProvider):
         return NewsFilter()
 
 
-class IQFeedNewsListener(object, metaclass=events.GlobalRegister):
+class IQFeedNewsListener(object):
     """
     IQFeed news listener (not streaming). See the unit test on how to use
     """
 
-    def __init__(self, minibatch=None, attach_text=False, random_order=False, key_suffix='', filter_provider=DefaultNewsFilterProvider(), column_mode=True):
+    def __init__(self, listeners, minibatch=None, attach_text=False, random_order=False, key_suffix='', filter_provider=DefaultNewsFilterProvider(), column_mode=True):
         """
+        :param listeners: event listeners
         :param minibatch: minibatch size
         :param attach_text: attach news text (separate request for each news item)
         :param random_order: random order
@@ -44,6 +43,7 @@ class IQFeedNewsListener(object, metaclass=events.GlobalRegister):
         :param filter_provider: iterator for filters
         :param column_mode: column/row mode
         """
+        self.listeners = listeners
         self.minibatch = minibatch
         self.attach_text = attach_text
         self.conn = None
@@ -114,7 +114,8 @@ class IQFeedNewsListener(object, metaclass=events.GlobalRegister):
                             processed_data[key + self.key_suffix].append(value)
 
                         if len(self.current_minibatch[list(self.current_minibatch.keys())[0]]) == self.minibatch:
-                            self.process_minibatch(self.current_minibatch)
+                            self.listeners({'type': 'news_minibatch', 'data': self.current_minibatch})
+
                             self.current_minibatch = None
                     else:
                         if processed_data is None:
@@ -131,24 +132,16 @@ class IQFeedNewsListener(object, metaclass=events.GlobalRegister):
                             self.current_minibatch.append(h)
 
                             if len(self.current_minibatch) == self.minibatch:
-                                self.process_minibatch(self.current_minibatch)
+                                self.listeners({'type': 'news_minibatch', 'data': self.current_minibatch})
                                 self.current_minibatch = list()
 
-            self.process_batch(processed_data)
+            self.listeners({'type': 'news_batch', 'data': processed_data})
 
             if not self.is_running:
                 break
 
-    @events.after
-    def process_batch(self, data):
-        return {'type': 'news_batch', 'data': data}
-
     def batch_provider(self):
-        return iqfeedutil.IQFeedDataProvider(self.process_batch)
-
-    @events.after
-    def process_minibatch(self, data):
-        return {'type': 'news_minibatch', 'data': data}
+        return iqfeedutil.IQFeedDataProvider(self.listeners, accept_event=lambda e: True if e['type'] == 'news_batch' else False)
 
     def minibatch_provider(self):
-        return iqfeedutil.IQFeedDataProvider(self.process_minibatch)
+        return iqfeedutil.IQFeedDataProvider(self.listeners, accept_event=lambda e: True if e['type'] == 'news_minibatch' else False)

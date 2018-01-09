@@ -1,18 +1,20 @@
-from ibapi.wrapper import EWrapper
-from ibapi.client import EClient
-from ibapi.order import Order
-from ibapi.contract import Contract
+import threading
 
 import pandas as pd
-import pyevents.events as events
+from ibapi.client import EClient
+from ibapi.contract import Contract
+from ibapi.order import Order
+from ibapi.wrapper import EWrapper
+
 import atpy.portfolio.order as orders
-import threading
 from atpy.portfolio.order import *
 
 
-class DefaultWrapper(EWrapper, metaclass=events.GlobalRegister):
-    def __init__(self):
+class DefaultWrapper(EWrapper):
+    def __init__(self, listeners):
         EWrapper.__init__(self)
+
+        self.listeners = listeners
         self.next_valid_order_id = -1
         self._pending_orders = dict()
         self._has_valid_id = threading.Event()
@@ -60,15 +62,11 @@ class DefaultWrapper(EWrapper, metaclass=events.GlobalRegister):
             self._positions = None
 
         if data is not None:
-            self.after_event({'type': 'ibapi_positions', 'data': data})
+            self.listeners({'type': 'ibapi_positions', 'data': data})
 
     def error(self, reqId:int, errorCode:int, errorString:str):
         super().error(reqId=reqId, errorCode=errorCode, errorString=errorString)
-        self.after_event({'type': 'ibapi_error', 'data': {'reqId': reqId, 'errorCode': errorCode, 'errorString': errorString}})
-
-    @events.after
-    def after_event(self, data):
-        return data
+        self.listeners({'type': 'ibapi_error', 'data': {'reqId': reqId, 'errorCode': errorCode, 'errorString': errorString}})
 
 
 class DefaultClient(EClient):
@@ -76,10 +74,13 @@ class DefaultClient(EClient):
         EClient.__init__(self, wrapper)
 
 
-class IBEvents(DefaultWrapper, DefaultClient, metaclass=events.GlobalRegister):
-    def __init__(self, ipaddress, portid, clientid):
+class IBEvents(DefaultWrapper, DefaultClient):
+    def __init__(self, listeners, ipaddress, portid, clientid):
         DefaultWrapper.__init__(self)
         DefaultClient.__init__(self, wrapper=self)
+
+        self.listeners = listeners
+        self.listeners += self.on_event
 
         self.ipaddress = ipaddress
         self.portid = portid
@@ -100,7 +101,6 @@ class IBEvents(DefaultWrapper, DefaultClient, metaclass=events.GlobalRegister):
         """Disconnect connection etc"""
         self.done = True
 
-    @events.listener
     def on_event(self, event):
         if event['type'] == 'order_request':
             self.process_order_request(event['data'])

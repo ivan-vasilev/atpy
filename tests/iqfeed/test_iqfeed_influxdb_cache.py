@@ -1,12 +1,12 @@
 import unittest
 
+from influxdb import InfluxDBClient
 from pandas.util.testing import assert_frame_equal
 
 import atpy.data.cache.influxdb_cache_requests as inf_cache
 from atpy.data.iqfeed.iqfeed_bar_data_provider import *
 from atpy.data.iqfeed.iqfeed_influxdb_cache import *
 from atpy.data.iqfeed.iqfeed_influxdb_cache_requests import get_cache_fundamentals
-from influxdb import InfluxDBClient
 
 
 class TestInfluxDBCache(unittest.TestCase):
