@@ -7,6 +7,7 @@ import atpy.data.cache.influxdb_cache_requests as inf_cache
 from atpy.data.iqfeed.iqfeed_bar_data_provider import *
 from atpy.data.iqfeed.iqfeed_influxdb_cache import *
 from atpy.data.iqfeed.iqfeed_influxdb_cache_requests import get_cache_fundamentals
+from pyevents.events import AsyncListeners
 
 
 class TestInfluxDBCache(unittest.TestCase):
@@ -36,7 +37,7 @@ class TestInfluxDBCache(unittest.TestCase):
         e = threading.Event()
 
         class InfluxDBCacheTest(IQFeedInfluxDBCache):
-            @events.listener
+
             def on_event(self, event):
                 super().on_event(event)
                 if self._use_stream_events and event['type'] == 'bar':
@@ -52,9 +53,11 @@ class TestInfluxDBCache(unittest.TestCase):
 
                         e.set()
 
-        with IQFeedBarDataListener(mkt_snapshot_depth=3, interval_len=3600), InfluxDBCacheTest(client_factory=self._client_factory, use_stream_events=True, time_delta_back=relativedelta(days=3)):
-            watch_bars = events.after(lambda: {'type': 'watch_bars', 'data': {'symbol': ['GOOG', 'IBM'], 'update': 1}})
-            watch_bars()
+        listeners = AsyncListeners()
+        with IQFeedBarDataListener(listeners=listeners, mkt_snapshot_depth=3, interval_len=3600), \
+                IQFeedHistoryProvider(num_connections=2) as history, \
+                InfluxDBCacheTest(client_factory=self._client_factory, history=history, listeners=listeners, use_stream_events=True, time_delta_back=relativedelta(days=3)):
+            listeners({'type': 'watch_bars', 'data': {'symbol': ['GOOG', 'IBM'], 'update': 1}})
 
             e.wait()
 

@@ -1,7 +1,6 @@
 from dateutil import tz
 
 import atpy.data.iqfeed.bar_util as bars
-import pyevents.events as events
 from atpy.data.iqfeed.iqfeed_level_1_provider import get_fundamentals
 from atpy.data.iqfeed.util import *
 

@@ -6,12 +6,12 @@ from atpy.ibapi.ib_events import IBEvents
 class Environment(object):
     def __init__(self, listeners, interval_len, interval_type='s', fire_bars=True, fire_news=True, mkt_snapshot_depth=0, key_suffix=''):
         self.listeners = listeners
-
         self.listeners += self.on_event
-        self.latest_bars = IQFeedBarDataListener(interval_len=interval_len, interval_type=interval_type, fire_bars=fire_bars, mkt_snapshot_depth=mkt_snapshot_depth, key_suffix=key_suffix)
-        self.ibapi = IBEvents("127.0.0.1", 4002, 0)
+
+        self.latest_bars = IQFeedBarDataListener(listeners=listeners, interval_len=interval_len, interval_type=interval_type, fire_bars=fire_bars, mkt_snapshot_depth=mkt_snapshot_depth, key_suffix=key_suffix)
+        self.ibapi = IBEvents(listeners=listeners, ipaddress="127.0.0.1", portid=4002,  clientid=0)
         self.fire_news = fire_news
-        self.level_1_conn = IQFeedLevel1Listener(fire_ticks=False) if fire_news else None
+        self.level_1_conn = IQFeedLevel1Listener(listeners=listeners, fire_ticks=False) if fire_news else None
 
     def __enter__(self):
         self.latest_bars.__enter__()

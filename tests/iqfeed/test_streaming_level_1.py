@@ -1,7 +1,7 @@
 import unittest
 
 from atpy.data.iqfeed.iqfeed_level_1_provider import *
-from pyevents.simple_events import *
+from pyevents.events import *
 
 
 class TestIQFeedLevel1(unittest.TestCase):

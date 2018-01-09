@@ -11,8 +11,6 @@ from dateutil.parser import parse
 from dateutil.relativedelta import relativedelta
 from influxdb import InfluxDBClient, DataFrameClient
 
-import pyevents.events as events
-
 
 class BarsFilter(typing.NamedTuple):
     ticker: typing.Union[list, str]
@@ -39,19 +37,25 @@ class InfluxDBCache(object):
 
     def __init__(self, client_factory: ClientFactory, listeners=None, use_stream_events=True, time_delta_back: relativedelta = relativedelta(years=5)):
         self.client_factory = client_factory
+        self.listeners = listeners
         self._use_stream_events = use_stream_events
         self._time_delta_back = time_delta_back
         self._synchronized_symbols = set()
         self._lock = threading.RLock()
 
-        listeners += self.on_event
-
     def __enter__(self):
         self.client = self.client_factory.new_df_client()
+
+        if self.listeners is not None:
+            self.listeners += self.on_event
+
         return self
 
     def __exit__(self, exception_type, exception_value, traceback):
         self.client.close()
+
+        if self.listeners is not None:
+            self.listeners -= self.on_event
 
     def on_event(self, event):
         if self._use_stream_events and event['type'] == 'bar':
@@ -101,11 +105,9 @@ class InfluxDBCache(object):
         cached = list(InfluxDBClient.query(client, 'select LAST(close) from bars where symbol="{}" and interval="{}"'.format(symbol, interval), chunked=True).get_points())
 
         if len(cached) > 0:
-            d = parse(cached[0]['time'])
+            d = parse(cached[0]['time']).astimezone(tz.gettz('UTC'))
         else:
             d = datetime.datetime.utcnow().replace(tzinfo=tz.gettz('UTC')) - self._time_delta_back
-
-        d = d.tz_localize(tz.gettz('UTC'))
 
         to_cache = self._request_noncache_datum(symbol, d, interval_len, interval_type)
 

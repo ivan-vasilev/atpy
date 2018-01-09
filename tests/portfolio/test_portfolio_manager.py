@@ -4,7 +4,7 @@ from atpy.data.iqfeed.iqfeed_history_provider import *
 from atpy.data.iqfeed.iqfeed_level_1_provider import *
 from atpy.portfolio.backtesting.mock_orders import *
 from atpy.portfolio.portfolio_manager import *
-from pyevents.simple_events import AsyncListeners
+from pyevents.events import AsyncListeners
 from pyevents_util.mongodb.mongodb_store import *
 
 
@@ -12,9 +12,6 @@ class TestPortfolioManager(unittest.TestCase):
     """
     Test portfolio manager
     """
-
-    def setUp(self):
-        events.reset()
 
     def test_1(self):
         listeners = AsyncListeners()
@@ -136,8 +133,6 @@ class TestPortfolioManager(unittest.TestCase):
             client.drop_database('test_db')
 
     def test_price_updates(self):
-        events.use_global_event_bus()
-
         listeners = AsyncListeners()
 
         with IQFeedLevel1Listener(listeners=listeners, minibatch=2):
@@ -233,8 +228,6 @@ class TestPortfolioManager(unittest.TestCase):
         self.assertEqual(len(pm._values), 2)
 
     def test_mock_orders(self):
-        events.use_global_event_bus()
-
         listeners = AsyncListeners()
 
         with IQFeedLevel1Listener(listeners=listeners):
@@ -332,39 +325,39 @@ class TestPortfolioManager(unittest.TestCase):
         self.assertGreater(pm.value('IBM'), 0)
 
     def test_historical_bar_mock_orders(self):
-        events.use_global_event_bus()
+        listeners = AsyncListeners()
 
-        pm = PortfolioManager(10000)
+        pm = PortfolioManager(listeners=listeners, initial_capital=10000)
 
-        mock_orders = MockOrders()
+        MockOrders(listeners=listeners)
 
         e1 = threading.Event()
-        events.listener(lambda x: e1.set() if x['type'] == 'portfolio_update' and 'GOOG' in x['data'].symbols else None)
+        listeners += lambda x: e1.set() if x['type'] == 'portfolio_update' and 'GOOG' in x['data'].symbols else None
 
         e2 = threading.Event()
-        events.listener(lambda x: e2.set() if x['type'] == 'portfolio_update' and 'AAPL' in x['data'].symbols else None)
+        listeners += lambda x: e2.set() if x['type'] == 'portfolio_update' and 'AAPL' in x['data'].symbols else None
 
         e3 = threading.Event()
-        events.listener(lambda x: e3.set() if x['type'] == 'portfolio_update' and 'IBM' in x['data'].symbols else None)
+        listeners += lambda x: e3.set() if x['type'] == 'portfolio_update' and 'IBM' in x['data'].symbols else None
 
         o1 = StopLimitOrder(Type.BUY, 'GOOG', 1, 99999, 1)
-        mock_orders.on_event({'type': 'order_request', 'data': o1})
+        listeners({'type': 'order_request', 'data': o1})
 
         o2 = StopLimitOrder(Type.BUY, 'AAPL', 3, 99999, 1)
-        mock_orders.on_event({'type': 'order_request', 'data': o2})
+        listeners({'type': 'order_request', 'data': o2})
 
         o3 = StopLimitOrder(Type.BUY, 'IBM', 1, 99999, 1)
-        mock_orders.on_event({'type': 'order_request', 'data': o3})
+        listeners({'type': 'order_request', 'data': o3})
 
         o4 = StopLimitOrder(Type.SELL, 'AAPL', 1, 1, 99999)
-        mock_orders.on_event({'type': 'order_request', 'data': o4})
+        listeners({'type': 'order_request', 'data': o4})
 
         filter_provider = DefaultFilterProvider(repeat=True)
         filter_provider += BarsFilter(ticker="GOOG", interval_len=60, interval_type='s', max_bars=20)
         filter_provider += BarsFilter(ticker="AAPL", interval_len=60, interval_type='s', max_bars=20)
         filter_provider += BarsFilter(ticker="IBM", interval_len=60, interval_type='s', max_bars=20)
 
-        with IQFeedHistoryEvents(fire_ticks=True, filter_provider=filter_provider):
+        with IQFeedHistoryEvents(listeners=listeners, fire_ticks=True, filter_provider=filter_provider):
             e1.wait()
             e2.wait()
             e3.wait()

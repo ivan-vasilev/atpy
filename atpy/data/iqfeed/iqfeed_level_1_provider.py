@@ -8,7 +8,7 @@ import pandas as pd
 
 import pyiqfeed as iq
 from atpy.data.iqfeed.util import launch_service, iqfeed_to_dict, create_batch, IQFeedDataProvider
-from pyevents.simple_events import SyncListeners
+from pyevents.events import SyncListeners
 
 
 class IQFeedLevel1Listener(iq.SilentQuoteListener):

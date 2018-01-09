@@ -3,7 +3,7 @@ import unittest
 from atpy.data.iqfeed.iqfeed_history_provider import *
 from atpy.data.iqfeed.iqfeed_level_1_provider import get_fundamentals
 import atpy.data.iqfeed.util as iqfeedutil
-from pyevents.simple_events import AsyncListeners
+from pyevents.events import AsyncListeners
 
 
 class TestIQFeedHistory(unittest.TestCase):

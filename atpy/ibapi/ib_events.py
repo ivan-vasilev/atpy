@@ -36,9 +36,9 @@ class DefaultWrapper(EWrapper):
                 del self._pending_orders[orderId]
                 order.uid = orderId
 
-                self.after_event({'type': 'order_fulfilled', 'data': order})
+                self.listeners({'type': 'order_fulfilled', 'data': order})
             else:
-                self.after_event({'type': 'order_fulfilled', 'data': orderId})
+                self.listeners({'type': 'order_fulfilled', 'data': orderId})
         elif status in ('Inactive', 'ApiCanceled', 'Cancelled') and orderId in self._pending_orders:
             del self._pending_orders[orderId]
 
@@ -76,7 +76,7 @@ class DefaultClient(EClient):
 
 class IBEvents(DefaultWrapper, DefaultClient):
     def __init__(self, listeners, ipaddress, portid, clientid):
-        DefaultWrapper.__init__(self)
+        DefaultWrapper.__init__(self, listeners)
         DefaultClient.__init__(self, wrapper=self)
 
         self.listeners = listeners

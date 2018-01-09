@@ -1,7 +1,7 @@
 import unittest
 
 from atpy.data.iqfeed.iqfeed_news_provider import *
-from pyevents.simple_events import AsyncListeners
+from pyevents.events import AsyncListeners
 
 
 class TestIQFeedNews(unittest.TestCase):

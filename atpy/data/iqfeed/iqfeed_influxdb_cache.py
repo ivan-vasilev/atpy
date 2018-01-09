@@ -14,8 +14,8 @@ class IQFeedInfluxDBCache(InfluxDBCache):
     InfluxDB bar data cache using IQFeed data provider
     """
 
-    def __init__(self, client_factory: ClientFactory, history: IQFeedHistoryProvider = None, use_stream_events=True, time_delta_back: relativedelta = relativedelta(years=5)):
-        super().__init__(client_factory=client_factory, use_stream_events=use_stream_events, time_delta_back=time_delta_back)
+    def __init__(self, client_factory: ClientFactory, listeners=None, history: IQFeedHistoryProvider = None, use_stream_events=True, time_delta_back: relativedelta = relativedelta(years=5)):
+        super().__init__(client_factory=client_factory, listeners=listeners, use_stream_events=use_stream_events, time_delta_back=time_delta_back)
         self.history = history
 
     def _request_noncache_datum(self, symbol, bgn_prd, interval_len, interval_type='s'):

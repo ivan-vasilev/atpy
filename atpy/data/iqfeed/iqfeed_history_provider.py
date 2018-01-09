@@ -8,7 +8,6 @@ from multiprocessing.pool import ThreadPool
 
 import pandas as pd
 
-import pyevents.events as events
 import pyiqfeed
 import pyiqfeed as iq
 from atpy.data.iqfeed.filters import *

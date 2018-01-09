@@ -1,7 +1,7 @@
-from atpy.portfolio.order import *
-import pyevents.events as events
-import threading
 import logging
+import threading
+
+from atpy.portfolio.order import *
 
 
 class PortfolioManager(object):
