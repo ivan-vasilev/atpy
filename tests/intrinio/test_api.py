@@ -27,6 +27,29 @@ class TestIQFeedBarData(unittest.TestCase):
         self.assertTrue(isinstance(data, pd.DataFrame))
         self.assertGreater(len(data), 0)
 
+    def test_2(self):
+        listeners = SyncListeners()
+        IntrinioEvents(listeners)
+
+        results = list()
+
+        def listener(event):
+            if event['type'] == 'intrinio_historical_result':
+                results.append(event['data'])
+
+        listeners += listener
+
+        listeners({'type': 'intrinio_historical_request',
+                   'data': [{'endpoint': 'historical_data', 'identifier': 'GOOG', 'item': 'totalrevenue'}, {'endpoint': 'historical_data', 'identifier': 'YHOO', 'item': 'totalrevenue'}],
+                   'threads': 1,
+                   'async': False})
+
+        data = results[0]
+
+        self.assertTrue(isinstance(data, pd.DataFrame))
+        self.assertGreater(len(data), 0)
+        self.assertTrue(isinstance(data.index, pd.MultiIndex))
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -1,9 +1,16 @@
 import itertools
 import os
+import threading
+import typing
 from io import StringIO
+
+import logging
+from multiprocessing.pool import ThreadPool
 
 import pandas as pd
 import requests.sessions as sessions
+import queue
+import json
 
 
 def to_dataframe(csv_str: str):
@@ -26,7 +33,7 @@ def get_csv(sess: sessions.Session, endpoint: str, **parameters):
     """
     auth = os.getenv('INTRINIO_USERNAME'), os.getenv('INTRINIO_PASSWORD')
 
-    url = '{}/{}'.format('https://api.intrinio.com', endpoint)
+    url = '{}/{}'.format('https://api.intrinio.com', endpoint + ('' if endpoint.endswith('.csv') else '.csv'))
 
     if 'page_size' not in parameters:
         parameters['page_size'] = 10000
@@ -55,6 +62,85 @@ def get_csv(sess: sessions.Session, endpoint: str, **parameters):
     return ''.join(pages)
 
 
+def historical_data_processor(csv_str: str, **parameters):
+    """
+    Get historical data for given item and identifier
+    :param csv_str: csv string
+    :return pd.DataFrame with date set as index
+    """
+
+    df = to_dataframe(csv_str)
+    df.set_index('date', drop=True, inplace=True)
+    df.index.set_names('timestamp', inplace=True)
+
+    return parameters['identifier'], df
+
+
+def get_data(filters: typing.List[dict], threads=1, async=False, processor: typing.Callable=None):
+    """
+    Get async data for a list of filters. Works only for the historical API
+    :param filters: a list of filters
+    :param threads: number of threads for data retrieval
+    :param async: if True, return queue. Otherwise, wait for the results
+    :param processor: process the results
+
+        For full list of available parameters check http://docs.intrinio.com/#historical-data
+
+    :return Queue or pd.DataFrame with identifier, date set as multi index
+    """
+    q = queue.Queue()
+    pool = ThreadPool(threads)
+    global_counter = {'c': 0}
+    lock = threading.Lock()
+    no_data = set()
+
+    with sessions.Session() as sess:
+        def mp_worker(f):
+            try:
+                data = get_csv(sess, **f)
+            except Exception as err:
+                data = None
+                logging.getLogger(__name__).exception(err)
+
+            if data is not None:
+                q.put(processor(data, **f) if processor is not None else (json.dumps(f), data))
+            else:
+                no_data.add(json.dumps(f))
+
+            with lock:
+                global_counter['c'] += 1
+                cnt = global_counter['c']
+                if cnt == len(filters):
+                    q.put(None)
+
+                if cnt % 20 == 0 or cnt == len(filters):
+                    logging.getLogger(__name__).info("Loaded " + str(cnt) + " queries")
+                    if len(no_data) > 0:
+                        no_data_list = list(no_data)
+                        no_data_list.sort()
+                        logging.getLogger(__name__).info("No data found for " + str(len(no_data_list)) + " queries: " + str(no_data_list))
+                        no_data.clear()
+
+        if threads > 1 and len(filters) > 1:
+            pool.map(mp_worker, (f for f in filters))
+            pool.close()
+        else:
+            for f in filters:
+                mp_worker(f)
+
+        if not async:
+            result = dict()
+            for job in iter(q.get, None):
+                if job is None:
+                    break
+
+                result[job[0]] = job[1]
+
+            return result
+        else:
+            return q
+
+
 class IntrinioEvents(object):
     """
     Intrinio requests via events
@@ -77,3 +163,21 @@ class IntrinioEvents(object):
                 result = to_dataframe(result)
 
             self.listeners({'type': 'intrinio_request_result', 'data': result})
+        elif event['type'] == 'intrinio_historical_request':
+            data = event['data'] if isinstance(event['data'], list) else event['data']
+            for d in data:
+                if 'endpoint' not in d:
+                    d['endpoint'] = 'historical_data'
+                elif d['endpoint'] != 'historical_data':
+                    raise Exception("Only historical data is allowed with this request")
+
+            result = get_data(data,
+                              threads=event['threads'] if 'threads' in event else 1,
+                              async=event['async'] if 'async' in event else False,
+                              processor=historical_data_processor)
+
+            if isinstance(result, dict):
+                result = pd.concat(result)
+                result.index.set_names('symbol', level=0, inplace=True)
+
+            self.listeners({'type': 'intrinio_historical_result', 'data': result})
