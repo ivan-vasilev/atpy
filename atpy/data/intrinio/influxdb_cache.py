@@ -9,7 +9,7 @@ from dateutil.parser import parse
 from dateutil.relativedelta import relativedelta
 from influxdb import InfluxDBClient, DataFrameClient
 
-from atpy.data.intrinio.api import get_data, historical_data_processor
+from atpy.data.intrinio.api import get_historical_data
 
 
 class ClientFactory(object):
@@ -66,7 +66,7 @@ class InfluxDBCache(object):
         :param filters: list of dicts for data request
         :return:
         """
-        return get_data(filters=filters, async=async, processor=historical_data_processor)
+        return get_historical_data(filters=filters, async=async)
 
     def update_to_latest(self, new_symbols: typing.Set[typing.Tuple] = None, skip_if_older_than: datetime.timedelta = None):
         """
@@ -88,11 +88,11 @@ class InfluxDBCache(object):
                 new_symbols.remove(key)
 
             if skip_if_older_than is None or time > skip_if_older_than:
-                filters.append({'identifier': key[0], 'item': key[1], 'start_date': time.date(), 'endpoint': 'historical_data.csv'})
+                filters.append({'identifier': key[0], 'item': key[1], 'start_date': time.date()})
 
         start_date = datetime.datetime.utcnow().date() - self._time_delta_back
         for (symbol, tag) in new_symbols:
-            filters.append({'identifier': symbol, 'item': tag, 'start_date': start_date.strftime('%Y-%m-%d'), 'endpoint': 'historical_data.csv'})
+            filters.append({'identifier': symbol, 'item': tag, 'start_date': start_date.strftime('%Y-%m-%d')})
 
         logging.getLogger(__name__).info("Updating " + str(len(filters)) + " total symbols and intervals; New symbols and intervals: " + str(len(new_symbols)))
 

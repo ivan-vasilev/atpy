@@ -3,11 +3,11 @@ import unittest
 
 import pandas as pd
 from dateutil.relativedelta import relativedelta
+from pandas.util.testing import assert_frame_equal
 
-from atpy.data.intrinio.api import IntrinioEvents, get_data, historical_data_processor
+from atpy.data.intrinio.api import IntrinioEvents
 from atpy.data.intrinio.influxdb_cache import InfluxDBCache, ClientFactory
 from pyevents.events import SyncListeners
-from pandas.util.testing import assert_frame_equal
 
 
 class TestIQFeedBarData(unittest.TestCase):

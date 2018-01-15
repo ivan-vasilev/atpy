@@ -69,23 +69,6 @@ def get_csv(sess: sessions.Session, endpoint: str, **parameters):
     return ''.join(pages) if len(pages) > 0 else None
 
 
-def historical_data_processor(csv_str: str, **parameters):
-    """
-    Get historical data for given item and identifier
-    :param csv_str: csv string
-    :return pd.DataFrame with date set as index
-    """
-
-    result = to_dataframe(csv_str)
-    tag = result.columns[1]
-    result['tag'] = tag
-    result.rename(columns={tag: 'value'}, inplace=True)
-    result.set_index(['date', 'tag'], drop=True, inplace=True, append=True)
-    result.reset_index(level=0, inplace=True, drop=True)
-
-    return parameters['identifier'], result
-
-
 def get_data(filters: typing.List[dict], threads=1, async=False, processor: typing.Callable = None):
     """
     Get async data for a list of filters. Works only for the historical API
@@ -151,6 +134,43 @@ def get_data(filters: typing.List[dict], threads=1, async=False, processor: typi
             return q
 
 
+def get_historical_data(filters: typing.List[dict], threads=1, async=False):
+    for f in filters:
+        if 'endpoint' not in f:
+            f['endpoint'] = 'historical_data'
+        elif f['endpoint'] != 'historical_data':
+            raise Exception("Only historical data is allowed with this request")
+
+    result = get_data(filters,
+                      threads=threads,
+                      async=async,
+                      processor=_historical_data_processor)
+
+    if not async and isinstance(result, dict):
+        result = pd.concat(result)
+        result.index.set_names('symbol', level=0, inplace=True)
+        result = result.tz_localize('UTC', level=1, copy=False)
+
+    return result
+
+
+def _historical_data_processor(csv_str: str, **parameters):
+    """
+    Get historical data for given item and identifier
+    :param csv_str: csv string
+    :return pd.DataFrame with date set as index
+    """
+
+    result = to_dataframe(csv_str)
+    tag = result.columns[1]
+    result['tag'] = tag
+    result.rename(columns={tag: 'value'}, inplace=True)
+    result.set_index(['date', 'tag'], drop=True, inplace=True, append=True)
+    result.reset_index(level=0, inplace=True, drop=True)
+
+    return parameters['identifier'], result
+
+
 class IntrinioEvents(object):
     """
     Intrinio requests via events
@@ -175,20 +195,8 @@ class IntrinioEvents(object):
             self.listeners({'type': 'intrinio_request_result', 'data': result})
         elif event['type'] == 'intrinio_historical_data':
             data = event['data'] if isinstance(event['data'], list) else event['data']
-            for d in data:
-                if 'endpoint' not in d:
-                    d['endpoint'] = 'historical_data'
-                elif d['endpoint'] != 'historical_data':
-                    raise Exception("Only historical data is allowed with this request")
-
-            result = get_data(data,
-                              threads=event['threads'] if 'threads' in event else 1,
-                              async=event['async'] if 'async' in event else False,
-                              processor=historical_data_processor)
-
-            if isinstance(result, dict):
-                result = pd.concat(result)
-                result.index.set_names('symbol', level=0, inplace=True)
-                result = result.tz_localize('UTC', level=1, copy=False)
+            result = get_historical_data(data,
+                                         threads=event['threads'] if 'threads' in event else 1,
+                                         async=event['async'] if 'async' in event else False)
 
             self.listeners({'type': 'intrinio_historical_data_result', 'data': result})
