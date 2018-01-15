@@ -3,6 +3,7 @@ import logging
 import threading
 import typing
 
+import numpy as np
 from dateutil import tz
 from dateutil.parser import parse
 from dateutil.relativedelta import relativedelta
@@ -108,11 +109,9 @@ class InfluxDBCache(object):
                     s, to_cache = tupl
 
                     if to_cache is not None and not to_cache.empty:
-                        tg = to_cache.columns[0]
-                        to_cache['itag'] = tg
                         to_cache['symbol'] = s
-                        to_cache.rename(columns={tg: 'value'}, inplace=True)
-
+                        to_cache.reset_index(level=['tag'], inplace=True)
+                        to_cache.rename(columns={'tag': 'itag'}, inplace=True)
                     try:
                         client.write_points(to_cache, 'intrinio_tags', protocol='line', tag_columns=['symbol', 'itag'], time_precision='s')
                     except Exception as err:
@@ -158,9 +157,12 @@ class InfluxDBCache(object):
 
         if len(result) > 0:
             result = result['intrinio_tags']
+            result['value'] = result['value'].astype(np.float)
             result.rename(columns={'itag': 'tag'}, inplace=True)
-            result.set_index(['symbol', 'tag'], drop=True, inplace=True, append=True)
+            result.set_index(['tag', 'symbol'], drop=True, inplace=True, append=True)
             result.index.rename('date', level=0, inplace=True)
+            result = result.reorder_levels(['symbol', 'date', 'tag'])
+            result.sort_index(inplace=True)
         else:
             result = None
 

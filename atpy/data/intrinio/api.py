@@ -49,6 +49,11 @@ def get_csv(sess: sessions.Session, endpoint: str, **parameters):
             except Exception as err:
                 logging.getLogger(__name__).error(err)
 
+        new_lines = response.content.decode('utf-8').count('\n')
+
+        if new_lines == 1:
+            break
+
         info, columns, page = response.content.decode('utf-8').split('\n', 2)
 
         if page_number == 0:
@@ -61,7 +66,7 @@ def get_csv(sess: sessions.Session, endpoint: str, **parameters):
         if len(page) == 0 or page_number + 1 == total_pages:
             break
 
-    return ''.join(pages)
+    return ''.join(pages) if len(pages) > 0 else None
 
 
 def historical_data_processor(csv_str: str, **parameters):
@@ -71,11 +76,14 @@ def historical_data_processor(csv_str: str, **parameters):
     :return pd.DataFrame with date set as index
     """
 
-    df = to_dataframe(csv_str)
-    df.set_index('date', drop=True, inplace=True)
-    df.index.set_names('timestamp', inplace=True)
+    result = to_dataframe(csv_str)
+    tag = result.columns[1]
+    result['tag'] = tag
+    result.rename(columns={tag: 'value'}, inplace=True)
+    result.set_index(['date', 'tag'], drop=True, inplace=True, append=True)
+    result.reset_index(level=0, inplace=True, drop=True)
 
-    return parameters['identifier'], df
+    return parameters['identifier'], result
 
 
 def get_data(filters: typing.List[dict], threads=1, async=False, processor: typing.Callable = None):
