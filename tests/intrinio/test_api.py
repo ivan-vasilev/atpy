@@ -57,9 +57,9 @@ class TestIQFeedBarData(unittest.TestCase):
         IntrinioEvents(listeners)
 
         client_factory = ClientFactory(host='localhost', port=8086, username='root', password='root', database='test_cache')
+        client = client_factory.new_df_client()
 
         try:
-            client = client_factory.new_df_client()
             client.create_database('test_cache')
             client.switch_database('test_cache')
 
@@ -75,23 +75,6 @@ class TestIQFeedBarData(unittest.TestCase):
         finally:
             client.drop_database('test_cache')
             client.close()
-
-    def test_4(self):
-        listeners = SyncListeners()
-        IntrinioEvents(listeners)
-
-        client_factory = ClientFactory(host='localhost', port=8086, username='root', password='root', database='test_cache')
-
-        client = client_factory.new_df_client()
-        client.drop_database('test_cache')
-        client.create_database('test_cache')
-        client.switch_database('test_cache')
-
-        with InfluxDBCache(client_factory=client_factory, listeners=listeners) as cache:
-            cache.update_to_latest({('GOOG', 'totalrevenue'), ('FB', 'totalrevenue')})
-
-        client.drop_database('test_cache')
-        # client.close()
 
 
 if __name__ == '__main__':
