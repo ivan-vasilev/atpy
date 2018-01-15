@@ -16,8 +16,6 @@ class TestInfluxDBCache(unittest.TestCase):
     """
 
     def setUp(self):
-        events.reset()
-        events.use_global_event_bus()
         self._client_factory = ClientFactory(host='localhost', port=8086, username='root', password='root', database='test_cache')
 
         self._client = self._client_factory.new_df_client()

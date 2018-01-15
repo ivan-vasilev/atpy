@@ -1,16 +1,15 @@
 import itertools
+import json
+import logging
 import os
+import queue
 import threading
 import typing
 from io import StringIO
-
-import logging
 from multiprocessing.pool import ThreadPool
 
 import pandas as pd
 import requests.sessions as sessions
-import queue
-import json
 
 
 def to_dataframe(csv_str: str):
@@ -45,7 +44,10 @@ def get_csv(sess: sessions.Session, endpoint: str, **parameters):
 
         response = sess.request('GET', url, params=parameters, auth=auth, verify=True)
         if not response.ok:
-            response.raise_for_status()
+            try:
+                response.raise_for_status()
+            except Exception as err:
+                logging.getLogger(__name__).error(err)
 
         info, columns, page = response.content.decode('utf-8').split('\n', 2)
 
@@ -76,7 +78,7 @@ def historical_data_processor(csv_str: str, **parameters):
     return parameters['identifier'], df
 
 
-def get_data(filters: typing.List[dict], threads=1, async=False, processor: typing.Callable=None):
+def get_data(filters: typing.List[dict], threads=1, async=False, processor: typing.Callable = None):
     """
     Get async data for a list of filters. Works only for the historical API
     :param filters: a list of filters
@@ -88,7 +90,7 @@ def get_data(filters: typing.List[dict], threads=1, async=False, processor: typi
 
     :return Queue or pd.DataFrame with identifier, date set as multi index
     """
-    q = queue.Queue()
+    q = queue.Queue(100)
     pool = ThreadPool(threads)
     global_counter = {'c': 0}
     lock = threading.Lock()
