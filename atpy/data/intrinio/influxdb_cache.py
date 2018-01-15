@@ -157,12 +157,15 @@ class InfluxDBCache(object):
 
         if len(result) > 0:
             result = result['intrinio_tags']
-            result['value'] = result['value'].astype(np.float)
+
             result.rename(columns={'itag': 'tag'}, inplace=True)
             result.set_index(['tag', 'symbol'], drop=True, inplace=True, append=True)
             result.index.rename('date', level=0, inplace=True)
             result = result.reorder_levels(['symbol', 'date', 'tag'])
             result.sort_index(inplace=True)
+
+            if result['value'].dtype != np.float:
+                result['value'] = result['value'].astype(np.float)
         else:
             result = None
 

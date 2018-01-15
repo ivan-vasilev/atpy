@@ -173,7 +173,7 @@ class IntrinioEvents(object):
                 result = to_dataframe(result)
 
             self.listeners({'type': 'intrinio_request_result', 'data': result})
-        elif event['type'] == 'intrinio_historical_request':
+        elif event['type'] == 'intrinio_historical_data':
             data = event['data'] if isinstance(event['data'], list) else event['data']
             for d in data:
                 if 'endpoint' not in d:
@@ -189,5 +189,6 @@ class IntrinioEvents(object):
             if isinstance(result, dict):
                 result = pd.concat(result)
                 result.index.set_names('symbol', level=0, inplace=True)
+                result = result.tz_localize('UTC', level=1, copy=False)
 
-            self.listeners({'type': 'intrinio_historical_result', 'data': result})
+            self.listeners({'type': 'intrinio_historical_data_result', 'data': result})

@@ -38,12 +38,12 @@ class TestIQFeedBarData(unittest.TestCase):
         results = list()
 
         def listener(event):
-            if event['type'] == 'intrinio_historical_result':
+            if event['type'] == 'intrinio_historical_data_result':
                 results.append(event['data'])
 
         listeners += listener
 
-        listeners({'type': 'intrinio_historical_request',
+        listeners({'type': 'intrinio_historical_data',
                    'data': [{'endpoint': 'historical_data', 'identifier': 'GOOG', 'item': 'totalrevenue'}, {'endpoint': 'historical_data', 'identifier': 'YHOO', 'item': 'totalrevenue'}],
                    'threads': 1,
                    'async': False})
@@ -77,11 +77,24 @@ class TestIQFeedBarData(unittest.TestCase):
                 self.assertGreaterEqual(cached.index.levels[1].min().year, now.year - 4)
 
                 cached = cache.request_data(symbols={'GOOG', 'FB'}, tags={'operatingrevenue'})
-                non_cached = get_data(filters=[{'endpoint': 'historical_data', 'identifier': 'GOOG', 'item': 'operatingrevenue', 'sort_order': 'asc'}, {'endpoint': 'historical_data', 'identifier': 'FB', 'item': 'operatingrevenue', 'sort_order': 'asc'}], async=False,
-                                      processor=historical_data_processor)
-                non_cached = pd.concat(non_cached)
-                non_cached.index.rename('symbol', level=0, inplace=True)
-                non_cached = non_cached.tz_localize('UTC', level=1, copy=False)
+
+                listeners = SyncListeners()
+                IntrinioEvents(listeners)
+
+                non_cached = list()
+
+                def listener(event):
+                    if event['type'] == 'intrinio_historical_data_result':
+                        non_cached.append(event['data'])
+
+                listeners += listener
+
+                listeners({'type': 'intrinio_historical_data',
+                           'data': [{'endpoint': 'historical_data', 'identifier': 'GOOG', 'item': 'operatingrevenue', 'sort_order': 'asc'},
+                                    {'endpoint': 'historical_data', 'identifier': 'FB', 'item': 'operatingrevenue', 'sort_order': 'asc'}],
+                           'async': False})
+
+                non_cached = non_cached[0]
 
                 assert_frame_equal(cached, non_cached)
         finally:
