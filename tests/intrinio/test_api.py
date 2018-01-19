@@ -10,7 +10,7 @@ from atpy.data.intrinio.influxdb_cache import InfluxDBCache, ClientFactory
 from pyevents.events import SyncListeners
 
 
-class TestIQFeedBarData(unittest.TestCase):
+class TestIntrinioAPI(unittest.TestCase):
 
     def test_1(self):
         listeners = SyncListeners()

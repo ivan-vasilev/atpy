@@ -11,8 +11,7 @@ class TestIQFeedNews(unittest.TestCase):
 
     def test_provider_column_mode(self):
         filter_provider = DefaultNewsFilterProvider()
-        filter_provider += NewsFilter(symbols=['AAPL'], limit=10)
-        filter_provider += NewsFilter(symbols=['IBM'], limit=10)
+        filter_provider += NewsFilter(symbols=['RCON'], limit=10)
 
         listeners = AsyncListeners()
 
