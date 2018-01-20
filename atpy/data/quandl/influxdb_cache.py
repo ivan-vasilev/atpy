@@ -32,8 +32,8 @@ class InfluxDBCache(object):
             if i > 0 and (i % 5 == 0 or len(df) < chunksize):
                 logging.getLogger(__name__).info("Cached " + str(i) + " queries")
 
-    def request_data(self, database, tags: dict = None, start_date: datetime.date = None, end_date: datetime.date = None):
-        query = "SELECT * FROM quandl_" + database
+    def request_data(self, dataset, tags: dict = None, start_date: datetime.date = None, end_date: datetime.date = None):
+        query = "SELECT * FROM quandl_" + dataset
 
         where = list()
         if tags is not None:
@@ -57,9 +57,10 @@ class InfluxDBCache(object):
         result = self.client.query(query, chunked=True)
 
         if len(result) > 0:
-            result = result["quandl_" + database]
+            result = result["quandl_" + dataset]
 
-            cols = [c for c in result.columns if c != 'value']
+            cols = ['symbol', 'indicator', 'dimension'] if dataset in ('SF0', 'SF1') else [c for c in result.columns if c != 'value']
+
             result.set_index(cols, drop=True, inplace=True, append=True)
             result.index.rename('date', level=0, inplace=True)
             result.sort_index(inplace=True)

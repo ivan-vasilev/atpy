@@ -113,6 +113,7 @@ def get_sf(filters: typing.List[dict], threads=1, async=False):
 
     if not async and isinstance(result, list):
         result = pd.concat(result)
+        result.sort_index(inplace=True, ascending=True)
 
     return result
 

@@ -2,10 +2,11 @@ import unittest
 
 import pandas as pd
 
-from atpy.data.quandl.api import QuandlEvents, bulkdownload_sf
+from atpy.data.quandl.api import QuandlEvents, get_sf, bulkdownload_sf
 from atpy.data.quandl.influxdb_cache import InfluxDBCache
 from pyevents.events import SyncListeners
 from influxdb import DataFrameClient
+from pandas.util.testing import assert_frame_equal
 
 
 class TestQuandlAPI(unittest.TestCase):
@@ -66,9 +67,16 @@ class TestQuandlAPI(unittest.TestCase):
                 cache.add_sf_to_cache()
                 data = cache.request_data('SF0', tags={'symbol': {'AAPL', 'IBM'}})
 
+                listeners = SyncListeners()
+                QuandlEvents(listeners)
+
                 self.assertTrue(isinstance(data, pd.DataFrame))
                 self.assertGreater(len(data), 0)
                 self.assertEqual(len(data.index.levels), 4)
+
+                non_cache_data = get_sf([{'dataset': 'SF0/NKE_GP_MRY'}, {'dataset': 'SF0/MSFT_GP_MRY'}])
+                cache_data = cache.request_data('SF0', tags={'symbol': {'NKE', 'MSFT'}, 'dimension': 'MRY', 'indicator': 'GP'})
+                assert_frame_equal(non_cache_data, cache_data)
         finally:
             client.drop_database('test_cache')
             client.close()
