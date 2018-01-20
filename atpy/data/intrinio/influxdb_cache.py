@@ -50,10 +50,10 @@ class InfluxDBCache(object):
         """
         parse_time = lambda t: parse(t).replace(tzinfo=tz.gettz('UTC'))
 
-        points = InfluxDBClient.query(self.client, "select FIRST(close), symbol, itag, time from intrinio_tags group by symbol, itag").get_points()
+        points = InfluxDBClient.query(self.client, "select FIRST(value), symbol, itag, time from intrinio_tags group by symbol, itag").get_points()
         firsts = {(entry['symbol'], entry['itag']): parse_time(entry['time']) for entry in points}
 
-        points = InfluxDBClient.query(self.client, "select LAST(close), symbol, itag, time from intrinio_tags group by symbol, itag").get_points()
+        points = InfluxDBClient.query(self.client, "select LAST(value), symbol, itag, time from intrinio_tags group by symbol, itag").get_points()
         lasts = {(entry['symbol'], entry['itag']): parse_time(entry['time']) for entry in points}
 
         result = {k: (firsts[k], lasts[k]) for k in firsts.keys() & lasts.keys()}

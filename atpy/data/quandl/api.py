@@ -75,17 +75,20 @@ def get_time_series(filters: typing.List[dict], threads=1, async=False, processo
         return q
 
 
-def bulkdownload(dataset: str, processor: typing.Callable, chunksize=None):
+def bulkdownload(dataset: str, chunksize=None):
     with tempfile.TemporaryDirectory() as td:
         filename = os.path.join(td, dataset + '.zip')
+        logging.getLogger(__name__).info("Downloading dataset " + dataset + " to " + filename)
         quandl.bulkdownload(dataset, filename=filename, api_key=os.environ['QUANDL_API_KEY'] if 'QUANDL_API_KEY' in os.environ else None)
         zipfile.ZipFile(filename).extractall(td)
 
-        for v in processor(glob.glob(os.path.join(td, '*.csv'))[0], chunksize=chunksize):
-            yield v
+        logging.getLogger(__name__).info("Done... Start yielding dataframes")
+
+        for df in pd.read_csv(glob.glob(os.path.join(td, '*.csv'))[0], header=None, chunksize=chunksize, parse_dates=[1]):
+            yield df
 
 
-def get_core_us_fund(filters: typing.List[dict], threads=1, async=False):
+def get_sf(filters: typing.List[dict], threads=1, async=False):
     """
     return core us fundamental data
     :param filters: list of filters
@@ -93,7 +96,8 @@ def get_core_us_fund(filters: typing.List[dict], threads=1, async=False):
     :param async: wait for the result or return a queue
     :return:
     """
-    def _core_us_fund_processor(df, dataset):
+
+    def _sf_processor(df, dataset):
         df.rename(columns={'Value': 'value'}, inplace=True)
         df.index.rename('date', inplace=True)
         df.tz_localize('UTC', copy=False)
@@ -105,7 +109,7 @@ def get_core_us_fund(filters: typing.List[dict], threads=1, async=False):
     result = get_time_series(filters,
                              threads=threads,
                              async=async,
-                             processor=_core_us_fund_processor)
+                             processor=_sf_processor)
 
     if not async and isinstance(result, list):
         result = pd.concat(result)
@@ -113,29 +117,15 @@ def get_core_us_fund(filters: typing.List[dict], threads=1, async=False):
     return result
 
 
-def get_core_us_fund_from_csv(filepath_or_buffer: str, chunksize: int = None):
-    """
-    Core financial data from csv file (for bulkdownload)
-    :param filepath_or_buffer: location or buffer of the csv file
-    :param chunksize: size of the chunk
-    :return:
-    """
-
-    def _process(df):
+def bulkdownload_sf(dataset: str = 'SF0', chunksize=100000):
+    for df in bulkdownload(dataset=dataset, chunksize=chunksize):
         sid = df[0]
         df.drop(0, axis=1, inplace=True)
         df = pd.concat([df, sid.str.split('_', expand=True)], axis=1, copy=False)
         df.columns = ['date', 'value', 'symbol', 'indicator', 'dimension']
         df.set_index(['date', 'symbol', 'indicator', 'dimension'], drop=True, inplace=True, append=False)
 
-        return df
-
-    for d in pd.read_csv(filepath_or_buffer, header=None, chunksize=chunksize, parse_dates=[1]):
-        yield _process(d)
-
-
-def get_core_us_fund_from_bulk(dataset: str='SF0', chunksize=100000):
-    return bulkdownload(dataset=dataset, processor=get_core_us_fund_from_csv, chunksize=chunksize)
+        yield df
 
 
 class QuandlEvents(object):
@@ -155,8 +145,8 @@ class QuandlEvents(object):
 
             self.listeners({'type': 'quandl_timeseries_result', 'data': result})
         elif event['type'] == 'quandl_fundamentals_request':
-            result = get_core_us_fund(event['data'] if isinstance(event['data'], list) else event['data'],
-                                              threads=event['threads'] if 'threads' in event else 1,
-                                              async=event['async'] if 'async' in event else False)
+            result = get_sf(event['data'] if isinstance(event['data'], list) else event['data'],
+                            threads=event['threads'] if 'threads' in event else 1,
+                            async=event['async'] if 'async' in event else False)
 
             self.listeners({'type': 'quandl_timeseries_result', 'data': result})
