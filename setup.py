@@ -78,6 +78,7 @@ setup(
     extras_require={
         'pyevents_util': ['pyevents_util'],
         'influxdb': ['influxdb'],
+        'TA-Lib': ['TA-Lib'],
     },
 
     dependency_links=[
