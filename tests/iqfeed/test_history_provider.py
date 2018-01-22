@@ -1,8 +1,8 @@
 import unittest
 
+import atpy.data.iqfeed.util as iqfeedutil
 from atpy.data.iqfeed.iqfeed_history_provider import *
 from atpy.data.iqfeed.iqfeed_level_1_provider import get_fundamentals
-import atpy.data.iqfeed.util as iqfeedutil
 from pyevents.events import AsyncListeners
 
 
