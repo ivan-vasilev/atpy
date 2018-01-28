@@ -37,6 +37,36 @@ class TestDataReplay(unittest.TestCase):
 
             self.assertGreaterEqual(len(timestamps), batch_len)
 
+    def test_basic_async(self):
+        batch_len = 1000
+
+        q1, q2 = queue.Queue(), queue.Queue()
+        with IQFeedHistoryProvider() as provider, DataReplay().add_source(q1.get, 'e1', True).add_source(q2.get, 'e2', True) as dr:
+            q = queue.Queue()
+            provider.request_data_by_filters([BarsFilter(ticker="IBM", interval_len=60, interval_type='s', max_bars=batch_len),
+                                              BarsFilter(ticker="AAPL", interval_len=60, interval_type='s', max_bars=batch_len)],
+                                             q)
+
+            q1.put(q.get()[1])
+            q1.put(None)
+            q2.put(q.get()[1])
+            q2.put(None)
+
+            timestamps = set()
+            for i, r in enumerate(dr):
+                for e in r:
+                    t = r[e]['timestamp']
+
+                if len(timestamps) > 0:
+                    self.assertGreater(t, max(timestamps))
+
+                timestamps.add(t)
+
+                self.assertTrue(isinstance(r, dict))
+                self.assertGreaterEqual(len(r), 1)
+
+            self.assertGreaterEqual(len(timestamps), batch_len)
+
     def test_2(self):
         l1, l2 = list(), list()
         with IQFeedHistoryProvider(num_connections=1) as provider, DataReplay().add_source(iter(l1), 'e1').add_source(iter(l2), 'e2') as dr:
@@ -80,6 +110,56 @@ class TestDataReplay(unittest.TestCase):
 
             self.assertGreater(maxl, 0)
             self.assertGreaterEqual(len(timestamps), maxl)
+
+            months = set()
+            for t in timestamps:
+                months.add(t.month)
+
+            self.assertTrue({3, 4, 5, 6, 8} < months)
+
+    def test_2_async(self):
+        q1, q2 = queue.Queue(), queue.Queue()
+        with IQFeedHistoryProvider(num_connections=1) as provider, DataReplay().add_source(q1.get, 'e1', True).add_source(q2.get, 'e2', True) as dr:
+            year = datetime.datetime.now().year - 1
+
+            q1_history = queue.Queue()
+            provider.request_data_by_filters([BarsInPeriodFilter(ticker="AAPL", bgn_prd=datetime.datetime(year, 3, 1), end_prd=datetime.datetime(year, 4, 1), interval_len=3600, ascend=True, interval_type='s'),
+                                              BarsInPeriodFilter(ticker="AAPL", bgn_prd=datetime.datetime(year, 4, 2), end_prd=datetime.datetime(year, 5, 1), interval_len=3600, ascend=True, interval_type='s'),
+                                              BarsInPeriodFilter(ticker="AAPL", bgn_prd=datetime.datetime(year, 5, 2), end_prd=datetime.datetime(year, 6, 1), interval_len=3600, ascend=True, interval_type='s'),
+                                              BarsInPeriodFilter(ticker="AAPL", bgn_prd=datetime.datetime(year, 8, 2), end_prd=datetime.datetime(year, 9, 1), interval_len=3600, ascend=True, interval_type='s')],
+                                             q1_history)
+
+            q2_history = queue.Queue()
+            provider.request_data_by_filters([BarsInPeriodFilter(ticker="IBM", bgn_prd=datetime.datetime(year, 4, 1), end_prd=datetime.datetime(year, 5, 1), interval_len=3600, ascend=True, interval_type='s'),
+                                              BarsInPeriodFilter(ticker="IBM", bgn_prd=datetime.datetime(year, 5, 2), end_prd=datetime.datetime(year, 6, 1), interval_len=3600, ascend=True, interval_type='s'),
+                                              BarsInPeriodFilter(ticker="IBM", bgn_prd=datetime.datetime(year, 6, 2), end_prd=datetime.datetime(year, 7, 1), interval_len=3600, ascend=True, interval_type='s')],
+                                             q2_history)
+
+            q1.put(q1_history.get()[1])
+            q1.put(q1_history.get()[1])
+            q1.put(q1_history.get()[1])
+            q1.put(q1_history.get()[1])
+            q1.put(None)
+
+            q2.put(q2_history.get()[1])
+            q2.put(q2_history.get()[1])
+            q2.put(q2_history.get()[1])
+            q2.put(None)
+
+            timestamps = set()
+            for i, r in enumerate(dr):
+                for e in r:
+                    t = r[e]['timestamp']
+
+                if len(timestamps) > 0:
+                    self.assertGreater(t, max(timestamps))
+
+                timestamps.add(t)
+
+                self.assertTrue(isinstance(r, dict))
+                self.assertGreaterEqual(len(r), 1)
+
+            self.assertGreaterEqual(len(timestamps), 1)
 
             months = set()
             for t in timestamps:
