@@ -1,3 +1,4 @@
+import random
 import unittest
 
 from atpy.backtesting.data_replay import DataReplay
@@ -166,6 +167,66 @@ class TestDataReplay(unittest.TestCase):
                 months.add(t.month)
 
             self.assertTrue({3, 4, 5, 6, 8} < months)
+
+    def test_3_performance(self):
+        logging.basicConfig(level=logging.DEBUG)
+
+        batch_len = 5000
+        batch_width = 5000
+
+        l1, l2 = list(), list()
+        with IQFeedHistoryProvider() as provider, DataReplay().add_source(iter(l1), 'e1').add_source(iter(l2), 'e2') as dr:
+            logging.getLogger(__name__).debug('Generating random data')
+
+            q = queue.Queue()
+            provider.request_data_by_filters([BarsFilter(ticker="AAPL", interval_len=60, interval_type='s', max_bars=batch_len),
+                                              BarsFilter(ticker="IBM", interval_len=60, interval_type='s', max_bars=batch_len)],
+                                             q)
+
+            df1 = q.get()[1]
+            dfs1 = {'AAPL': df1}
+            for i in range(batch_width):
+                dfs1['AAPL_' + str(i)] = df1.sample(random.randint(int(len(df1) / 3), len(df1) - 1))
+
+            dfs1 = pd.concat(dfs1)
+            dfs1.sort_index(inplace=True)
+            l1.append(dfs1)
+
+            df2 = q.get()[1]
+            dfs2 = {'IBM': df2}
+            for i in range(batch_width):
+                dfs2['IBM_' + str(i)] = df2.sample(random.randint(int(len(df2) / 3), len(df2) - 1))
+
+            l2.append(pd.concat(dfs2))
+
+            logging.getLogger(__name__).debug('Done')
+
+            prev_t = None
+            now = datetime.datetime.now()
+
+            for i, r in enumerate(dr):
+                if i % 1000 == 0 and i > 0:
+                    new_now = datetime.datetime.now()
+                    elapsed = new_now - now
+                    logging.getLogger(__name__).debug('Time elapsed ' + str(elapsed) + ' for ' + str(i) + ' iterations; ' + str(elapsed / 1000) + ' per iteration')
+                    now = new_now
+
+                for e in r:
+                    t = r[e]['timestamp'][0]
+
+                if prev_t is not None:
+                    self.assertGreater(t, prev_t)
+
+                prev_t = t
+
+                self.assertTrue(isinstance(r, dict))
+                self.assertGreaterEqual(len(r), 1)
+
+            elapsed = datetime.datetime.now() - now
+            logging.getLogger(__name__).debug('Time elapsed ' + str(elapsed) + ' for ' + str(i + 1) + ' iterations; ' + str(elapsed / (i % 1000)) + ' per iteration')
+
+            self.assertIsNotNone(t)
+            self.assertIsNotNone(prev_t)
 
 
 if __name__ == '__main__':

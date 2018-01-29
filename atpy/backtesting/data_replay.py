@@ -112,7 +112,7 @@ class DataReplay(object):
         if isinstance(index, pd.DatetimeIndex):
             return 0, index
         elif isinstance(index, pd.MultiIndex):
-            for i, l in index.levels:
+            for i, l in enumerate(index.levels):
                 if isinstance(l, pd.DatetimeIndex):
                     return i, l
 
