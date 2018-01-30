@@ -1,9 +1,12 @@
+import datetime
+import logging
 import queue
 import threading
 import typing
 
 import numpy as np
 import pandas as pd
+from pandas.util.testing import assert_frame_equal
 
 
 class DataReplay(object):
@@ -57,18 +60,27 @@ class DataReplay(object):
                     del self._data[e]
 
         for e in self._sources.keys() - self._data.keys():
+            now = datetime.datetime.now()
+
             dp = self._sources[e]
             try:
                 df = dp.get() if isinstance(dp, queue.Queue) else next(dp)
+                level, ind = self._get_datetime_level(df)
+                if level != 0:
+                    df = df.swaplevel(0, level)
+                    df.sort_values(ind.name, axis=0, inplace=True)
             except StopIteration:
                 df = None
 
             if df is not None:
                 self._data[e] = df
+                logging.getLogger(__name__).debug('Obtained data ' + str(e) + ' in ' + str(datetime.datetime.now() - now))
             else:
                 del self._sources[e]
 
         if self._timeline is None and len(self._data) > 0:
+            now = datetime.datetime.now()
+
             indices = [self._get_datetime_level(df.index)[1] for df in self._data.values()]
             tzs = {ind.tz for ind in indices}
 
@@ -84,6 +96,8 @@ class DataReplay(object):
                 ind = self._get_datetime_level(df.index)[1]
                 self._timeline[e] = False
                 self._timeline.loc[ind, e] = True
+
+            logging.getLogger(__name__).debug('Built timeline in ' + str(datetime.datetime.now() - now))
 
         if self._timeline is not None:
             result = dict()

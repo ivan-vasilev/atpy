@@ -171,12 +171,12 @@ class TestDataReplay(unittest.TestCase):
     def test_3_performance(self):
         logging.basicConfig(level=logging.DEBUG)
 
-        batch_len = 5000
-        batch_width = 5000
+        batch_len = 1000
+        batch_width = 5
 
         l1, l2 = list(), list()
         with IQFeedHistoryProvider() as provider, DataReplay().add_source(iter(l1), 'e1').add_source(iter(l2), 'e2') as dr:
-            logging.getLogger(__name__).debug('Generating random data')
+            now = datetime.datetime.now()
 
             q = queue.Queue()
             provider.request_data_by_filters([BarsFilter(ticker="AAPL", interval_len=60, interval_type='s', max_bars=batch_len),
@@ -189,7 +189,6 @@ class TestDataReplay(unittest.TestCase):
                 dfs1['AAPL_' + str(i)] = df1.sample(random.randint(int(len(df1) / 3), len(df1) - 1))
 
             dfs1 = pd.concat(dfs1)
-            dfs1.sort_index(inplace=True)
             l1.append(dfs1)
 
             df2 = q.get()[1]
@@ -197,9 +196,10 @@ class TestDataReplay(unittest.TestCase):
             for i in range(batch_width):
                 dfs2['IBM_' + str(i)] = df2.sample(random.randint(int(len(df2) / 3), len(df2) - 1))
 
-            l2.append(pd.concat(dfs2))
+            dfs2 = pd.concat(dfs2)
+            l2.append(dfs2)
 
-            logging.getLogger(__name__).debug('Done')
+            logging.getLogger(__name__).debug('Random data generated in ' + str(datetime.datetime.now() - now) + ' with shapes ' + str(dfs1.shape) + ', ' + str(dfs2.shape))
 
             prev_t = None
             now = datetime.datetime.now()
