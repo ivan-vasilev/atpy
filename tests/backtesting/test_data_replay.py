@@ -171,8 +171,8 @@ class TestDataReplay(unittest.TestCase):
     def test_3_performance(self):
         logging.basicConfig(level=logging.DEBUG)
 
-        batch_len = 1000
-        batch_width = 5
+        batch_len = 10000
+        batch_width = 5000
 
         l1, l2 = list(), list()
         with IQFeedHistoryProvider() as provider, DataReplay().add_source(iter(l1), 'e1').add_source(iter(l2), 'e2') as dr:

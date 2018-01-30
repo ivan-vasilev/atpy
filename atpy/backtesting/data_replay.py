@@ -68,7 +68,11 @@ class DataReplay(object):
                 level, ind = self._get_datetime_level(df)
                 if level != 0:
                     df = df.swaplevel(0, level)
-                    df.sort_values(ind.name, axis=0, inplace=True)
+                    if ind.name in df.columns:
+                        df.sort_values(ind.name, axis=0, inplace=True)
+                    else:
+                        df.sort_index(inplace=True)
+
             except StopIteration:
                 df = None
 
