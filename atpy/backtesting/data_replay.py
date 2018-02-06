@@ -6,7 +6,6 @@ import typing
 
 import numpy as np
 import pandas as pd
-from pandas.util.testing import assert_frame_equal
 
 
 class DataReplay(object):
@@ -27,16 +26,16 @@ class DataReplay(object):
 
         sources = dict()
 
-        for (iterator, name, run_async) in self._sources:
+        for (iterator, name, run_async, historical_depth) in self._sources:
             if run_async:
                 q = queue.Queue()
-                sources[name] = q
+                sources[name] = (q, historical_depth)
 
                 t = _DataGeneratorThread(q=q, next_item=iterator)
                 self._threads.append(t)
                 t.start()
             else:
-                sources[name] = iterator
+                sources[name] = (iterator, historical_depth)
 
         self._sources = sources
 
@@ -52,19 +51,37 @@ class DataReplay(object):
         return self
 
     def __next__(self):
+        # delete "expired" dataframes
+        old_data = None
         if self._timeline is not None:
-            for e in list(self._data.keys()):
-                _, ind = self._get_datetime_level(self._data[e].index)
+            # check for timeline end reset if necessary
+            if self._current_time == len(self._timeline):
+                self._timeline = None
+                self._current_time = None
+                old_data = self._data
+                self._data = dict()
+            else:
+                for e in list(self._data.keys()):
+                    _, ind = self._get_datetime_level(self._data[e].index)
 
-                if ind[-1] < self._timeline.index[self._current_time]:
-                    del self._data[e]
+                    if ind[-1] < self._timeline.index[self._current_time]:
+                        if old_data is None:
+                            old_data = dict()
 
+                        old_data[e] = self._data[e]
+                        del self._data[e]
+
+        # request new dataframes if needed
         for e in self._sources.keys() - self._data.keys():
             now = datetime.datetime.now()
 
-            dp = self._sources[e]
+            dp, _ = self._sources[e]
             try:
                 df = dp.get() if isinstance(dp, queue.Queue) else next(dp)
+            except StopIteration:
+                df = None
+
+            if df is not None:
                 level, ind = self._get_datetime_level(df)
                 if level != 0:
                     df = df.swaplevel(0, level)
@@ -73,16 +90,15 @@ class DataReplay(object):
                     else:
                         df.sort_index(inplace=True)
 
-            except StopIteration:
-                df = None
-
-            if df is not None:
                 self._data[e] = df
                 logging.getLogger(__name__).debug('Obtained data ' + str(e) + ' in ' + str(datetime.datetime.now() - now))
             else:
                 del self._sources[e]
+                if old_data and e in old_data:
+                    del old_data[e]
 
-        if self._timeline is None and len(self._data) > 0:
+        # build timeline
+        if self._timeline is None and self._data:
             now = datetime.datetime.now()
 
             indices = [self._get_datetime_level(df.index)[1] for df in self._data.values()]
@@ -103,20 +119,27 @@ class DataReplay(object):
 
             logging.getLogger(__name__).debug('Built timeline in ' + str(datetime.datetime.now() - now))
 
+        # prepend old data for continuity
+        if old_data:
+            for e, old_df in old_data.items():
+                _, historical_depth = self._sources[e]
+                if historical_depth > 0:
+                    _, ind = self._get_datetime_level(old_df)
+                    old_df_slice = old_df.loc[slice(ind[max(-len(ind), -historical_depth)], ind[-1]), :]
+                    self._data[e] = pd.concat((old_df_slice, self._data[e]))
+
+        # produce results
         if self._timeline is not None:
             result = dict()
             row = self._timeline.iloc[self._current_time]
             for e in [e for e in row.index if row[e]]:
                 df = self._data[e]
-                l, ind = self._get_datetime_level(df)
-                result[e] = df.xs(self._timeline.index[self._current_time], level=l if isinstance(df.index, pd.MultiIndex) else None, drop_level=True)
+                _, historical_depth = self._sources[e]
+                _, ind = self._get_datetime_level(df)
+                pos = ind.get_loc(self._timeline.index[self._current_time])
+                result[e] = df.loc[slice(ind[max(0, pos - historical_depth)], ind[pos]), :]
 
             self._current_time += 1
-
-            if self._current_time == len(self._timeline):
-                self._timeline = None
-                self._current_time = None
-                self._data = dict()
 
             return result
         else:
@@ -134,17 +157,18 @@ class DataReplay(object):
                 if isinstance(l, pd.DatetimeIndex):
                     return i, l
 
-    def add_source(self, data_provider: typing.Union[typing.Iterator, typing.Callable], name: str, run_async: bool = False):
+    def add_source(self, data_provider: typing.Union[typing.Iterator, typing.Callable], name: str, run_async: bool = False, historical_depth: int=0):
         """
         :param data_provider: return pd.DataFrame with either DateTimeIndex or MultiIndex, where one of the levels is of datetime type
         :param name: data set name for each of the data sources
         :param run_async: whether to retrieve data synchronously or asynchronously
+        :param historical_depth: whether to return only the current element or with historical depth
         :return:
         """
         if self._is_running:
             raise Exception("Cannot add sources while the generator is working")
 
-        self._sources.append((data_provider, name, run_async))
+        self._sources.append((data_provider, name, run_async, historical_depth))
 
         return self
 

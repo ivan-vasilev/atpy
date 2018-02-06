@@ -177,7 +177,7 @@ class IQFeedBarDataListener(iq.SilentBarListener):
                 elif isinstance(data, dict) and (data['symbol'], data['timestamp']) in self._mkt_snapshot.index:
                     self._mkt_snapshot.loc[data['symbol'], data['timestamp']] = pd.Series(data)
                 else:
-                    expand = data['timestamp'] > self._mkt_snapshot.index.levels[1][len(self._mkt_snapshot.index.levels[1]) - 1]
+                    expand = data['timestamp'] > self._mkt_snapshot.index.levels[1][-1]
 
                     to_concat = pd.Series(data).to_frame().T
                     to_concat.set_index(['symbol', 'timestamp'], append=False, inplace=True, drop=False)

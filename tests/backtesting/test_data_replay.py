@@ -26,7 +26,7 @@ class TestDataReplay(unittest.TestCase):
             timestamps = set()
             for i, r in enumerate(dr):
                 for e in r:
-                    t = r[e]['timestamp']
+                    t = r[e]['timestamp'][0]
 
                 if len(timestamps) > 0:
                     self.assertGreater(t, max(timestamps))
@@ -56,7 +56,7 @@ class TestDataReplay(unittest.TestCase):
             timestamps = set()
             for i, r in enumerate(dr):
                 for e in r:
-                    t = r[e]['timestamp']
+                    t = r[e]['timestamp'][0]
 
                 if len(timestamps) > 0:
                     self.assertGreater(t, max(timestamps))
@@ -70,7 +70,8 @@ class TestDataReplay(unittest.TestCase):
 
     def test_2(self):
         l1, l2 = list(), list()
-        with IQFeedHistoryProvider(num_connections=1) as provider, DataReplay().add_source(iter(l1), 'e1').add_source(iter(l2), 'e2') as dr:
+        historical_depth = 10
+        with IQFeedHistoryProvider(num_connections=1) as provider, DataReplay().add_source(iter(l1), 'e1', historical_depth=historical_depth).add_source(iter(l2), 'e2', historical_depth=historical_depth) as dr:
             year = datetime.datetime.now().year - 1
 
             q1 = queue.Queue()
@@ -97,12 +98,20 @@ class TestDataReplay(unittest.TestCase):
 
             maxl = max(max([len(l) for l in l1]), max([len(l) for l in l2]))
             timestamps = set()
-            for i, r in enumerate(dr):
+            counters = {'e1': 0, 'e2': 0}
+
+            for r in dr:
                 for e in r:
-                    t = r[e]['timestamp']
+                    t = r[e]['timestamp'][-1]
 
                 if len(timestamps) > 0:
                     self.assertGreater(t, max(timestamps))
+
+                for e, df in r.items():
+                    self.assertTrue(df.index.is_monotonic)
+
+                    counters[e] = 1 if e not in counters else counters[e] + 1
+                    self.assertEqual(df.shape[0], min(counters[e], historical_depth + 1))
 
                 timestamps.add(t)
 
@@ -150,7 +159,7 @@ class TestDataReplay(unittest.TestCase):
             timestamps = set()
             for i, r in enumerate(dr):
                 for e in r:
-                    t = r[e]['timestamp']
+                    t = r[e]['timestamp'][0]
 
                 if len(timestamps) > 0:
                     self.assertGreater(t, max(timestamps))
@@ -175,7 +184,7 @@ class TestDataReplay(unittest.TestCase):
         batch_width = 5000
 
         l1, l2 = list(), list()
-        with IQFeedHistoryProvider() as provider, DataReplay().add_source(iter(l1), 'e1').add_source(iter(l2), 'e2') as dr:
+        with IQFeedHistoryProvider() as provider, DataReplay().add_source(iter(l1), 'e1', historical_depth=100).add_source(iter(l2), 'e2', historical_depth=100) as dr:
             now = datetime.datetime.now()
 
             q = queue.Queue()
@@ -212,13 +221,12 @@ class TestDataReplay(unittest.TestCase):
                     now = new_now
 
                 for e in r:
-                    t = r[e]['timestamp'][0]
+                    t = r[e]['timestamp'][-1]
 
                 if prev_t is not None:
                     self.assertGreater(t, prev_t)
 
                 prev_t = t
-
                 self.assertTrue(isinstance(r, dict))
                 self.assertGreaterEqual(len(r), 1)
 
