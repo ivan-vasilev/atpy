@@ -9,7 +9,7 @@ import pandas as pd
 
 
 class DataReplay(object):
-    """Replay data from multiple sources, sorted by time"""
+    """Replay data from multiple sources, sorted by time. Each source provides a dataframe."""
 
     def __init__(self):
         self._sources = list()
@@ -31,9 +31,7 @@ class DataReplay(object):
                 q = queue.Queue()
                 sources[name] = (q, historical_depth)
 
-                t = _DataGeneratorThread(q=q, next_item=iterator)
-                self._threads.append(t)
-                t.start()
+                self._threads.append(_DataGeneratorThread(q=q, next_item=iterator))
             else:
                 sources[name] = (iterator, historical_depth)
 
@@ -48,6 +46,9 @@ class DataReplay(object):
         self._is_running = False
 
     def __iter__(self):
+        for t in self._threads:
+            t.start()
+
         return self
 
     def __next__(self):
@@ -157,7 +158,7 @@ class DataReplay(object):
                 if isinstance(l, pd.DatetimeIndex):
                     return i, l
 
-    def add_source(self, data_provider: typing.Union[typing.Iterator, typing.Callable], name: str, run_async: bool = False, historical_depth: int=0):
+    def add_source(self, data_provider: typing.Union[typing.Iterator, typing.Callable], name: str, run_async: bool = False, historical_depth: int = 0):
         """
         :param data_provider: return pd.DataFrame with either DateTimeIndex or MultiIndex, where one of the levels is of datetime type
         :param name: data set name for each of the data sources
@@ -202,14 +203,11 @@ class _DataGeneratorThread(threading.Thread):
 
 class DataReplayEvents(object):
 
-    def __init__(self, listeners, data_replay: DataReplay):
+    def __init__(self, listeners, data_replay: DataReplay, event_name: str):
         self.listeners = listeners
         self.data_replay = data_replay
-        self.listeners += self.on_event
+        self.event_name = event_name
 
     def start(self):
-        self.listeners(next(self.data_replay))
-
-    def on_event(self, event):
-        if event['type'] == 'cycle_finished':
-            self.listeners(next(self.data_replay))
+        for d in self.data_replay:
+            self.listeners({'type': self.event_name, 'data': d})

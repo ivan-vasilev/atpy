@@ -1,8 +1,9 @@
 import random
 import unittest
 
-from atpy.backtesting.data_replay import DataReplay
+from atpy.backtesting.data_replay import DataReplay, DataReplayEvents
 from atpy.data.iqfeed.iqfeed_history_provider import *
+from pyevents.events import SyncListeners
 
 
 class TestDataReplay(unittest.TestCase):
@@ -35,6 +36,43 @@ class TestDataReplay(unittest.TestCase):
 
                 self.assertTrue(isinstance(r, dict))
                 self.assertGreaterEqual(len(r), 1)
+
+            self.assertGreaterEqual(len(timestamps), batch_len)
+
+    def test_events(self):
+        batch_len = 1000
+
+        l1, l2 = list(), list()
+        with IQFeedHistoryProvider() as provider, DataReplay().add_source(iter(l1), 'e1').add_source(iter(l2), 'e2') as data_replay:
+            q = queue.Queue()
+            provider.request_data_by_filters([BarsFilter(ticker="IBM", interval_len=60, interval_type='s', max_bars=batch_len),
+                                              BarsFilter(ticker="AAPL", interval_len=60, interval_type='s', max_bars=batch_len)],
+                                             q)
+
+            l1.append(q.get()[1])
+            l2.append(q.get()[1])
+
+            listeners = SyncListeners()
+
+            timestamps = set()
+
+            def check_df(event):
+                if event is not None and 'data' in event:
+                    r = event['data']
+                    for e in r:
+                        t = r[e]['timestamp'][0]
+
+                    if len(timestamps) > 0:
+                        self.assertGreater(t, max(timestamps))
+
+                    timestamps.add(t)
+
+                    self.assertTrue(isinstance(r, dict))
+                    self.assertGreaterEqual(len(r), 1)
+
+            listeners += check_df
+
+            DataReplayEvents(listeners=listeners, data_replay=data_replay, event_name='bars').start()
 
             self.assertGreaterEqual(len(timestamps), batch_len)
 
