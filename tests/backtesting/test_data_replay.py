@@ -3,6 +3,7 @@ import unittest
 
 from atpy.backtesting.data_replay import DataReplay, DataReplayEvents
 from atpy.data.iqfeed.iqfeed_history_provider import *
+from atpy.data.latest_data_snapshot import LatestDataSnapshot
 from pyevents.events import SyncListeners
 
 
@@ -273,6 +274,73 @@ class TestDataReplay(unittest.TestCase):
 
             self.assertIsNotNone(t)
             self.assertIsNotNone(prev_t)
+
+    def test_latest_bars(self):
+        logging.basicConfig(level=logging.DEBUG)
+
+        batch_len = 1000
+        batch_width = 500
+
+        l1 = list()
+        with IQFeedHistoryProvider() as provider, DataReplay().add_source(iter(l1), 'e1', historical_depth=0) as dr:
+            now = datetime.datetime.now()
+
+            q = queue.Queue()
+            provider.request_data_by_filters([BarsFilter(ticker="AAPL", interval_len=60, interval_type='s', max_bars=batch_len)], q)
+
+            df1 = q.get()[1]
+            dfs1 = {'AAPL': df1}
+            for i in range(batch_width):
+                dfs1['AAPL_' + str(i)] = df1.sample(random.randint(int(len(df1) / 3), len(df1) - 1))
+
+            dfs1 = pd.concat(dfs1)
+            l1.append(dfs1)
+
+            logging.getLogger(__name__).debug('Random data generated in ' + str(datetime.datetime.now() - now) + ' with shape ' + str(dfs1.shape))
+
+            prev_t = None
+            now = datetime.datetime.now()
+
+            listeners = SyncListeners()
+            lb = LatestDataSnapshot(listeners=listeners, event='event', fire_update=True, depth=100)
+
+            j = 0
+
+            snapshots_count = {'count': 0}
+
+            def snapshot_listener(event):
+                if event['type'] == 'event_snapshot':
+                    self.assertEqual(len(event['data'].index.levels[0]), min(lb.depth, j + 1))
+                    snapshots_count['count'] += 1
+
+            listeners += snapshot_listener
+            for i, r in enumerate(dr):
+                j = i
+                for a in r:
+                    lb.on_event({'type': 'event', 'data': r[a]})
+
+                if i % 100 == 0 and i > 0:
+                    new_now = datetime.datetime.now()
+                    elapsed = new_now - now
+                    logging.getLogger(__name__).debug('Time elapsed ' + str(elapsed) + ' for ' + str(i) + ' iterations; ' + str(elapsed / 100) + ' per iteration')
+                    now = new_now
+
+                for e in r:
+                    t = r[e]['timestamp'][-1]
+
+                if prev_t is not None:
+                    self.assertGreater(t, prev_t)
+
+                prev_t = t
+                self.assertTrue(isinstance(r, dict))
+                self.assertGreaterEqual(len(r), 1)
+
+            elapsed = datetime.datetime.now() - now
+            logging.getLogger(__name__).debug('Time elapsed ' + str(elapsed) + ' for ' + str(i + 1) + ' iterations; ' + str(elapsed / (i % 100)) + ' per iteration')
+
+            self.assertIsNotNone(t)
+            self.assertIsNotNone(prev_t)
+            self.assertEqual(batch_len, snapshots_count['count'])
 
 
 if __name__ == '__main__':
