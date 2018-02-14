@@ -1,7 +1,10 @@
 import datetime
 import threading
-import typing
+from datetime import timedelta
 from typing import List
+
+import pandas as pd
+from dateutil import tz
 
 import atpy.data.iqfeed.util as iqfeedutil
 import pyiqfeed as iq
@@ -29,7 +32,7 @@ class DefaultNewsFilterProvider(DefaultFilterProvider):
         return NewsFilter()
 
 
-class IQFeedNewsProvider2(object):
+class IQFeedNewsProvider(object):
     """
     IQFeed news provider (not streaming). See the unit test on how to use
     """
@@ -68,7 +71,7 @@ class IQFeedNewsProvider2(object):
         else:
             raise AttributeError
 
-    def request_new_item(self, f: NewsFilter):
+    def request_news(self, f: NewsFilter):
         _headlines = self.conn.request_news_headlines(sources=f.sources, symbols=f.symbols, date=f.date, limit=f.limit, timeout=f.timeout)
         headlines = [h._asdict() for h in _headlines]
 
@@ -76,102 +79,43 @@ class IQFeedNewsProvider2(object):
 
         for h in headlines:
             if self.attach_text:
-                h['text'] = self.conn.request_news_story(h['story_id'])
+                h['text'] = self.conn.request_news_story(h['story_id']).story
 
-                if processed_data is None:
-                    processed_data = {f + self.key_suffix: list() for f in h.keys()}
+            h['timestamp' + self.key_suffix] = (datetime.datetime.combine(h.pop('story_date').astype(datetime.date), datetime.datetime.min.time()) + timedelta(microseconds=h.pop('story_time'))).replace(
+                tzinfo=tz.gettz('US/Eastern')).astimezone(tz.gettz('UTC'))
 
-                for key, value in h.items():
-                    self.current_minibatch[key + self.key_suffix].append(value)
-                    processed_data[key + self.key_suffix].append(value)
+            if processed_data is None:
+                processed_data = {f + self.key_suffix: list() for f in h.keys()}
 
-    def request_news(self, filter: typing.Union[NewsFilter, typing.List[NewsFilter]], async=False, threads=1):
-        pass
+            for key, value in h.items():
+                processed_data[key + self.key_suffix].append(value)
 
-    def produce(self):
-        for f in self.filter_provider:
-            ids = list()
-            titles = list()
+        result = pd.DataFrame(processed_data)
 
-            _headlines = self.conn.request_news_headlines(sources=f.sources, symbols=f.symbols, date=f.date, limit=f.limit, timeout=f.timeout)
-            headlines = [h._asdict() for h in _headlines]
+        result = result.set_index(['timestamp', 'story_id'], drop=False, append=False).iloc[::-1]
 
-            processed_data = None
-
-            for h in headlines:
-                if h['story_id'] not in ids and h['headline'] not in titles:
-                    ids.append(h['story_id'])
-                    titles.append(h['headline'])
-
-                    if self.attach_text:
-                        h['text'] = self.conn.request_news_story(h['story_id'])
-
-                    if self.column_mode:
-                        if processed_data is None:
-                            processed_data = {f + self.key_suffix: list() for f in h.keys()}
-
-                        if self.current_minibatch is None:
-                            self.current_minibatch = {f + self.key_suffix: list() for f in h.keys()}
-
-                        for key, value in h.items():
-                            self.current_minibatch[key + self.key_suffix].append(value)
-                            processed_data[key + self.key_suffix].append(value)
-
-                        if len(self.current_minibatch[list(self.current_minibatch.keys())[0]]) == self.minibatch:
-                            self.listeners({'type': 'news_minibatch', 'data': self.current_minibatch})
-
-                            self.current_minibatch = None
-                    else:
-                        if processed_data is None:
-                            processed_data = list()
-
-                        h = {k + self.key_suffix: v for k, v in h.items()}
-
-                        processed_data.append(h)
-
-                        if self.minibatch is not None:
-                            if self.current_minibatch is None:
-                                self.current_minibatch = list()
-
-                            self.current_minibatch.append(h)
-
-                            if len(self.current_minibatch) == self.minibatch:
-                                self.listeners({'type': 'news_minibatch', 'data': self.current_minibatch})
-                                self.current_minibatch = list()
-
-            self.listeners({'type': 'news_batch', 'data': processed_data})
-
-            if not self.is_running:
-                break
+        return result
 
 
-class IQFeedNewsListener(object):
+class IQFeedNewsListener(IQFeedNewsProvider):
     """
     IQFeed news listener (not streaming). See the unit test on how to use
     """
 
-    def __init__(self, listeners, minibatch=None, attach_text=False, random_order=False, key_suffix='', filter_provider=DefaultNewsFilterProvider(), column_mode=True):
+    def __init__(self, listeners, attach_text=False, key_suffix='', filter_provider=DefaultNewsFilterProvider()):
         """
         :param listeners: event listeners
-        :param minibatch: minibatch size
         :param attach_text: attach news text (separate request for each news item)
-        :param random_order: random order
         :param key_suffix: suffix in the output dictionary
         :param filter_provider: iterator for filters
-        :param column_mode: column/row mode
         """
+        super().__init__(attach_text=attach_text, key_suffix=key_suffix)
         self.listeners = listeners
-        self.minibatch = minibatch
-        self.attach_text = attach_text
         self.conn = None
-        self.random_order = random_order
-        self.key_suffix = key_suffix
         self.filter_provider = filter_provider
-        self.column_mode = column_mode
-
-        self.current_minibatch = None
 
     def __enter__(self):
+        super().__enter__()
         iqfeedutil.launch_service()
 
         self.conn = iq.NewsConn()
@@ -203,62 +147,12 @@ class IQFeedNewsListener(object):
 
     def produce(self):
         for f in self.filter_provider:
-            ids = list()
-            titles = list()
+            result = super().request_news(f)
 
-            _headlines = self.conn.request_news_headlines(sources=f.sources, symbols=f.symbols, date=f.date, limit=f.limit, timeout=f.timeout)
-            headlines = [h._asdict() for h in _headlines]
-
-            processed_data = None
-
-            for h in headlines:
-                if h['story_id'] not in ids and h['headline'] not in titles:
-                    ids.append(h['story_id'])
-                    titles.append(h['headline'])
-
-                    if self.attach_text:
-                        h['text'] = self.conn.request_news_story(h['story_id'])
-
-                    if self.column_mode:
-                        if processed_data is None:
-                            processed_data = {f + self.key_suffix: list() for f in h.keys()}
-
-                        if self.current_minibatch is None:
-                            self.current_minibatch = {f + self.key_suffix: list() for f in h.keys()}
-
-                        for key, value in h.items():
-                            self.current_minibatch[key + self.key_suffix].append(value)
-                            processed_data[key + self.key_suffix].append(value)
-
-                        if len(self.current_minibatch[list(self.current_minibatch.keys())[0]]) == self.minibatch:
-                            self.listeners({'type': 'news_minibatch', 'data': self.current_minibatch})
-
-                            self.current_minibatch = None
-                    else:
-                        if processed_data is None:
-                            processed_data = list()
-
-                        h = {k + self.key_suffix: v for k, v in h.items()}
-
-                        processed_data.append(h)
-
-                        if self.minibatch is not None:
-                            if self.current_minibatch is None:
-                                self.current_minibatch = list()
-
-                            self.current_minibatch.append(h)
-
-                            if len(self.current_minibatch) == self.minibatch:
-                                self.listeners({'type': 'news_minibatch', 'data': self.current_minibatch})
-                                self.current_minibatch = list()
-
-            self.listeners({'type': 'news_batch', 'data': processed_data})
+            self.listeners({'type': 'news_batch', 'data': result})
 
             if not self.is_running:
                 break
 
     def batch_provider(self):
         return iqfeedutil.IQFeedDataProvider(self.listeners, accept_event=lambda e: True if e['type'] == 'news_batch' else False)
-
-    def minibatch_provider(self):
-        return iqfeedutil.IQFeedDataProvider(self.listeners, accept_event=lambda e: True if e['type'] == 'news_minibatch' else False)
