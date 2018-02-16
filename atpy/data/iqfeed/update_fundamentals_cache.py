@@ -44,7 +44,7 @@ if __name__ == "__main__":
 
     with IQFeedLevel1Listener(fire_ticks=False) as listener, \
             IQFeedInfluxDBCache(client_factory=client_factory, use_stream_events=False) as cache:
-        all_symbols = iqutil.get_symbols(symbols_file=args.symbols_file)
+        all_symbols = set(iqutil.get_symbols(symbols_file=args.symbols_file).keys())
 
         fundamentals = get_fundamentals(all_symbols)
 
