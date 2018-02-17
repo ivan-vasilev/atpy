@@ -96,7 +96,7 @@ def adjust(data, fundamentals: dict):
     return datautil.adjust(data=data, adjustments=adjustments)
 
 
-def get_symbols(symbols_file: str = None, flt: dict = {'SECURITY TYPE': 'EQUITY', 'EXCHANGE': {'NYSE', 'NASDAQ'}}):
+def get_symbols(symbols_file: str = None, flt: dict = None):
     """
     Get available symbols and information about them
 
@@ -118,6 +118,9 @@ def get_symbols(symbols_file: str = None, flt: dict = {'SECURITY TYPE': 'EQUITY'
             content = f.readlines()
 
     logging.getLogger(__name__).debug("Filtering companies...")
+
+    flt = {'SECURITY TYPE': 'EQUITY', 'EXCHANGE': {'NYSE', 'NASDAQ'}} if flt is None else flt
+
     cols = content[0].split('\t')
     positions = {cols.index(k): v if isinstance(v, set) else {v} for k, v in flt.items()}
 
