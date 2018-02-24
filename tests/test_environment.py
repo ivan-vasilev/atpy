@@ -2,7 +2,7 @@ import unittest
 import threading
 
 import pyevents.events as events
-from atpy.environment import Environment
+from atpy.environments import Environment
 
 
 class TestEnvironment(unittest.TestCase):

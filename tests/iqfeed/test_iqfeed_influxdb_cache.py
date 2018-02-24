@@ -1,3 +1,4 @@
+import threading
 import unittest
 
 from influxdb import InfluxDBClient
