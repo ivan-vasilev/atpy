@@ -148,19 +148,3 @@ def adjust_split(data, split_factor: float, split_date: datetime.date):
                     data[c] = int(data[c] * (1 / split_factor))
                 else:
                     data[c] *= split_factor
-
-
-def current_period(df: pd.DataFrame):
-    """
-    Slice only the current period (e.g. trading hours or after hours)
-    :param df: dataframe (first index have to be datettime)
-    :return sliced period
-    """
-
-    lc = tcal.open_and_closes.loc[min(df['timestamp']): max(df['timestamp'])].iloc[-1]
-    result = df.loc[lc['market_close']:]
-    if len(result) == 0:
-        result = df.loc[lc['market_open']:lc['market_close']]
-        return result, 'trading-hours'
-    else:
-        return result, 'after-hours'
