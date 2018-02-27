@@ -63,9 +63,7 @@ class DataReplay(object):
                 self._data = dict()
             else:
                 for e in list(self._data.keys()):
-                    _, ind = self._get_datetime_level(self._data[e].index)
-
-                    if ind[-1] < self._timeline.index[self._current_time]:
+                    if self._get_datetime_level(self._data[e].index)[-1] < self._timeline.index[self._current_time]:
                         if old_data is None:
                             old_data = dict()
 
@@ -83,14 +81,6 @@ class DataReplay(object):
                 df = None
 
             if df is not None:
-                level, ind = self._get_datetime_level(df)
-                if level != 0:
-                    df = df.swaplevel(0, level)
-                    if ind.name in df.columns:
-                        df.sort_values(ind.name, axis=0, inplace=True)
-                    else:
-                        df.sort_index(inplace=True)
-
                 self._data[e] = df
                 logging.getLogger(__name__).debug('Obtained data ' + str(e) + ' in ' + str(datetime.datetime.now() - now))
             else:
@@ -102,7 +92,7 @@ class DataReplay(object):
         if self._timeline is None and self._data:
             now = datetime.datetime.now()
 
-            indices = [self._get_datetime_level(df.index)[1] for df in self._data.values()]
+            indices = [self._get_datetime_level(df.index) for df in self._data.values()]
             tzs = {ind.tz for ind in indices}
 
             if len(tzs) > 1:
@@ -114,7 +104,7 @@ class DataReplay(object):
             self._current_time = 0
 
             for e, df in self._data.items():
-                ind = self._get_datetime_level(df.index)[1]
+                ind = self._get_datetime_level(df.index)
                 self._timeline[e] = False
                 self._timeline.loc[ind, e] = True
 
@@ -125,20 +115,23 @@ class DataReplay(object):
             for e, old_df in old_data.items():
                 _, historical_depth = self._sources[e]
                 if historical_depth > 0:
-                    _, ind = self._get_datetime_level(old_df)
+                    ind = self._get_datetime_level(old_df)
                     old_df_slice = old_df.loc[slice(ind[max(-len(ind), -historical_depth)], ind[-1]), :]
                     self._data[e] = pd.concat((old_df_slice, self._data[e]))
 
         # produce results
         if self._timeline is not None:
             result = dict()
+
+            current_time = self._timeline.index[self._current_time]
+
             row = self._timeline.iloc[self._current_time]
+
             for e in [e for e in row.index if row[e]]:
                 df = self._data[e]
                 _, historical_depth = self._sources[e]
-                _, ind = self._get_datetime_level(df)
-                pos = ind.get_loc(self._timeline.index[self._current_time])
-                result[e] = df.loc[slice(ind[max(0, pos - historical_depth)], ind[pos]), :]
+                ind = self._get_datetime_level(df)
+                result[e] = df.loc[ind[max(0, ind.get_loc(current_time) - historical_depth)]:current_time]
 
             self._current_time += 1
 
@@ -152,11 +145,9 @@ class DataReplay(object):
             index = index.index
 
         if isinstance(index, pd.DatetimeIndex):
-            return 0, index
+            return index
         elif isinstance(index, pd.MultiIndex):
-            for i, l in enumerate(index.levels):
-                if isinstance(l, pd.DatetimeIndex):
-                    return i, l
+            return [l for l in index.levels if isinstance(l, pd.DatetimeIndex)][0]
 
     def add_source(self, data_provider: typing.Union[typing.Iterator, typing.Callable], name: str, run_async: bool = False, historical_depth: int = 0):
         """

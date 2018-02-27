@@ -2,7 +2,6 @@
 Time series utils.
 """
 
-import numpy as np
 import pandas as pd
 
 import atpy.data.tradingcalendar as tcal
@@ -15,29 +14,16 @@ def set_periods(df: pd.DataFrame):
     :return sliced period
     """
 
-    lc = tcal.open_and_closes.loc[min(df['timestamp']): max(df['timestamp'])]
-    lc = pd.concat([lc['market_open'], lc['market_close']]).sort_values()[::-1]
+    df['period'] = 'after-hours'
 
-    if not lc.empty:
-        df['period'] = np.nan
-        df['sequence'] = np.nan
-        xs = pd.IndexSlice
+    lc = tcal.open_and_closes.loc[df.iloc[0].timestamp.date():df.iloc[-1].timestamp.date()]
 
-        ind = xs[lc.iloc[0]:, :] if isinstance(df.index, pd.MultiIndex) else xs[lc.iloc[0]:]
-        df.loc[ind, ['period', 'sequence']] = ('after-hours', 0)
-        after_hours_sequence = 1 if df.iloc[-1]['period'] == 'after-hours' else 0
+    xs = pd.IndexSlice
 
-        for i in range(1, len(lc) - 1, 2):
-            ind = xs[lc.iloc[i + 1]:lc.iloc[i], :] if isinstance(df.index, pd.MultiIndex) else xs[lc.iloc[i + 1]:lc.iloc[i]]
-            df.loc[ind, ['period', 'sequence']] = ('after-hours', after_hours_sequence)
-            after_hours_sequence += 1
+    def a(x):
+        df.loc[xs[x['market_open']:x['market_close'], :] if isinstance(df.index, pd.MultiIndex) else xs[x['market_open']:x['market_close']], 'period'] = 'trading-hours'
 
-        ind = xs[:lc.iloc[-1], :] if isinstance(df.index, pd.MultiIndex) else xs[:lc.iloc[-1]]
-        df.loc[ind, ['period', 'sequence']] = ('after-hours', after_hours_sequence)
-
-        for i in range(0, len(lc) - 1, 2):
-            ind = xs[lc.iloc[i + 1]:lc.iloc[i], :] if isinstance(df.index, pd.MultiIndex) else xs[lc.iloc[i + 1]:lc.iloc[i]]
-            df.loc[ind, ['period', 'sequence']] = ('trading-hours', i // 2)
+    lc.apply(a, axis=1)
 
 
 def current_period(df: pd.DataFrame):
@@ -47,23 +33,20 @@ def current_period(df: pd.DataFrame):
     :return sliced period
     """
 
-    lc = tcal.open_and_closes.loc[min(df['timestamp']): max(df['timestamp'])].iloc[-1]
+    lc = tcal.open_and_closes.loc[df.iloc[0].timestamp.date():df.iloc[-1].timestamp.date()]
+    lc = pd.concat([lc['market_open'], lc['market_close']]).sort_values()[::-1]
 
     xs = pd.IndexSlice
-    ind = xs[lc['market_close']:, :] if isinstance(df.index, pd.MultiIndex) else xs[lc['market_close']:]
 
-    result = df.loc[ind]
+    for i in range(len(lc) + 1):
+        if i == 0:
+            result, period = df.loc[xs[lc.iloc[i]:, :] if isinstance(df.index, pd.MultiIndex) else xs[lc.iloc[i]:]], 'after-hours'
+        elif i == len(lc):
+            result, period = df.loc[xs[:lc.iloc[-1], :] if isinstance(df.index, pd.MultiIndex) else xs[:lc.iloc[-1]]], 'after-hours'
+        elif i % 2 == 0:
+            result, period = df.loc[xs[lc.iloc[i]:lc.iloc[i - 1], :] if isinstance(df.index, pd.MultiIndex) else xs[lc.iloc[i]:lc.iloc[i - 1]]], 'after-hours'
+        elif i % 2 == 1:
+            result, period = df.loc[xs[lc.iloc[i]:lc.iloc[i - 1], :] if isinstance(df.index, pd.MultiIndex) else xs[lc.iloc[i]:lc.iloc[i - 1]]], 'trading-hours'
 
-    if len(result) == 0:
-        ind = xs[lc['market_open']:lc['market_close'], :] if isinstance(df.index, pd.MultiIndex) else xs[lc['market_open']:lc['market_close']]
-        result = df.loc[ind]
-
-        result['period'] = 'trading-hours'
-        result['sequence'] = 0
-
-        return result
-    else:
-        result['period'] = 'after-hours'
-        result['sequence'] = 0
-
-        return result
+        if not result.empty:
+            return result, period

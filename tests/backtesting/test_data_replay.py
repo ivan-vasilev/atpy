@@ -5,6 +5,7 @@ from atpy.backtesting.data_replay import DataReplay, DataReplayEvents
 from atpy.data.iqfeed.iqfeed_history_provider import *
 from atpy.data.latest_data_snapshot import LatestDataSnapshot
 from pyevents.events import SyncListeners
+from atpy.data.ts_util import current_period
 
 
 class TestDataReplay(unittest.TestCase):
@@ -28,7 +29,7 @@ class TestDataReplay(unittest.TestCase):
             timestamps = set()
             for i, r in enumerate(dr):
                 for e in r:
-                    t = r[e]['timestamp'][0]
+                    t = r[e].iloc[0]['timestamp']
 
                 if len(timestamps) > 0:
                     self.assertGreater(t, max(timestamps))
@@ -61,7 +62,7 @@ class TestDataReplay(unittest.TestCase):
                 if event is not None and 'data' in event:
                     r = event['data']
                     for e in r:
-                        t = r[e]['timestamp'][0]
+                        t = r[e].iloc[0]['timestamp']
 
                     if len(timestamps) > 0:
                         self.assertGreater(t, max(timestamps))
@@ -95,7 +96,7 @@ class TestDataReplay(unittest.TestCase):
             timestamps = set()
             for i, r in enumerate(dr):
                 for e in r:
-                    t = r[e]['timestamp'][0]
+                    t = r[e].iloc[0]['timestamp']
 
                 if len(timestamps) > 0:
                     self.assertGreater(t, max(timestamps))
@@ -141,7 +142,7 @@ class TestDataReplay(unittest.TestCase):
 
             for r in dr:
                 for e in r:
-                    t = r[e]['timestamp'][-1]
+                    t = r[e].iloc[-1]['timestamp']
 
                 if len(timestamps) > 0:
                     self.assertGreater(t, max(timestamps))
@@ -198,7 +199,7 @@ class TestDataReplay(unittest.TestCase):
             timestamps = set()
             for i, r in enumerate(dr):
                 for e in r:
-                    t = r[e]['timestamp'][0]
+                    t = r[e].iloc[0]['timestamp']
 
                 if len(timestamps) > 0:
                     self.assertGreater(t, max(timestamps))
@@ -220,6 +221,47 @@ class TestDataReplay(unittest.TestCase):
         logging.basicConfig(level=logging.DEBUG)
 
         batch_len = 10000
+        batch_width = 500
+
+        l1 = list()
+        with IQFeedHistoryProvider() as provider, DataReplay().add_source(iter(l1), 'e1', historical_depth=100) as dr:
+            now = datetime.datetime.now()
+
+            q = queue.Queue()
+            provider.request_data_by_filters([BarsFilter(ticker="AAPL", interval_len=60, interval_type='s', max_bars=batch_len),
+                                              BarsFilter(ticker="IBM", interval_len=60, interval_type='s', max_bars=batch_len)],
+                                             q)
+
+            df1 = q.get()[1]
+            dfs1 = {'AAPL': df1}
+            for i in range(batch_width):
+                dfs1['AAPL_' + str(i)] = df1.sample(random.randint(int(len(df1) / 3), len(df1) - 1))
+
+            dfs1 = pd.concat(dfs1).swaplevel(0, 1)
+            dfs1.sort_index(inplace=True)
+            l1.append(dfs1)
+
+            logging.getLogger(__name__).debug('Random data generated in ' + str(datetime.datetime.now() - now) + ' with shapes ' + str(dfs1.shape))
+
+            now = datetime.datetime.now()
+
+            for i, r in enumerate(dr):
+                if i % 1000 == 0 and i > 0:
+                    new_now = datetime.datetime.now()
+                    elapsed = new_now - now
+                    logging.getLogger(__name__).debug('Time elapsed ' + str(elapsed) + ' for ' + str(i) + ' iterations; ' + str(elapsed / 1000) + ' per iteration')
+                    now = new_now
+
+                for e in r:
+                    current_period(r[e])
+
+            elapsed = datetime.datetime.now() - now
+            logging.getLogger(__name__).debug('Time elapsed ' + str(elapsed) + ' for ' + str(i + 1) + ' iterations; ' + str(elapsed / (i % 1000)) + ' per iteration')
+
+    def test_4_performance(self):
+        logging.basicConfig(level=logging.DEBUG)
+
+        batch_len = 10000
         batch_width = 5000
 
         l1, l2 = list(), list()
@@ -236,7 +278,8 @@ class TestDataReplay(unittest.TestCase):
             for i in range(batch_width):
                 dfs1['AAPL_' + str(i)] = df1.sample(random.randint(int(len(df1) / 3), len(df1) - 1))
 
-            dfs1 = pd.concat(dfs1)
+            dfs1 = pd.concat(dfs1).swaplevel(0, 1)
+            dfs1.sort_index(inplace=True)
             l1.append(dfs1)
 
             df2 = q.get()[1]
@@ -244,7 +287,58 @@ class TestDataReplay(unittest.TestCase):
             for i in range(batch_width):
                 dfs2['IBM_' + str(i)] = df2.sample(random.randint(int(len(df2) / 3), len(df2) - 1))
 
-            dfs2 = pd.concat(dfs2)
+            dfs2 = pd.concat(dfs2).swaplevel(0, 1)
+            dfs2.sort_index(inplace=True)
+            l2.append(dfs2)
+
+            logging.getLogger(__name__).debug('Random data generated in ' + str(datetime.datetime.now() - now) + ' with shapes ' + str(dfs1.shape) + ', ' + str(dfs2.shape))
+
+            now = datetime.datetime.now()
+
+            for i, r in enumerate(dr):
+                if i % 1000 == 0 and i > 0:
+                    new_now = datetime.datetime.now()
+                    elapsed = new_now - now
+                    logging.getLogger(__name__).debug('Time elapsed ' + str(elapsed) + ' for ' + str(i) + ' iterations; ' + str(elapsed / 1000) + ' per iteration')
+                    now = new_now
+
+                for e in r:
+                    current_period(r[e])
+
+            elapsed = datetime.datetime.now() - now
+            logging.getLogger(__name__).debug('Time elapsed ' + str(elapsed) + ' for ' + str(i + 1) + ' iterations; ' + str(elapsed / (i % 1000)) + ' per iteration')
+
+    def test_4_validity(self):
+        logging.basicConfig(level=logging.DEBUG)
+
+        batch_len = 10000
+        batch_width = 500
+
+        l1, l2 = list(), list()
+        with IQFeedHistoryProvider() as provider, DataReplay().add_source(iter(l1), 'e1', historical_depth=100).add_source(iter(l2), 'e2', historical_depth=100) as dr:
+            now = datetime.datetime.now()
+
+            q = queue.Queue()
+            provider.request_data_by_filters([BarsFilter(ticker="AAPL", interval_len=60, interval_type='s', max_bars=batch_len),
+                                              BarsFilter(ticker="IBM", interval_len=60, interval_type='s', max_bars=batch_len)],
+                                             q)
+
+            df1 = q.get()[1]
+            dfs1 = {'AAPL': df1}
+            for i in range(batch_width):
+                dfs1['AAPL_' + str(i)] = df1.sample(random.randint(int(len(df1) / 3), len(df1) - 1))
+
+            dfs1 = pd.concat(dfs1).swaplevel(0, 1)
+            dfs1.sort_index(inplace=True)
+            l1.append(dfs1)
+
+            df2 = q.get()[1]
+            dfs2 = {'IBM': df2}
+            for i in range(batch_width):
+                dfs2['IBM_' + str(i)] = df2.sample(random.randint(int(len(df2) / 3), len(df2) - 1))
+
+            dfs2 = pd.concat(dfs2).swaplevel(0, 1)
+            dfs2.sort_index(inplace=True)
             l2.append(dfs2)
 
             logging.getLogger(__name__).debug('Random data generated in ' + str(datetime.datetime.now() - now) + ' with shapes ' + str(dfs1.shape) + ', ' + str(dfs2.shape))
@@ -260,7 +354,9 @@ class TestDataReplay(unittest.TestCase):
                     now = new_now
 
                 for e in r:
-                    t = r[e]['timestamp'][-1]
+                    x, a = current_period(r[e])
+                    self.assertFalse(x.empty)
+                    t = r[e].iloc[-1]['timestamp']
 
                 if prev_t is not None:
                     self.assertGreater(t, prev_t)
@@ -275,7 +371,7 @@ class TestDataReplay(unittest.TestCase):
             self.assertIsNotNone(t)
             self.assertIsNotNone(prev_t)
 
-    def test_latest_bars(self):
+    def test_5(self):
         logging.basicConfig(level=logging.DEBUG)
 
         batch_len = 1000
@@ -293,7 +389,7 @@ class TestDataReplay(unittest.TestCase):
             for i in range(batch_width):
                 dfs1['AAPL_' + str(i)] = df1.sample(random.randint(int(len(df1) / 3), len(df1) - 1))
 
-            dfs1 = pd.concat(dfs1)
+            dfs1 = pd.concat(dfs1).swaplevel(0, 1).sort_index()
             l1.append(dfs1)
 
             logging.getLogger(__name__).debug('Random data generated in ' + str(datetime.datetime.now() - now) + ' with shape ' + str(dfs1.shape))
@@ -326,7 +422,7 @@ class TestDataReplay(unittest.TestCase):
                     now = new_now
 
                 for e in r:
-                    t = r[e]['timestamp'][-1]
+                    t = r[e].iloc[-1]['timestamp']
 
                 if prev_t is not None:
                     self.assertGreater(t, prev_t)
