@@ -45,17 +45,35 @@ def current_period(df: pd.DataFrame):
         current_hours = __open_and_closes_series.loc[most_recent.date()]
         if most_recent > current_hours[1]:
             result, period = df.loc[xs[current_hours[1]:, :] if isinstance(df.index, pd.MultiIndex) else xs[current_hours[1]:]], 'after-hours'
+        elif most_recent < current_hours[0]:
+            lc = __closes_series.loc[df.iloc[0].timestamp.date(): most_recent.date()]
+            if len(lc) > 1:
+                result, period = df.loc[xs[lc[-2]:, :] if isinstance(df.index, pd.MultiIndex) else xs[lc[-2]:]], 'after-hours'
+            else:
+                result, period = df, 'after-hours'
         else:
             result, period = df.loc[xs[current_hours[0]:, :] if isinstance(df.index, pd.MultiIndex) else xs[current_hours[0]:]], 'trading-hours'
     else:
-        lc = __closes_series.loc[df.iloc[0].timestamp.date(): most_recent.date()][::-1]
-
-        for i in range(len(lc)):
-            result = df.loc[xs[lc.iloc[i]:, :] if isinstance(df.index, pd.MultiIndex) else xs[lc.iloc[i]:]]
-            if not result.empty:
-                period = 'after-hours'
-                break
+        lc = __closes_series.loc[df.iloc[0].timestamp.date(): most_recent.date()]
+        if len(lc) > 0:
+            result, period = df.loc[xs[lc.iloc[-1]:, :] if isinstance(df.index, pd.MultiIndex) else xs[lc.iloc[-1]:]], 'after-hours'
         else:
             result, period = df, 'after-hours'
 
     return result, period
+
+
+def current_day(df: pd.DataFrame, tz=None):
+    """
+    Slice only the current day data
+    :param df: dataframe (first index have to be datettime)
+    :param tz: timezone
+    :return sliced period
+    """
+    d = df.iloc[-1].timestamp.normalize()
+    if tz is not None:
+        d = d.tz_convert(tz).tz_localize(None).tz_localize(d.tzinfo)
+
+    xs = pd.IndexSlice
+
+    return df.loc[xs[d:, :] if isinstance(df.index, pd.MultiIndex) else xs[d:]]
