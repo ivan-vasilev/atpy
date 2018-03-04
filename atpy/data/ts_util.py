@@ -1,6 +1,7 @@
 """
 Time series utils.
 """
+import datetime
 
 import pandas as pd
 
@@ -77,3 +78,35 @@ def current_day(df: pd.DataFrame, tz=None):
     xs = pd.IndexSlice
 
     return df.loc[xs[d:, :] if isinstance(df.index, pd.MultiIndex) else xs[d:]]
+
+
+def slice_periods(bgn_prd: datetime.date, delta: datetime.timedelta, ascend: bool = True, overlap: datetime.timedelta = None):
+    """
+    Split time interval in delta-sized intervals
+    :param bgn_prd: begin period
+    :param delta: delta
+    :param ascend: ascending/descending
+    :param overlap: whether to provide overlap within the intervals
+    :return sliced period
+    """
+
+    bgn_prd = datetime.datetime(year=bgn_prd.year, month=bgn_prd.month, day=bgn_prd.day)
+    overlap = overlap if overlap is not None else datetime.timedelta(days=0)
+
+    result = list()
+    if ascend:
+        now = datetime.datetime.now()
+
+        while bgn_prd < now:
+            end_prd = min(bgn_prd + delta + overlap, now)
+            result.append((bgn_prd, end_prd))
+            bgn_prd = bgn_prd + delta
+    else:
+        end_prd = datetime.datetime.now()
+        end_prd = datetime.datetime(year=end_prd.year, month=end_prd.month, day=end_prd.day + 1)
+
+        while end_prd > bgn_prd:
+            result.append((max(end_prd - delta - overlap, bgn_prd), end_prd))
+            end_prd = end_prd - delta
+
+    return result

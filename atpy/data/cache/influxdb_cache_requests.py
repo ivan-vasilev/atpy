@@ -9,6 +9,7 @@ import atpy.data.iqfeed.bar_util as bars
 
 
 class InfluxDBOHLCRequest(object):
+
     def __init__(self, client: DataFrameClient, interval_len: int, interval_type: str = 's', listeners=None):
         """
         :param client: influxdb client
@@ -237,7 +238,7 @@ def _query_where(interval_len: int, interval_type: str, symbol: typing.Union[lis
     :param interval_len: interval length
     :param interval_type: interval type
     :param symbol: symbol or symbol list
-    :param bgn_prd: start datetime (excluding)
+    :param bgn_prd: start datetime (including)
     :param end_prd: end datetime (excluding)
     :return: data from the database
     """
@@ -245,7 +246,7 @@ def _query_where(interval_len: int, interval_type: str, symbol: typing.Union[lis
     result = " WHERE" \
              " interval = '{}'" + \
              ('' if symbol is None else " AND symbol =" + ("~ /{}/ " if isinstance(symbol, list) else " '{}'")) + \
-             ('' if bgn_prd is None else " AND time > '{}'") + \
+             ('' if bgn_prd is None else " AND time >= '{}'") + \
              ('' if end_prd is None else " AND time < '{}'")
 
     args = tuple(filter(lambda x: x is not None, [str(interval_len) + '_' + interval_type, None if symbol is None else "|".join(['^' + s + '$' for s in symbol]) if isinstance(symbol, list) else symbol, bgn_prd, end_prd]))

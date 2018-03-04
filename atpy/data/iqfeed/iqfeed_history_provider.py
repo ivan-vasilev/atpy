@@ -13,6 +13,7 @@ import pyiqfeed as iq
 from atpy.data.iqfeed.filters import *
 from atpy.data.iqfeed.iqfeed_level_1_provider import get_fundamentals
 from atpy.data.iqfeed.util import launch_service, adjust, IQFeedDataProvider
+from atpy.data.ts_util import slice_periods
 
 
 class TicksFilter(NamedTuple):
@@ -24,6 +25,7 @@ class TicksFilter(NamedTuple):
     max_ticks: int
     ascend: bool
     timeout: int
+
 
 TicksFilter.__new__.__defaults__ = (True, None)
 
@@ -40,6 +42,7 @@ class TicksForDaysFilter(NamedTuple):
     ascend: bool
     max_ticks: int
     timeout: int
+
 
 TicksForDaysFilter.__new__.__defaults__ = (None, None, True, None, None)
 
@@ -58,6 +61,7 @@ class TicksInPeriodFilter(NamedTuple):
     max_ticks: int
     timeout: int
 
+
 TicksInPeriodFilter.__new__.__defaults__ = (None, None, True, None, None)
 
 
@@ -72,6 +76,7 @@ class BarsFilter(NamedTuple):
     max_bars: int
     ascend: bool
     timeout: int
+
 
 BarsFilter.__new__.__defaults__ = (True, None)
 
@@ -90,6 +95,7 @@ class BarsForDaysFilter(NamedTuple):
     ascend: bool
     max_bars: int
     timeout: int
+
 
 BarsForDaysFilter.__new__.__defaults__ = (None, None, True, None, None)
 
@@ -110,6 +116,7 @@ class BarsInPeriodFilter(NamedTuple):
     max_ticks: int
     timeout: int
 
+
 BarsInPeriodFilter.__new__.__defaults__ = (None, None, True, None, None)
 
 
@@ -122,6 +129,7 @@ class BarsDailyFilter(NamedTuple):
     num_days: int
     ascend: bool = False
     timeout: int = None
+
 
 BarsDailyFilter.__new__.__defaults__ = (True, None)
 
@@ -138,6 +146,7 @@ class BarsDailyForDatesFilter(NamedTuple):
     max_days: int = None
     timeout: int = None
 
+
 BarsDailyForDatesFilter.__new__.__defaults__ = (True, None, None)
 
 
@@ -151,6 +160,7 @@ class BarsWeeklyFilter(NamedTuple):
     ascend: bool
     timeout: int
 
+
 BarsWeeklyFilter.__new__.__defaults__ = (True, None)
 
 
@@ -163,6 +173,7 @@ class BarsMonthlyFilter(NamedTuple):
     num_months: int
     ascend: bool
     timeout: int
+
 
 BarsMonthlyFilter.__new__.__defaults__ = (True, None)
 
@@ -436,7 +447,9 @@ class IQFeedHistoryProvider(object):
         result.set_index('timestamp' + sf, inplace=True, drop=False)
         result.drop(['date', 'time'], axis=1, inplace=True)
 
-        result.rename({"last": "last" + sf, "last_sz": "last_size" + sf, "tot_vlm": "total_volume" + sf, "bid": "bid" + sf, "ask": "ask" + sf, "tick_id": "tick_id" + sf, "last_type": "basis_for_last" + sf, "mkt_ctr": "trade_market_center" + sf}, axis="columns", copy=False, inplace=True)
+        result.rename(
+            {"last": "last" + sf, "last_sz": "last_size" + sf, "tot_vlm": "total_volume" + sf, "bid": "bid" + sf, "ask": "ask" + sf, "tick_id": "tick_id" + sf, "last_type": "basis_for_last" + sf, "mkt_ctr": "trade_market_center" + sf},
+            axis="columns", copy=False, inplace=True)
         result['symbol'] = data_filter.ticker
 
         result.set_index("tick_id" + sf, inplace=True, drop=False)
@@ -454,7 +467,8 @@ class IQFeedHistoryProvider(object):
         result.set_index('timestamp' + sf, inplace=True, drop=False)
         result.drop(['date', 'time'], axis=1, inplace=True)
 
-        result.rename({"high_p": "high" + sf, "low_p": "low" + sf, "open_p": "open" + sf, "close_p": "close" + sf, "tot_vlm": "total_volume" + sf, "prd_vlm": "period_volume" + sf, "num_trds": "number_of_trades" + sf}, axis="columns", copy=False, inplace=True)
+        result.rename({"high_p": "high" + sf, "low_p": "low" + sf, "open_p": "open" + sf, "close_p": "close" + sf, "tot_vlm": "total_volume" + sf, "prd_vlm": "period_volume" + sf, "num_trds": "number_of_trades" + sf}, axis="columns",
+                      copy=False, inplace=True)
         result['symbol'] = data_filter.ticker
 
         if adjust_data:
@@ -465,7 +479,8 @@ class IQFeedHistoryProvider(object):
     def _process_daily(self, data, data_filter):
         result = pd.DataFrame(data)
         sf = self.key_suffix
-        result.rename({"date": "date" + sf, "high_p": "high" + sf, "low_p": "low" + sf, "open_p": "open" + sf, "close_p": "close" + sf, "prd_vlm": "period_volume" + sf, "open_int": "open_interest" + sf}, axis="columns", copy=False, inplace=True)
+        result.rename({"date": "date" + sf, "high_p": "high" + sf, "low_p": "low" + sf, "open_p": "open" + sf, "close_p": "close" + sf, "prd_vlm": "period_volume" + sf, "open_int": "open_interest" + sf}, axis="columns", copy=False,
+                      inplace=True)
         result['symbol'] = data_filter.ticker
 
         result.set_index('date' + sf, inplace=True, drop=False)
@@ -663,50 +678,28 @@ class InPeriodProvider(FilterProvider, metaclass=ABCMeta):
     Generate a sequence of InPeriod filters to obtain market history
     """
 
-    def __init__(self, ticker: typing.Union[list, str], bgn_prd: datetime.date, delta: datetime.timedelta, ascend: bool=True, max_ticks: int=None, timeout: int=None, overlap: datetime.timedelta=None):
+    def __init__(self, ticker: typing.Union[list, str], bgn_prd: datetime.date, delta: datetime.timedelta, ascend: bool = True, max_ticks: int = None, timeout: int = None, overlap: datetime.timedelta = None):
         """
         :param overlap: whether to provide overlap within the intervals
         """
 
         self.ticker = ticker
-        self.bgn_prd = datetime.datetime(year=bgn_prd.year, month=bgn_prd.month, day=bgn_prd.day)
-        self.delta = delta
-        self.ascend = ascend
         self.max_ticks = max_ticks
         self.timeout = timeout
-        self.overlap = overlap if overlap is not None else datetime.timedelta(days=0)
+        self.ascend = ascend
+        self._periods = slice_periods(bgn_prd=bgn_prd, delta=delta, ascend=ascend, overlap=overlap)
 
     def __iter__(self):
-        self._deltas = -1
+        self._deltas = - 1
         return self
 
     def __next__(self) -> NamedTuple:
         self._deltas += 1
 
-        now = datetime.datetime.now()
+        if self._deltas == len(self._periods):
+            raise StopIteration
 
-        if self.ascend:
-            bgn_prd = self.bgn_prd + self._deltas * self.delta
-
-            if bgn_prd < now:
-                end_prd = self.bgn_prd + (self._deltas + 1) * self.delta + self.overlap
-                end_prd = end_prd if end_prd < now else now
-
-                return self._create_filter(bgn_prd, end_prd)
-            else:
-                raise StopIteration
-        else:
-            if not hasattr(self, 'start'):
-                self.start = datetime.datetime(year=now.year, month=now.month, day=now.day + 1)
-
-            end_prd = self.start - self._deltas * self.delta
-
-            if end_prd > self.bgn_prd:
-                bgn_prd = max(self.start - (self._deltas + 1) * self.delta - self.overlap, self.bgn_prd)
-
-                return self._create_filter(bgn_prd, end_prd)
-            else:
-                raise StopIteration
+        return self._create_filter(*self._periods[self._deltas])
 
     @abc.abstractmethod
     def _create_filter(self, bgn_prd, end_prd) -> NamedTuple:
@@ -718,7 +711,7 @@ class TicksInPeriodProvider(InPeriodProvider):
     Generate a sequence of TicksInPeriod filters to obtain market history
     """
 
-    def __init__(self, ticker: typing.Union[list, str], bgn_prd: datetime.date, delta: datetime.timedelta, bgn_flt: datetime.time=None, end_flt: datetime.time=None, ascend: bool=False, max_ticks: int=None, timeout: int=None):
+    def __init__(self, ticker: typing.Union[list, str], bgn_prd: datetime.date, delta: datetime.timedelta, bgn_flt: datetime.time = None, end_flt: datetime.time = None, ascend: bool = False, max_ticks: int = None, timeout: int = None):
         super().__init__(ticker=ticker, bgn_prd=bgn_prd, delta=delta, ascend=ascend, max_ticks=max_ticks, timeout=timeout)
         self.bgn_flt = bgn_flt
         self.end_flt = end_flt
@@ -736,7 +729,8 @@ class BarsInPeriodProvider(InPeriodProvider):
     Generate a sequence of BarsInPeriod filters to obtain market history
     """
 
-    def __init__(self, ticker: typing.Union[list, str], interval_len: int, interval_type: str, bgn_prd: datetime.date, delta: datetime.timedelta, bgn_flt: datetime.time=None, end_flt: datetime.time=None, ascend: bool=True, max_ticks: int=None, timeout: int=None, overlap: datetime.timedelta=None):
+    def __init__(self, ticker: typing.Union[list, str], interval_len: int, interval_type: str, bgn_prd: datetime.date, delta: datetime.timedelta, bgn_flt: datetime.time = None, end_flt: datetime.time = None, ascend: bool = True,
+                 max_ticks: int = None, timeout: int = None, overlap: datetime.timedelta = None):
         super().__init__(ticker=ticker, bgn_prd=bgn_prd, delta=delta, ascend=ascend, max_ticks=max_ticks, timeout=timeout, overlap=overlap)
 
         self.interval_len = interval_len
@@ -749,4 +743,5 @@ class BarsInPeriodProvider(InPeriodProvider):
         return self
 
     def _create_filter(self, bgn_prd, end_prd) -> NamedTuple:
-        return BarsInPeriodFilter(ticker=self.ticker, interval_len=self.interval_len, interval_type=self.interval_type, bgn_prd=bgn_prd, end_prd=end_prd, bgn_flt=self.bgn_flt, end_flt=self.end_flt, ascend=self.ascend, max_ticks=self.max_ticks, timeout=self.timeout)
+        return BarsInPeriodFilter(ticker=self.ticker, interval_len=self.interval_len, interval_type=self.interval_type, bgn_prd=bgn_prd, end_prd=end_prd, bgn_flt=self.bgn_flt, end_flt=self.end_flt, ascend=self.ascend,
+                                  max_ticks=self.max_ticks, timeout=self.timeout)

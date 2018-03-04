@@ -1,10 +1,13 @@
+import datetime
 import logging
 import random
 import unittest
 
+import pandas as pd
+
 import atpy.data.tradingcalendar as tcal
 from atpy.backtesting.data_replay import DataReplay
-from atpy.data.iqfeed.iqfeed_history_provider import *
+from atpy.data.iqfeed.iqfeed_history_provider import IQFeedHistoryProvider, BarsFilter
 from atpy.data.ts_util import current_period, set_periods, current_day
 
 
