@@ -81,7 +81,7 @@ def current_day(df: pd.DataFrame, tz=None):
     return df.loc[xs[d:, :] if isinstance(df.index, pd.MultiIndex) else xs[d:]]
 
 
-def slice_periods(bgn_prd: datetime.date, delta: datetime.timedelta, ascend: bool = True, overlap: datetime.timedelta = None):
+def slice_periods(bgn_prd: datetime.datetime, delta: datetime.timedelta, ascend: bool = True, overlap: datetime.timedelta = None):
     """
     Split time interval in delta-sized intervals
     :param bgn_prd: begin period
@@ -91,48 +91,21 @@ def slice_periods(bgn_prd: datetime.date, delta: datetime.timedelta, ascend: boo
     :return sliced period
     """
 
-    bgn_prd = datetime.datetime(year=bgn_prd.year, month=bgn_prd.month, day=bgn_prd.day)
     overlap = overlap if overlap is not None else datetime.timedelta(days=0)
 
     result = list()
     if ascend:
-        now = datetime.datetime.now()
+        now = datetime.datetime.now(tz=bgn_prd.tzinfo)
 
         while bgn_prd < now:
             end_prd = min(bgn_prd + delta + overlap, now)
             result.append((bgn_prd, end_prd))
             bgn_prd = bgn_prd + delta
     else:
-        end_prd = datetime.datetime.now()
-        end_prd = datetime.datetime(year=end_prd.year, month=end_prd.month, day=end_prd.day + 1)
+        end_prd = datetime.datetime.now(tz=bgn_prd.tzinfo)
 
         while end_prd > bgn_prd:
             result.append((max(end_prd - delta - overlap, bgn_prd), end_prd))
             end_prd = end_prd - delta
 
     return result
-
-
-class SlicePeriodsProvider(object):
-    """
-    Generate a sequence of period slices data elements to obtain market history
-    """
-
-    def __init__(self, bgn_prd: datetime.date, delta: datetime.timedelta, data_provider: typing.Callable, ascend: bool = True, overlap: datetime.timedelta = None):
-
-        self.bgn_prd = bgn_prd
-        self.delta = delta
-        self.data_provider = data_provider
-        self.ascend = ascend
-        self.overlap = overlap
-
-    def __iter__(self):
-        self._deltas = 0
-        self._periods = slice_periods(bgn_prd=self.bgn_prd, delta=self.delta, ascend=self.ascend, overlap=self.overlap)
-        return self
-
-    def __next__(self):
-        if self._deltas < len(self._periods):
-            return self.data_provider(*self._periods[self._deltas])
-        else:
-            raise StopIteration

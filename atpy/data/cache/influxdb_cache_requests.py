@@ -2,7 +2,6 @@ import datetime
 import typing
 
 import numpy as np
-import pandas as pd
 from dateutil.parser import parse
 from influxdb import InfluxDBClient, DataFrameClient
 
@@ -251,5 +250,35 @@ def _query_where(interval_len: int, interval_type: str, symbol: typing.Union[lis
              ('' if bgn_prd is None else " AND time >= '{}'") + \
              ('' if end_prd is None else " AND time < '{}'")
 
+    bgn_prd = bgn_prd.replace(tzinfo=None) if bgn_prd is not None else None
+    end_prd = end_prd.replace(tzinfo=None) if end_prd is not None else None
     args = tuple(filter(lambda x: x is not None, [str(interval_len) + '_' + interval_type, None if symbol is None else "|".join(['^' + s + '$' for s in symbol]) if isinstance(symbol, list) else symbol, bgn_prd, end_prd]))
     return result.format(*args)
+
+
+class BarsInPeriodProvider(object):
+    """
+    OHLCV Bars in period provider
+    """
+
+    def __init__(self, influxdb_cache: InfluxDBOHLCRequest, bgn_prd: datetime.datetime, delta: datetime.timedelta, symbol: typing.Union[list, str]=None, ascend: bool = True, overlap: datetime.timedelta = None):
+        self._periods = slice_periods(bgn_prd=bgn_prd, delta=delta, ascend=ascend, overlap=overlap)
+
+        self.influxdb_cache = influxdb_cache
+        self.symbol = symbol
+        self.ascending = ascend
+
+    def __iter__(self):
+        self._deltas = -1
+        return self
+
+    def __next__(self):
+        self._deltas += 1
+
+        if self._deltas < len(self._periods):
+            return self._request(*self._periods[self._deltas])
+        else:
+            raise StopIteration
+
+    def _request(self, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None):
+        return self.influxdb_cache.request(symbol=self.symbol, bgn_prd=bgn_prd, end_prd=end_prd, ascending=self.ascending)

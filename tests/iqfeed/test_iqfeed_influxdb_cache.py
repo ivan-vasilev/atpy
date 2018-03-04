@@ -9,6 +9,7 @@ from atpy.data.iqfeed.iqfeed_bar_data_provider import *
 from atpy.data.iqfeed.iqfeed_influxdb_cache import *
 from atpy.data.iqfeed.iqfeed_influxdb_cache_requests import get_cache_fundamentals
 from pyevents.events import AsyncListeners
+from dateutil import tz
 
 
 class TestInfluxDBCache(unittest.TestCase):
@@ -54,7 +55,7 @@ class TestInfluxDBCache(unittest.TestCase):
 
         listeners = AsyncListeners()
         with IQFeedBarDataListener(listeners=listeners, mkt_snapshot_depth=3, interval_len=3600), \
-                IQFeedHistoryProvider(num_connections=2) as history, \
+             IQFeedHistoryProvider(num_connections=2) as history, \
                 InfluxDBCacheTest(client_factory=self._client_factory, history=history, listeners=listeners, use_stream_events=True, time_delta_back=relativedelta(days=3)):
             listeners({'type': 'watch_bars', 'data': {'symbol': ['GOOG', 'IBM'], 'update': 1}})
 
@@ -94,6 +95,37 @@ class TestInfluxDBCache(unittest.TestCase):
             cache_data_no_limit = [cache_requests.request(symbol=f.ticker, bgn_prd=f.bgn_prd)[0] for f in filters_no_limit]
             for df1, df2 in zip(data_no_limit, cache_data_no_limit):
                 assert_frame_equal(df1, df2)
+
+    def test_bars_in_period(self):
+        with IQFeedHistoryProvider(num_connections=2) as history, \
+                IQFeedInfluxDBCache(client_factory=self._client_factory, use_stream_events=True, history=history, time_delta_back=relativedelta(days=30)) as cache:
+
+            now = datetime.datetime.now()
+            filters = (BarsInPeriodFilter(ticker="IBM", bgn_prd=datetime.datetime(now.year - 1, 3, 1), end_prd=None, interval_len=3600, ascend=True, interval_type='s'),
+                       BarsInPeriodFilter(ticker="AAPL", bgn_prd=datetime.datetime(now.year - 1, 3, 1), end_prd=None, interval_len=3600, ascend=True, interval_type='s'),
+                       BarsInPeriodFilter(ticker="AAPL", bgn_prd=datetime.datetime(now.year - 1, 3, 1), end_prd=None, interval_len=600, ascend=True, interval_type='s'))
+
+            data = [history.request_data(f, sync_timestamps=False, adjust_data=False) for f in filters]
+
+            for datum, f in zip(data, filters):
+                datum.drop('timestamp', axis=1, inplace=True)
+                datum['interval'] = str(f.interval_len) + '_' + f.interval_type
+                cache.client.write_points(datum, 'bars', protocol='line', tag_columns=['symbol', 'interval'], time_precision='s')
+
+            bgn_prd = datetime.datetime(now.year - 1, 3, 1, tzinfo=tz.gettz('UTC'))
+            bars_in_period = inf_cache.BarsInPeriodProvider(influxdb_cache=inf_cache.InfluxDBOHLCRequest(client=self._client, interval_len=3600, interval_type='s'), bgn_prd=bgn_prd, delta=datetime.timedelta(days=30))
+
+            for i, (orig_df, processed_df) in enumerate(bars_in_period):
+                self.assertFalse(orig_df.empty)
+                self.assertFalse(processed_df.empty)
+
+                start, end = bars_in_period._periods[bars_in_period._deltas]
+                self.assertGreaterEqual(orig_df.iloc[0].timestamp, start)
+                self.assertGreater(end, orig_df.iloc[-1].timestamp)
+                self.assertGreater(end, orig_df.iloc[0].timestamp)
+
+            self.assertEqual(i, len(bars_in_period._periods) - 1)
+            self.assertGreater(i, 0)
 
     def test_update_fundamentals(self):
         with IQFeedInfluxDBCache(client_factory=self._client_factory) as cache:

@@ -1,4 +1,3 @@
-import abc
 import datetime
 import logging
 import queue
@@ -13,7 +12,7 @@ import pyiqfeed as iq
 from atpy.data.iqfeed.filters import *
 from atpy.data.iqfeed.iqfeed_level_1_provider import get_fundamentals
 from atpy.data.iqfeed.util import launch_service, adjust, IQFeedDataProvider
-from atpy.data.ts_util import slice_periods, SlicePeriodsProvider
+from atpy.data.ts_util import slice_periods
 
 
 class TicksFilter(NamedTuple):
@@ -673,31 +672,45 @@ class IQFeedHistoryEvents(IQFeedHistoryProvider):
         return IQFeedDataProvider(self.listeners, accept_event=lambda e: True if e['type'].endswith('_mb') else False)
 
 
-class TicksInPeriodProvider(SlicePeriodsProvider):
+class TicksInPeriodProvider(object):
     """
     Generate a sequence of TicksInPeriod filters to obtain market history
     """
 
-    def __init__(self, ticker: typing.Union[list, str], bgn_prd: datetime.date, delta: datetime.timedelta, bgn_flt: datetime.time = None, end_flt: datetime.time = None, ascend: bool = False, max_ticks: int = None, timeout: int = None):
-        super().__init__(bgn_prd=bgn_prd, delta=delta, data_provider=self._create_filter, ascend=ascend)
+    def __init__(self, ticker: typing.Union[list, str], bgn_prd: datetime.date, delta: datetime.timedelta, bgn_flt: datetime.time = None, end_flt: datetime.time = None, ascend: bool = False, overlap: datetime.timedelta = None, max_ticks: int = None, timeout: int = None):
+        self._periods = slice_periods(bgn_prd=bgn_prd, delta=delta, ascend=ascend, overlap=overlap)
+
         self.bgn_flt = bgn_flt
         self.end_flt = end_flt
         self.ticker = ticker
         self.max_ticks = max_ticks
         self.timeout = timeout
+        self.ascend = ascend
+
+    def __iter__(self):
+        self._deltas = -1
+        return self
+
+    def __next__(self):
+        self._deltas += 1
+
+        if self._deltas < len(self._periods):
+            return self._create_filter(*self._periods[self._deltas])
+        else:
+            raise StopIteration
 
     def _create_filter(self, bgn_prd, end_prd) -> NamedTuple:
         return TicksInPeriodFilter(ticker=self.ticker, bgn_prd=bgn_prd, end_prd=end_prd, bgn_flt=self.bgn_flt, end_flt=self.end_flt, ascend=self.ascend, max_ticks=self.max_ticks, timeout=self.timeout)
 
 
-class BarsInPeriodProvider(SlicePeriodsProvider):
+class BarsInPeriodProvider(object):
     """
     Generate a sequence of BarsInPeriod filters to obtain market history
     """
 
-    def __init__(self, ticker: typing.Union[list, str], interval_len: int, interval_type: str, bgn_prd: datetime.date, delta: datetime.timedelta, bgn_flt: datetime.time = None, end_flt: datetime.time = None, ascend: bool = True,
-                 max_ticks: int = None, timeout: int = None, overlap: datetime.timedelta = None):
-        super().__init__(bgn_prd=bgn_prd, delta=delta, data_provider=self._create_filter, ascend=ascend, overlap=overlap)
+    def __init__(self, ticker: typing.Union[list, str], interval_len: int, interval_type: str, bgn_prd: datetime.date, delta: datetime.timedelta, overlap: datetime.timedelta = None, bgn_flt: datetime.time = None, end_flt: datetime.time = None, ascend: bool = True,
+                 max_ticks: int = None, timeout: int = None):
+        self._periods = slice_periods(bgn_prd=bgn_prd, delta=delta, ascend=ascend, overlap=overlap)
 
         self.interval_len = interval_len
         self.interval_type = interval_type
@@ -706,6 +719,19 @@ class BarsInPeriodProvider(SlicePeriodsProvider):
         self.ticker = ticker
         self.max_ticks = max_ticks
         self.timeout = timeout
+        self.ascend = ascend
+
+    def __iter__(self):
+        self._deltas = -1
+        return self
+
+    def __next__(self):
+        self._deltas += 1
+
+        if self._deltas < len(self._periods):
+            return self._create_filter(*self._periods[self._deltas])
+        else:
+            raise StopIteration
 
     def _create_filter(self, bgn_prd, end_prd) -> NamedTuple:
         return BarsInPeriodFilter(ticker=self.ticker, interval_len=self.interval_len, interval_type=self.interval_type, bgn_prd=bgn_prd, end_prd=end_prd, bgn_flt=self.bgn_flt, end_flt=self.end_flt, ascend=self.ascend,
