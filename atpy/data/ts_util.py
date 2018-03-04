@@ -2,6 +2,7 @@
 Time series utils.
 """
 import datetime
+import typing
 
 import pandas as pd
 
@@ -110,3 +111,28 @@ def slice_periods(bgn_prd: datetime.date, delta: datetime.timedelta, ascend: boo
             end_prd = end_prd - delta
 
     return result
+
+
+class SlicePeriodsProvider(object):
+    """
+    Generate a sequence of period slices data elements to obtain market history
+    """
+
+    def __init__(self, bgn_prd: datetime.date, delta: datetime.timedelta, data_provider: typing.Callable, ascend: bool = True, overlap: datetime.timedelta = None):
+
+        self.bgn_prd = bgn_prd
+        self.delta = delta
+        self.data_provider = data_provider
+        self.ascend = ascend
+        self.overlap = overlap
+
+    def __iter__(self):
+        self._deltas = 0
+        self._periods = slice_periods(bgn_prd=self.bgn_prd, delta=self.delta, ascend=self.ascend, overlap=self.overlap)
+        return self
+
+    def __next__(self):
+        if self._deltas < len(self._periods):
+            return self.data_provider(*self._periods[self._deltas])
+        else:
+            raise StopIteration

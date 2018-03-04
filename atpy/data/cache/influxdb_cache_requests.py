@@ -2,10 +2,12 @@ import datetime
 import typing
 
 import numpy as np
+import pandas as pd
 from dateutil.parser import parse
 from influxdb import InfluxDBClient, DataFrameClient
 
 import atpy.data.iqfeed.bar_util as bars
+from atpy.data.ts_util import slice_periods
 
 
 class InfluxDBOHLCRequest(object):
