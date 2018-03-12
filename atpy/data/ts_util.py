@@ -2,9 +2,9 @@
 Time series utils.
 """
 import datetime
-import typing
 
 import pandas as pd
+from dateutil import relativedelta
 
 import atpy.data.tradingcalendar as tcal
 
@@ -81,7 +81,7 @@ def current_day(df: pd.DataFrame, tz=None):
     return df.loc[xs[d:, :] if isinstance(df.index, pd.MultiIndex) else xs[d:]]
 
 
-def slice_periods(bgn_prd: datetime.datetime, delta: datetime.timedelta, ascend: bool = True, overlap: datetime.timedelta = None):
+def slice_periods(bgn_prd: datetime.datetime, delta: relativedelta, ascend: bool = True, overlap: relativedelta = None):
     """
     Split time interval in delta-sized intervals
     :param bgn_prd: begin period
@@ -91,7 +91,7 @@ def slice_periods(bgn_prd: datetime.datetime, delta: datetime.timedelta, ascend:
     :return sliced period
     """
 
-    overlap = overlap if overlap is not None else datetime.timedelta(days=0)
+    overlap = overlap if overlap is not None else relativedelta(days=0)
 
     result = list()
     if ascend:

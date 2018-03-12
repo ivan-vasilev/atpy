@@ -5,9 +5,10 @@ Script that updates the splits/dividends/fundamentals cache
 import argparse
 import logging
 
+from influxdb import InfluxDBClient
+
 import atpy.data.iqfeed.util as iqutil
-from atpy.data.cache.influxdb_cache import ClientFactory
-from atpy.data.iqfeed.iqfeed_influxdb_cache import IQFeedInfluxDBCache
+from atpy.data.iqfeed.iqfeed_influxdb_cache import update_fundamentals, update_splits_dividends
 from atpy.data.iqfeed.iqfeed_level_1_provider import IQFeedLevel1Listener
 from atpy.data.iqfeed.iqfeed_level_1_provider import get_fundamentals
 
@@ -27,8 +28,7 @@ if __name__ == "__main__":
     parser.add_argument('-symbols_file', type=str, default=None, help="location to locally saved symbols file (to prevent downloading it every time)")
     args = parser.parse_args()
 
-    client_factory = ClientFactory(host=args.host, port=args.port, username=args.user, password=args.password, database=args.database, pool_size=1)
-    client = client_factory.new_client()
+    client = InfluxDBClient(host=args.host, port=args.port, username=args.user, password=args.password, database=args.database, pool_size=1)
 
     logging.getLogger(__name__).info("Updating database with arguments: " + str(args))
 
@@ -42,16 +42,15 @@ if __name__ == "__main__":
 
     client.switch_database(args.database)
 
-    with IQFeedLevel1Listener(fire_ticks=False) as listener, \
-            IQFeedInfluxDBCache(client_factory=client_factory, use_stream_events=False) as cache:
+    with IQFeedLevel1Listener(fire_ticks=False) as listener:
         all_symbols = set(iqutil.get_symbols(symbols_file=args.symbols_file).keys())
 
         fundamentals = get_fundamentals(all_symbols)
 
         if args.update_fundamentals:
-            cache.update_fundamentals(fundamentals=fundamentals.values())
+            update_fundamentals(client=client, fundamentals=fundamentals.values())
 
         if args.update_splits_dividends:
-            cache.update_splits_dividends(fundamentals=fundamentals.values())
+            update_splits_dividends(client=client, fundamentals=fundamentals.values())
 
     client.close()

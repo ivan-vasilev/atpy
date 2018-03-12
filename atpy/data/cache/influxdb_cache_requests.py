@@ -2,6 +2,7 @@ import datetime
 import typing
 
 import numpy as np
+from dateutil import relativedelta
 from dateutil.parser import parse
 from influxdb import InfluxDBClient, DataFrameClient
 
@@ -172,7 +173,7 @@ class InfluxDBValueRequest(object):
         :param end_prd: end datetime (excluding)
         :return: data from the database
         """
-        query = "SELECT MEAN(value) FROM (SELECT symbol, " + self.value + " as value FROM bars" + \
+        query = "SELECT MEAN(delta) FROM (SELECT symbol, (close - open) / open as delta FROM bars" + \
                 _query_where(interval_len=self.interval_len, interval_type=self.interval_type, symbol=symbol, bgn_prd=bgn_prd, end_prd=end_prd) + \
                 ") GROUP BY symbol"
 
@@ -261,7 +262,7 @@ class BarsInPeriodProvider(object):
     OHLCV Bars in period provider
     """
 
-    def __init__(self, influxdb_cache: InfluxDBOHLCRequest, bgn_prd: datetime.datetime, delta: datetime.timedelta, symbol: typing.Union[list, str]=None, ascend: bool = True, overlap: datetime.timedelta = None):
+    def __init__(self, influxdb_cache: InfluxDBOHLCRequest, bgn_prd: datetime.datetime, delta: relativedelta, symbol: typing.Union[list, str]=None, ascend: bool = True, overlap: relativedelta = None):
         self._periods = slice_periods(bgn_prd=bgn_prd, delta=delta, ascend=ascend, overlap=overlap)
 
         self.influxdb_cache = influxdb_cache

@@ -68,7 +68,7 @@ class InfluxDBCache(object):
         """
         return get_historical_data(filters=filters, async=async)
 
-    def update_to_latest(self, new_symbols: typing.Set[typing.Tuple] = None, skip_if_older_than: datetime.timedelta = None):
+    def update_to_latest(self, new_symbols: typing.Set[typing.Tuple] = None, skip_if_older_than: relativedelta = None):
         """
         Update existing entries in the database to the most current values
         :param new_symbols: additional symbols to add {(symbol, interval_len, interval_type), ...}}

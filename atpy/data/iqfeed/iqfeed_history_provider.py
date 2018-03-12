@@ -6,6 +6,7 @@ import typing
 from multiprocessing.pool import ThreadPool
 
 import pandas as pd
+from dateutil import relativedelta
 
 import pyiqfeed
 import pyiqfeed as iq
@@ -197,13 +198,9 @@ class IQFeedHistoryProvider(object):
     def __enter__(self):
         launch_service()
 
-        if self.num_connections == 1:
-            self.conn = iq.HistoryConn()
-            self.conn.connect()
-        else:
-            self.conn = [iq.HistoryConn() for i in range(self.num_connections)]
-            for c in self.conn:
-                c.connect()
+        self.conn = [iq.HistoryConn() for _ in range(self.num_connections)]
+        for c in self.conn:
+            c.connect()
 
         # streaming conn for fundamental data
         self.streaming_conn = iq.QuoteConn()
@@ -212,11 +209,8 @@ class IQFeedHistoryProvider(object):
         return self
 
     def __exit__(self, exception_type, exception_value, traceback):
-        if isinstance(self.conn, list):
-            for c in self.conn:
-                c.disconnect()
-        else:
-            self.conn.disconnect()
+        for c in self.conn:
+            c.disconnect()
 
         self.conn = None
 
@@ -225,11 +219,8 @@ class IQFeedHistoryProvider(object):
 
     def __del__(self):
         if self.conn is not None:
-            if isinstance(self.conn, list):
-                for c in self.conn:
-                    c.disconnect()
-            else:
-                self.conn.disconnect()
+            for c in self.conn:
+                c.disconnect()
 
             self.conn = None
 
@@ -245,7 +236,7 @@ class IQFeedHistoryProvider(object):
         :return:
         """
         if isinstance(f.ticker, str):
-            data = self.request_raw_symbol_data(f, self.conn[0] if isinstance(self.conn, list) else self.conn)
+            data = self.request_raw_symbol_data(f, self.conn[0])
             if data is None:
                 logging.getLogger(__name__).warning("No data found for filter: " + str(f))
                 return
@@ -277,31 +268,24 @@ class IQFeedHistoryProvider(object):
         :param adjust_data: adjust the data or not
         :return: None
         """
-        if self.num_connections > 1:
-            pool = ThreadPool(self.num_connections)
-            self._global_counter = 0
-            lock = threading.Lock()
-            no_data = set()
+        self._global_counter = 0
+        lock = threading.Lock()
+        no_data = set()
 
-            def mp_worker(p):
-                ft, conn = p
+        def mp_worker(p):
+            ft, conn = p
 
-                try:
-                    raw_data = self.request_raw_symbol_data(ft, conn)
-                except Exception as err:
-                    raw_data = None
-                    logging.getLogger(__name__).exception(err)
+            try:
+                raw_data = self.request_raw_symbol_data(ft, conn)
+            except Exception as err:
+                raw_data = None
+                logging.getLogger(__name__).exception(err)
 
-                if raw_data is not None:
-                    q.put((ft, self._process_data(raw_data, ft, adjust_data=adjust_data)))
-                else:
-                    no_data.add(ft)
+            if raw_data is not None:
+                q.put((ft, self._process_data(raw_data, ft, adjust_data=adjust_data)))
 
                 with lock:
                     self._global_counter += 1
-                    if self._global_counter == len(filters):
-                        q.put(None)
-
                     if self._global_counter % 20 == 0 or self._global_counter == len(filters):
                         logging.getLogger(__name__).info("Loaded " + str(self._global_counter) + " symbols")
                         if len(no_data) > 0:
@@ -309,17 +293,16 @@ class IQFeedHistoryProvider(object):
                             no_data_list.sort()
                             logging.getLogger(__name__).info("No data found for " + str(len(no_data_list)) + " symbols: " + str(no_data_list))
                             no_data.clear()
+            else:
+                no_data.add(ft)
 
-            pool.map(mp_worker, ((f, self.conn[i % self.num_connections]) for i, f in enumerate(filters)))
-            pool.close()
-            del self._global_counter
-        else:
-            for ft in filters:
-                data = self.request_raw_symbol_data(ft, self.conn)
-                if data is not None:
-                    q.put((ft, self._process_data(data, ft, adjust_data=adjust_data)))
+        pool = ThreadPool(self.num_connections)
+        pool.map(mp_worker, ((f, self.conn[i % self.num_connections]) for i, f in enumerate(filters)))
+        pool.close()
 
-            q.put(None)
+        del self._global_counter
+
+        q.put(None)
 
     def synchronize_timestamps(self, signals: map, f: NamedTuple):
         """
@@ -677,7 +660,7 @@ class TicksInPeriodProvider(object):
     Generate a sequence of TicksInPeriod filters to obtain market history
     """
 
-    def __init__(self, ticker: typing.Union[list, str], bgn_prd: datetime.date, delta: datetime.timedelta, bgn_flt: datetime.time = None, end_flt: datetime.time = None, ascend: bool = False, overlap: datetime.timedelta = None, max_ticks: int = None, timeout: int = None):
+    def __init__(self, ticker: typing.Union[list, str], bgn_prd: datetime.datetime, delta: relativedelta, bgn_flt: datetime.time = None, end_flt: datetime.time = None, ascend: bool = False, overlap: relativedelta = None, max_ticks: int = None, timeout: int = None):
         self._periods = slice_periods(bgn_prd=bgn_prd, delta=delta, ascend=ascend, overlap=overlap)
 
         self.bgn_flt = bgn_flt
@@ -708,7 +691,7 @@ class BarsInPeriodProvider(object):
     Generate a sequence of BarsInPeriod filters to obtain market history
     """
 
-    def __init__(self, ticker: typing.Union[list, str], interval_len: int, interval_type: str, bgn_prd: datetime.date, delta: datetime.timedelta, overlap: datetime.timedelta = None, bgn_flt: datetime.time = None, end_flt: datetime.time = None, ascend: bool = True,
+    def __init__(self, ticker: typing.Union[list, str], interval_len: int, interval_type: str, bgn_prd: datetime.datetime, delta: relativedelta, overlap: relativedelta = None, bgn_flt: datetime.time = None, end_flt: datetime.time = None, ascend: bool = True,
                  max_ticks: int = None, timeout: int = None):
         self._periods = slice_periods(bgn_prd=bgn_prd, delta=delta, ascend=ascend, overlap=overlap)
 

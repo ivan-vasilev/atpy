@@ -3,15 +3,15 @@ Script that populates the InfluxDB cache initially and the updates it incrementa
 """
 
 import argparse
-import datetime
 import logging
 
 from dateutil.relativedelta import relativedelta
+from influxdb import DataFrameClient
 
 import atpy.data.iqfeed.util as iqutil
-from atpy.data.cache.influxdb_cache import ClientFactory
+from atpy.data.cache.influxdb_cache import update_to_latest
 from atpy.data.iqfeed.iqfeed_history_provider import IQFeedHistoryProvider
-from atpy.data.iqfeed.iqfeed_influxdb_cache import IQFeedInfluxDBCache
+from atpy.data.iqfeed.iqfeed_influxdb_cache import noncache_provider
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
@@ -32,8 +32,7 @@ if __name__ == "__main__":
     parser.add_argument('-symbols_file', type=str, default=None, help="location to locally saved symbols file (to prevent downloading it every time)")
     args = parser.parse_args()
 
-    client_factory = ClientFactory(host=args.host, port=args.port, username=args.user, password=args.password, database=args.database, pool_size=1)
-    client = client_factory.new_client()
+    client = DataFrameClient(host=args.host, port=args.port, username=args.user, password=args.password, database=args.database, pool_size=1)
 
     logging.getLogger(__name__).info("Updating database with arguments: " + str(args))
 
@@ -46,9 +45,9 @@ if __name__ == "__main__":
 
     client.switch_database(args.database)
 
-    with IQFeedHistoryProvider(num_connections=args.iqfeed_conn) as history, \
-            IQFeedInfluxDBCache(client_factory=client_factory, use_stream_events=False, history=history, time_delta_back=relativedelta(years=args.delta_back)) as cache:
+    with IQFeedHistoryProvider(num_connections=args.iqfeed_conn) as history:
         all_symbols = {(s, args.interval_len, args.interval_type) for s in set(iqutil.get_symbols(symbols_file=args.symbols_file).keys())}
-        cache.update_to_latest(all_symbols, skip_if_older_than=datetime.timedelta(days=args.skip_if_older) if args.skip_if_older is not None else None)
+        update_to_latest(client=client, noncache_provider=noncache_provider(history), new_symbols=all_symbols, time_delta_back=relativedelta(years=args.delta_back),
+                         skip_if_older_than=relativedelta(days=args.skip_if_older) if args.skip_if_older is not None else None)
 
     client.close()

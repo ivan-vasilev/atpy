@@ -1,12 +1,14 @@
+import threading
 import unittest
 
+from dateutil.relativedelta import relativedelta
 from pandas.util.testing import assert_frame_equal
 
 from atpy.data.cache.influxdb_cache_requests import *
 from atpy.data.iqfeed.iqfeed_bar_data_provider import *
 from atpy.data.iqfeed.iqfeed_influxdb_cache import *
 from atpy.data.iqfeed.iqfeed_influxdb_cache_requests import *
-from pyevents.events import AsyncListeners
+from pyevents.events import AsyncListeners, SyncListeners
 
 
 class TestInfluxDBCacheRequests(unittest.TestCase):
@@ -15,9 +17,7 @@ class TestInfluxDBCacheRequests(unittest.TestCase):
     """
 
     def setUp(self):
-        self._client_factory = ClientFactory(host='localhost', port=8086, username='root', password='root', database='test_cache')
-
-        self._client = self._client_factory.new_df_client()
+        self._client = DataFrameClient(host='localhost', port=8086, username='root', password='root', database='test_cache')
 
         self._client.drop_database('test_cache')
         self._client.create_database('test_cache')
@@ -30,8 +30,8 @@ class TestInfluxDBCacheRequests(unittest.TestCase):
     def test_request_ohlc(self):
         listeners = AsyncListeners()
 
-        with IQFeedHistoryProvider(num_connections=2) as history, \
-                IQFeedInfluxDBCache(listeners=listeners, client_factory=self._client_factory, use_stream_events=True, history=history, time_delta_back=relativedelta(days=3)) as cache:
+        with IQFeedHistoryProvider(num_connections=2) as history:  # , \
+            # IQFeedInfluxDBCache(listeners=listeners, client_factory=self._client_factory, history=history, time_delta_back=relativedelta(days=3)) as cache:
 
             end_prd = datetime.datetime(2017, 5, 1)
 
@@ -40,14 +40,14 @@ class TestInfluxDBCacheRequests(unittest.TestCase):
                        BarsInPeriodFilter(ticker="AAPL", bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, interval_len=3600, ascend=True, interval_type='s'),
                        BarsInPeriodFilter(ticker="AAPL", bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, interval_len=600, ascend=True, interval_type='s'))
 
-            cache.update_splits_dividends(get_fundamentals({'IBM', 'AAPL'}, history.streaming_conn).values())
+            update_splits_dividends(client=self._client, fundamentals=get_fundamentals({'IBM', 'AAPL'}, history.streaming_conn).values())
             adjusted = list()
 
             for f in filters:
                 datum = history.request_data(f, sync_timestamps=False, adjust_data=False)
                 datum.drop('timestamp', axis=1, inplace=True)
                 datum['interval'] = str(f.interval_len) + '_' + f.interval_type
-                cache.client.write_points(datum, 'bars', protocol='line', tag_columns=['symbol', 'interval'], time_precision='s')
+                self._client.write_points(datum, 'bars', protocol='line', tag_columns=['symbol', 'interval'], time_precision='s')
                 datum.drop('interval', axis=1, inplace=True)
 
                 datum = history.request_data(f, sync_timestamps=False, adjust_data=True)
@@ -91,8 +91,7 @@ class TestInfluxDBCacheRequests(unittest.TestCase):
             e.wait()
 
     def test_request_deltas(self):
-        with IQFeedHistoryProvider(num_connections=2) as history, \
-                IQFeedInfluxDBCache(client_factory=self._client_factory, use_stream_events=True, history=history, time_delta_back=relativedelta(days=3)) as cache:
+        with IQFeedHistoryProvider(num_connections=2) as history:
             end_prd = datetime.datetime(2017, 5, 1)
 
             # test single symbol request
@@ -104,7 +103,7 @@ class TestInfluxDBCacheRequests(unittest.TestCase):
                 data = history.request_data(f, sync_timestamps=False, adjust_data=False)
                 data.drop('timestamp', axis=1, inplace=True)
                 data['interval'] = str(f.interval_len) + '_' + f.interval_type
-                cache.client.write_points(data, 'bars', protocol='line', tag_columns=['symbol', 'interval'], time_precision='s')
+                self._client.write_points(data, 'bars', protocol='line', tag_columns=['symbol', 'interval'], time_precision='s')
 
                 delta = (data['close'] - data['open']) / data['open']
                 delta = (delta - delta.mean()) / delta.std()
@@ -139,21 +138,17 @@ class TestInfluxDBCacheRequests(unittest.TestCase):
             delta = delta.groupby(level=0).apply(lambda x: x - x.mean())
             delta = delta.groupby(level=0).apply(lambda x: x / x.std())
 
-            e = threading.Event()
+            listeners = SyncListeners()
 
-            @events.listener
             def listen(event):
                 if event['type'] == 'cache_result':
                     np.testing.assert_almost_equal(test_delta.values, delta.values)
-                    e.set()
 
-            cache_requests.on_event({'type': 'request_value', 'data': {'bgn_prd': datetime.datetime(2017, 4, 1), 'end_prd': end_prd}})
-
-            e.wait()
+            listeners += listen
+            listeners({'type': 'request_value', 'data': {'bgn_prd': datetime.datetime(2017, 4, 1), 'end_prd': end_prd}})
 
     def test_synchronize_timestamps(self):
-        with IQFeedHistoryProvider(num_connections=2) as history, \
-                IQFeedInfluxDBCache(client_factory=self._client_factory, use_stream_events=True, history=history, time_delta_back=relativedelta(days=3)) as cache:
+        with IQFeedHistoryProvider(num_connections=2) as history:
             end_prd = datetime.datetime(2017, 5, 1)
 
             # test single symbol request
@@ -165,7 +160,7 @@ class TestInfluxDBCacheRequests(unittest.TestCase):
                 data = history.request_data(f, sync_timestamps=False, adjust_data=False)
                 data.drop('timestamp', axis=1, inplace=True)
                 data['interval'] = str(f.interval_len) + '_' + f.interval_type
-                cache.client.write_points(data, 'bars', protocol='line', tag_columns=['symbol', 'interval'], time_precision='s')
+                self._client.write_points(data, 'bars', protocol='line', tag_columns=['symbol', 'interval'], time_precision='s')
 
             # test multisymbol request
             requested_data = history.request_data(BarsInPeriodFilter(ticker=["AAPL", "IBM"], bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, interval_len=3600, ascend=True, interval_type='s'), sync_timestamps=False,
