@@ -3,12 +3,14 @@ import unittest
 import datetime
 import pandas as pd
 import psycopg2
+from atpy.data.iqfeed.iqfeed_level_1_provider import get_fundamentals, get_splits_dividends
+
 from atpy.data.iqfeed.iqfeed_history_provider import BarsInPeriodFilter, IQFeedHistoryProvider
 from dateutil.relativedelta import relativedelta
 from pandas.util.testing import assert_frame_equal
 from sqlalchemy import create_engine
 
-from atpy.data.cache.postgres_cache import update_to_latest, create_bars, bars_indices, request_bars, BarsInPeriodProvider
+from atpy.data.cache.postgres_cache import *
 from atpy.data.iqfeed.iqfeed_postgres_cache import noncache_provider
 from dateutil import tz
 
@@ -138,6 +140,35 @@ class TestInfluxDBCache(unittest.TestCase):
                 self.assertGreater(i, 0)
             finally:
                 con.cursor().execute("DROP TABLE IF EXISTS bars_test;")
+
+    def test_update_adjustments(self):
+        table_name = 'adjustments_test'
+
+        try:
+            adjustments = get_splits_dividends({'IBM', 'AAPL', 'GOOG', 'MSFT'})
+            adjustments.tz_localize('UTC', level=0, copy=False)
+            adjustments.sort_index(inplace=True)
+
+            url = 'postgresql://postgres:postgres@localhost:5432/test'
+
+            con = psycopg2.connect(url)
+            con.autocommit = True
+
+            cur = con.cursor()
+
+            cur.execute(create_adjustments.format(table_name))
+            cur.execute(adjustments_indices.format(table_name))
+
+            insert_df(con, table_name, adjustments)
+
+            now = datetime.datetime.now()
+
+            df = request_adjustments(con, table_name, symbol=['IBM', 'AAPL', 'MSFT', 'GOOG'], bgn_prd=datetime.datetime(year=now.year - 30, month=now.month, day=now.day), end_prd=now, provider='iqfeed')
+
+            self.assertFalse(df.empty)
+            assert_frame_equal(adjustments, df)
+        finally:
+            con.cursor().execute("DROP TABLE IF EXISTS {0};".format(table_name))
 
 
 if __name__ == '__main__':

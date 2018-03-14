@@ -20,3 +20,4 @@ def noncache_provider(history: IQFeedHistoryProvider):
         h.request_data_by_filters(new_filters, q, adjust_data=False)
 
     return functools.partial(_request_noncache_data, h=history)
+

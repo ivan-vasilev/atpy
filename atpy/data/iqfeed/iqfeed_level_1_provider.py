@@ -13,7 +13,7 @@ from pyevents.events import SyncListeners
 
 class IQFeedLevel1Listener(iq.SilentQuoteListener):
 
-    def __init__(self, listeners, fire_ticks=True, minibatch=None, conn: iq.QuoteConn=None, key_suffix=''):
+    def __init__(self, listeners, fire_ticks=True, minibatch=None, conn: iq.QuoteConn = None, key_suffix=''):
         super().__init__(name="Level 1 listener")
 
         self.listeners = listeners
@@ -198,6 +198,35 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener):
             return {s: self.fundamentals[s] for s in symbol if s in self.fundamentals}
 
 
-def get_fundamentals(symbol: typing.Union[set, str], conn: iq.QuoteConn=None):
+def get_fundamentals(symbol: typing.Union[set, str], conn: iq.QuoteConn = None):
     with IQFeedLevel1Listener(listeners=SyncListeners(), fire_ticks=False, conn=conn) as listener:
         return listener.get_fundamentals(symbol)
+
+
+def get_splits_dividends(symbol: typing.Union[set, str], conn: iq.QuoteConn = None):
+    funds = get_fundamentals(symbol=symbol, conn=conn)
+    points = {'timestamp': list(), 'symbol': list(), 'type': list(), 'value': list()}
+    for f in funds.values():
+        if f['split_factor_1_date'] is not None and f['split_factor_1'] is not None:
+            points['timestamp'].append(f['split_factor_1_date'])
+            points['symbol'].append(f['symbol'])
+            points['type'].append('split')
+            points['value'].append(f['split_factor_1'])
+
+        if f['split_factor_2_date'] is not None and f['split_factor_2'] is not None:
+            points['timestamp'].append(f['split_factor_2_date'])
+            points['symbol'].append(f['symbol'])
+            points['type'].append('split')
+            points['value'].append(f['split_factor_2'])
+
+        if f['ex-dividend_date'] is not None and f['dividend_amount'] is not None:
+            points['timestamp'].append(f['ex-dividend_date'])
+            points['symbol'].append(f['symbol'])
+            points['type'].append('dividend')
+            points['value'].append(f['dividend_amount'])
+
+    result = pd.DataFrame(points)
+    result['provider'] = 'iqfeed'
+    result = result.set_index(['timestamp', 'symbol', 'type', 'provider'])
+
+    return result

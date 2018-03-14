@@ -83,6 +83,61 @@ bars_indices = \
         TABLESPACE pg_default;
     """
 
+create_adjustments = \
+    """
+    -- Table: public.{0}
+
+    DROP TABLE IF EXISTS public.{0};
+
+    CREATE TABLE public.{0}
+    (
+        "timestamp" timestamp without time zone NOT NULL,
+        symbol character varying COLLATE pg_catalog."default" NOT NULL,
+        "type" character varying COLLATE pg_catalog."default" NOT NULL,
+        provider character varying COLLATE pg_catalog."default" NOT NULL,
+        value real NOT NULL
+    )
+    WITH (
+        OIDS = FALSE
+    )
+    TABLESPACE pg_default;
+    """
+
+adjustments_indices = \
+    """
+    -- Table: public.{0}
+
+    ALTER TABLE public.{0}
+        ADD CONSTRAINT {0}_pkey PRIMARY KEY ("timestamp", symbol, type, provider);
+
+    -- Index: {0}_symbol_ind
+    
+    -- DROP INDEX public.{0}_symbol_ind;
+    
+    CREATE INDEX {0}_symbol_ind
+        ON public.{0} USING btree
+        (symbol COLLATE pg_catalog."default")
+        TABLESPACE pg_default;
+    
+    -- Index: {0}_timestamp_ind
+
+    -- DROP INDEX public.{0}_timestamp_ind;
+    
+    CREATE INDEX {0}_timestamp_ind
+        ON public.{0} USING btree
+        ("timestamp")
+        TABLESPACE pg_default;
+    
+    -- Index: {0}_type_ind
+    
+    -- DROP INDEX public.{0}_type_ind;
+    
+    CREATE INDEX {0}_type_ind
+        ON public.{0} USING btree
+        (type COLLATE pg_catalog."default")
+        TABLESPACE pg_default;
+    """
+
 
 def update_to_latest(url: str, bars_table: str, noncache_provider: typing.Callable, symbols: set = None, time_delta_back: relativedelta = relativedelta(years=5), skip_if_older_than: relativedelta = None):
     con = psycopg2.connect(url)
@@ -148,15 +203,7 @@ def update_to_latest(url: str, bars_table: str, noncache_provider: typing.Callab
                 del df['timestamp']
                 df['interval'] = str(ft.interval_len) + '_' + ft.interval_type
 
-                output = StringIO()
-                df.to_csv(output, sep='\t', header=False)
-                output.seek(0)
-
-                # Insert data
-                cursor = conn.cursor()
-                cursor.copy_from(output, bars_table, sep='\t', null='', columns=[df.index.name] + list(df.columns))
-                conn.commit()
-                cursor.close()
+                insert_df(conn, bars_table, df)
             except Exception as err:
                 logging.getLogger(__name__).exception(err)
                 if cursor is not None:
@@ -193,9 +240,32 @@ def request_bars(conn, bars_table: str, interval_len: int, interval_type: str, s
     :param selection: what to select
     :return: dataframe
     """
-    query, params = _query_where(interval_len=interval_len, interval_type=interval_type, symbol=symbol, bgn_prd=bgn_prd, end_prd=end_prd)
+    where = " WHERE 1=1"
+    params = list()
+
+    if isinstance(symbol, list):
+        where += " AND symbol IN (%s)" % ','.join(['%s'] * len(symbol))
+        params += symbol
+    elif isinstance(symbol, str):
+        where += " AND symbol = %s"
+        params.append(symbol)
+
+    if interval_len is not None and interval_type is not None:
+        where += " AND interval = %s"
+        params.append(str(interval_len) + '_' + interval_type)
+
+    if bgn_prd is not None:
+        where += " AND timestamp >= %s"
+        params.append(str(bgn_prd))
+
+    if end_prd is not None:
+        where += " AND timestamp <= %s"
+        params.append(str(end_prd))
+
     sort = 'ASC' if ascending else 'DESC'
-    df = pd.read_sql("SELECT " + selection + " FROM " + bars_table + query + " ORDER BY timestamp " + sort + ", symbol", con=conn, index_col=['timestamp', 'symbol'], params=params)
+
+    df = pd.read_sql("SELECT " + selection + " FROM " + bars_table + where + " ORDER BY timestamp " + sort + ", symbol", con=conn, index_col=['timestamp', 'symbol'], params=params)
+
     if not df.empty:
         del df['interval']
 
@@ -211,40 +281,70 @@ def request_bars(conn, bars_table: str, interval_len: int, interval_type: str, s
     return df
 
 
-def _query_where(interval_len: int, interval_type: str, symbol: typing.Union[list, str] = None, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None):
+def insert_df(conn, table_name: str, df: pd.DataFrame):
     """
-    generate query where string
-    :param interval_len: interval length
-    :param interval_type: interval type
-    :param symbol: symbol or symbol list
-    :param bgn_prd: start datetime (including)
-    :param end_prd: end datetime (excluding)
-    :return: data from the database
+    add a list of splits/dividends to the database
+    :param conn: db connection
+    :param table_name: table name
+    :param df: list of adjustments of the type [(timestamp: datetime.date, symbol: str, typ: str, value), ...]
     """
+    # To CSV
+    output = StringIO()
+    df.to_csv(output, sep='\t', header=False)
+    output.seek(0)
 
-    result = " WHERE 1=1"
+    # Insert data
+    cursor = conn.cursor()
+
+    if isinstance(df.index, pd.MultiIndex):
+        columns = list(df.index.names) + list(df.columns)
+    else:
+        columns = list(df.index.name) + list(df.columns)
+
+    cursor.copy_from(output, table_name, sep='\t', null='', columns=columns)
+    conn.commit()
+    cursor.close()
+
+
+def request_adjustments(conn, table_name: str, symbol: typing.Union[list, str] = None, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None, provider: str = None):
+    """
+    add a list of splits/dividends to the database
+    :param conn: db connection
+    :param table_name: db connection
+    :param symbol: symbol / list of symbols
+    :param bgn_prd: begin period
+    :param end_prd: end period
+    :param provider: data provider
+    """
+    where = " WHERE 1=1"
     params = list()
 
     if isinstance(symbol, list):
-        result += " AND symbol IN (%s)" % ','.join(['%s'] * len(symbol))
+        where += " AND symbol IN (%s)" % ','.join(['%s'] * len(symbol))
         params += symbol
     elif isinstance(symbol, str):
-        result += " AND symbol = %s"
+        where += " AND symbol = %s"
         params.append(symbol)
 
-    if interval_len is not None and interval_type is not None:
-        result += " AND interval = %s"
-        params.append(str(interval_len) + '_' + interval_type)
-
     if bgn_prd is not None:
-        result += " AND timestamp >= %s"
+        where += " AND timestamp >= %s"
         params.append(str(bgn_prd))
 
     if end_prd is not None:
-        result += " AND timestamp <= %s"
+        where += " AND timestamp <= %s"
         params.append(str(end_prd))
 
-    return result, params
+    if provider is not None:
+        where += " AND provider = %s"
+        params.append(provider)
+
+    df = pd.read_sql("SELECT * FROM " + table_name + where + " ORDER BY timestamp ASC, symbol", con=conn, index_col=['timestamp', 'symbol', 'type', 'provider'], params=params)
+
+    if not df.empty:
+        df.tz_localize('UTC', level=0, copy=False)
+        df.sort_index(inplace=True)
+
+    return df
 
 
 class BarsInPeriodProvider(object):
