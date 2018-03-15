@@ -22,7 +22,7 @@ def noncache_provider(history: IQFeedHistoryProvider):
             else:
                 new_filters.append(BarsInPeriodFilter(ticker=f.ticker, bgn_prd=f.bgn_prd, end_prd=None, interval_len=f.interval_len, interval_type=f.interval_type))
 
-        h.request_data_by_filters(new_filters, q, adjust_data=False)
+        h.request_data_by_filters(new_filters, q)
 
     return functools.partial(_request_noncache_data, h=history)
 
@@ -61,4 +61,4 @@ def update_splits_dividends(client: InfluxDBClient, fundamentals: list):
         if f['ex-dividend_date'] is not None and f['dividend_amount'] is not None:
             points.append((f['ex-dividend_date'], f['symbol'], 'dividend', f['dividend_amount']))
 
-    add_adjustments(client=client, adjustments=points, data_provider='iqfeed')
+    add_adjustments(client=client, adjustments=points, provider='iqfeed')

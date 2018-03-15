@@ -299,7 +299,7 @@ def insert_df(conn, table_name: str, df: pd.DataFrame):
     if isinstance(df.index, pd.MultiIndex):
         columns = list(df.index.names) + list(df.columns)
     else:
-        columns = list(df.index.name) + list(df.columns)
+        columns = [df.index.name] + list(df.columns)
 
     cursor.copy_from(output, table_name, sep='\t', null='', columns=columns)
     conn.commit()

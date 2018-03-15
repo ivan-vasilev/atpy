@@ -1,5 +1,6 @@
 import unittest
 
+from atpy.data.iqfeed.iqfeed_level_1_provider import get_fundamentals
 from dateutil.relativedelta import relativedelta
 from influxdb import DataFrameClient
 from pandas.util.testing import assert_frame_equal
@@ -39,7 +40,7 @@ class TestInfluxDBCache(unittest.TestCase):
             filters_no_limit = (BarsInPeriodFilter(ticker="IBM", bgn_prd=datetime.datetime(2017, 3, 1), end_prd=None, interval_len=3600, ascend=True, interval_type='s'),
                                 BarsInPeriodFilter(ticker="AAPL", bgn_prd=datetime.datetime(2017, 3, 1), end_prd=None, interval_len=3600, ascend=True, interval_type='s'))
 
-            data = [history.request_data(f, sync_timestamps=False, adjust_data=False) for f in filters]
+            data = [history.request_data(f, sync_timestamps=False) for f in filters]
 
             for datum, f in zip(data, filters):
                 datum.drop('timestamp', axis=1, inplace=True)
@@ -55,7 +56,7 @@ class TestInfluxDBCache(unittest.TestCase):
             for k in latest_current.keys() & latest_old.keys():
                 self.assertGreater(latest_current[k][1], latest_old[k][1])
 
-            data_no_limit = [history.request_data(f, sync_timestamps=False, adjust_data=False) for f in filters_no_limit]
+            data_no_limit = [history.request_data(f, sync_timestamps=False) for f in filters_no_limit]
             cache_data_no_limit = [cache_requests.request(symbol=f.ticker, bgn_prd=f.bgn_prd)[0] for f in filters_no_limit]
             for df1, df2 in zip(data_no_limit, cache_data_no_limit):
                 assert_frame_equal(df1, df2)
@@ -67,7 +68,7 @@ class TestInfluxDBCache(unittest.TestCase):
                        BarsInPeriodFilter(ticker="AAPL", bgn_prd=datetime.datetime(now.year - 1, 3, 1), end_prd=None, interval_len=3600, ascend=True, interval_type='s'),
                        BarsInPeriodFilter(ticker="AAPL", bgn_prd=datetime.datetime(now.year - 1, 3, 1), end_prd=None, interval_len=600, ascend=True, interval_type='s'))
 
-            data = [history.request_data(f, sync_timestamps=False, adjust_data=False) for f in filters]
+            data = [history.request_data(f, sync_timestamps=False) for f in filters]
 
             for datum, f in zip(data, filters):
                 datum.drop('timestamp', axis=1, inplace=True)
@@ -83,9 +84,9 @@ class TestInfluxDBCache(unittest.TestCase):
                 self.assertFalse(processed_df.empty)
 
                 start, end = bars_in_period._periods[bars_in_period._deltas]
-                self.assertGreaterEqual(orig_df.iloc[0].timestamp, start)
-                self.assertGreater(end, orig_df.iloc[-1].timestamp)
-                self.assertGreater(end, orig_df.iloc[0].timestamp)
+                self.assertGreaterEqual(orig_df.iloc[0].name[0], start)
+                self.assertGreater(end, orig_df.iloc[-1].name[0])
+                self.assertGreater(end, orig_df.iloc[0].name[0])
 
             self.assertEqual(i, len(bars_in_period._periods) - 1)
             self.assertGreater(i, 0)
@@ -99,9 +100,9 @@ class TestInfluxDBCache(unittest.TestCase):
                 self.assertFalse(processed_df.empty)
 
                 start, end = bars_in_period._periods[bars_in_period._deltas]
-                self.assertGreaterEqual(orig_df.iloc[0].timestamp, start)
-                self.assertGreater(end, orig_df.iloc[-1].timestamp)
-                self.assertGreater(end, orig_df.iloc[0].timestamp)
+                self.assertGreaterEqual(orig_df.iloc[0].name[0], start)
+                self.assertGreater(end, orig_df.iloc[-1].name[0])
+                self.assertGreater(end, orig_df.iloc[0].name[0])
 
             self.assertEqual(i, len(bars_in_period._periods) - 1)
             self.assertGreater(i, 0)
@@ -118,13 +119,12 @@ class TestInfluxDBCache(unittest.TestCase):
     def test_update_adjustments(self):
         funds = get_fundamentals({'IBM', 'AAPL', 'GOOG', 'MSFT'})
         update_splits_dividends(self._client, list(funds.values()))
-        result = list(InfluxDBClient.query(self._client, "SELECT * FROM splits_dividends").get_points())
 
-        adjustments = inf_cache.get_adjustments(client=self._client, symbol=['IBM', 'AAPL'], data_provider='iqfeed')
+        adjustments = inf_cache.get_adjustments(client=self._client, symbol=['IBM', 'AAPL'], provider='iqfeed')
 
-        self.assertEqual(len(adjustments), 2)
-        self.assertTrue(result[0]['symbol'] in {'IBM', 'AAPL'})
-        self.assertTrue(isinstance(result[0]['value'], float))
+        self.assertEqual(len(adjustments), 6)
+        self.assertTrue(isinstance(adjustments, pd.DataFrame))
+        self.assertTrue(set(adjustments.index.levels[1]) == {'IBM', 'AAPL'})
 
 
 if __name__ == '__main__':

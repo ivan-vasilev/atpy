@@ -34,7 +34,7 @@ if __name__ == "__main__":
 
     if args.drop:
         client.drop_measurement('iqfeed_fundamentals')
-        client.query('DELETE FROM splits_dividends WHERE data_provider="iqfeed"')
+        client.query('DELETE FROM splits_dividends WHERE provider="iqfeed"')
 
     if args.database not in [d['name'] for d in client.get_list_database()]:
         client.create_database(args.database)

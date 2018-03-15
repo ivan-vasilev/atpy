@@ -4,7 +4,7 @@ Time series utils.
 import datetime
 
 import pandas as pd
-from dateutil import relativedelta
+from dateutil.relativedelta import relativedelta
 
 import atpy.data.tradingcalendar as tcal
 
@@ -18,7 +18,7 @@ def set_periods(df: pd.DataFrame):
 
     df['period'] = 'after-hours'
 
-    lc = tcal.open_and_closes.loc[df.iloc[0].timestamp.date():df.iloc[-1].timestamp.date()]
+    lc = tcal.open_and_closes.loc[df.iloc[0].name[0].date():df.iloc[-1].name[0].date()]
 
     xs = pd.IndexSlice
 
@@ -39,7 +39,7 @@ def current_period(df: pd.DataFrame):
     :return sliced period
     """
 
-    most_recent = df.iloc[-1].timestamp
+    most_recent = df.iloc[-1].name[0]
 
     xs = pd.IndexSlice
 
@@ -48,7 +48,7 @@ def current_period(df: pd.DataFrame):
         if most_recent > current_hours[1]:
             result, period = df.loc[xs[current_hours[1]:, :] if isinstance(df.index, pd.MultiIndex) else xs[current_hours[1]:]], 'after-hours'
         elif most_recent < current_hours[0]:
-            lc = __closes_series.loc[df.iloc[0].timestamp.date(): most_recent.date()]
+            lc = __closes_series.loc[df.iloc[0].name[0].date(): most_recent.date()]
             if len(lc) > 1:
                 result, period = df.loc[xs[lc[-2]:, :] if isinstance(df.index, pd.MultiIndex) else xs[lc[-2]:]], 'after-hours'
             else:
@@ -56,7 +56,7 @@ def current_period(df: pd.DataFrame):
         else:
             result, period = df.loc[xs[current_hours[0]:, :] if isinstance(df.index, pd.MultiIndex) else xs[current_hours[0]:]], 'trading-hours'
     else:
-        lc = __closes_series.loc[df.iloc[0].timestamp.date(): most_recent.date()]
+        lc = __closes_series.loc[df.iloc[0].name[0].date(): most_recent.date()]
         if len(lc) > 0:
             result, period = df.loc[xs[lc.iloc[-1]:, :] if isinstance(df.index, pd.MultiIndex) else xs[lc.iloc[-1]:]], 'after-hours'
         else:
@@ -72,7 +72,7 @@ def current_day(df: pd.DataFrame, tz=None):
     :param tz: timezone
     :return sliced period
     """
-    d = df.iloc[-1].timestamp.normalize()
+    d = df.iloc[-1].name[0].normalize()
     if tz is not None:
         d = d.tz_convert(tz).tz_localize(None).tz_localize(d.tzinfo)
 

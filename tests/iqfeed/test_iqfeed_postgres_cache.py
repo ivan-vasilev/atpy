@@ -45,7 +45,7 @@ class TestInfluxDBCache(unittest.TestCase):
                                     BarsInPeriodFilter(ticker="AAPL", bgn_prd=bgn_prd, end_prd=None, interval_len=3600, ascend=True, interval_type='s'),
                                     BarsInPeriodFilter(ticker="AMZN", bgn_prd=bgn_prd, end_prd=None, interval_len=3600, ascend=True, interval_type='s'))
 
-                data = [history.request_data(f, sync_timestamps=False, adjust_data=False) for f in filters]
+                data = [history.request_data(f, sync_timestamps=False) for f in filters]
 
                 for datum, f in zip(data, filters):
                     del datum['timestamp']
@@ -65,7 +65,7 @@ class TestInfluxDBCache(unittest.TestCase):
                 for k in latest_current.keys() & latest_old.keys():
                     self.assertGreater(latest_current[k], latest_old[k])
 
-                data_no_limit = [history.request_data(f, sync_timestamps=False, adjust_data=False) for f in filters_no_limit]
+                data_no_limit = [history.request_data(f, sync_timestamps=False) for f in filters_no_limit]
                 cache_data_no_limit = [request_bars(conn=engine, bars_table=table_name, interval_len=3600, interval_type='s', symbol=f.ticker,
                                                     bgn_prd=f.bgn_prd.astimezone(tz.tzutc()) + relativedelta(microseconds=1)) for f in filters_no_limit]
                 for df1, df2 in zip(data_no_limit, cache_data_no_limit):
@@ -73,6 +73,7 @@ class TestInfluxDBCache(unittest.TestCase):
                     del df1['symbol']
                     del df1['close']
                     del df2['close']
+
                     assert_frame_equal(df1, df2)
             finally:
                 con.cursor().execute("DROP TABLE IF EXISTS {0};".format(table_name))
@@ -98,7 +99,7 @@ class TestInfluxDBCache(unittest.TestCase):
                 filters = (BarsInPeriodFilter(ticker="IBM", bgn_prd=bgn_prd, end_prd=None, interval_len=3600, ascend=True, interval_type='s'),
                            BarsInPeriodFilter(ticker="AAPL", bgn_prd=bgn_prd, end_prd=None, interval_len=3600, ascend=True, interval_type='s'))
 
-                data = [history.request_data(f, sync_timestamps=False, adjust_data=False) for f in filters]
+                data = [history.request_data(f, sync_timestamps=False) for f in filters]
 
                 for datum, f in zip(data, filters):
                     del datum['timestamp']
@@ -147,7 +148,6 @@ class TestInfluxDBCache(unittest.TestCase):
         try:
             adjustments = get_splits_dividends({'IBM', 'AAPL', 'GOOG', 'MSFT'})
             adjustments.tz_localize('UTC', level=0, copy=False)
-            adjustments.sort_index(inplace=True)
 
             url = 'postgresql://postgres:postgres@localhost:5432/test'
 

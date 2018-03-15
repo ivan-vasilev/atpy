@@ -6,14 +6,15 @@ import typing
 from multiprocessing.pool import ThreadPool
 
 import pandas as pd
-from dateutil import relativedelta
+from dateutil.relativedelta import relativedelta
 
 import pyiqfeed
 import pyiqfeed as iq
 from atpy.data.iqfeed.filters import *
-from atpy.data.iqfeed.iqfeed_level_1_provider import get_fundamentals
-from atpy.data.iqfeed.util import launch_service, adjust, IQFeedDataProvider
+from atpy.data.iqfeed.util import launch_service, IQFeedDataProvider
+from atpy.data.iqfeed.iqfeed_level_1_provider import get_splits_dividends
 from atpy.data.ts_util import slice_periods
+from atpy.data.util import adjust_df
 
 
 class TicksFilter(NamedTuple):
@@ -191,7 +192,6 @@ class IQFeedHistoryProvider(object):
         self.num_connections = num_connections
         self.key_suffix = key_suffix
         self.conn = None
-        self.streaming_conn = None
         self.current_batch = None
         self.current_filter = None
 
@@ -202,10 +202,6 @@ class IQFeedHistoryProvider(object):
         for c in self.conn:
             c.connect()
 
-        # streaming conn for fundamental data
-        self.streaming_conn = iq.QuoteConn()
-        self.streaming_conn.connect()
-
         return self
 
     def __exit__(self, exception_type, exception_value, traceback):
@@ -214,9 +210,6 @@ class IQFeedHistoryProvider(object):
 
         self.conn = None
 
-        self.streaming_conn.disconnect()
-        self.streaming_conn = None
-
     def __del__(self):
         if self.conn is not None:
             for c in self.conn:
@@ -224,15 +217,11 @@ class IQFeedHistoryProvider(object):
 
             self.conn = None
 
-        if self.streaming_conn is not None:
-            self.streaming_conn.disconnect()
-
-    def request_data(self, f, sync_timestamps=True, adjust_data=True):
+    def request_data(self, f, sync_timestamps=True):
         """
         request history data
         :param f: filter tuple
         :param sync_timestamps: synchronize timestamps between symbols
-        :param adjust_data: whether to adjust the data
         :return:
         """
         if isinstance(f.ticker, str):
@@ -241,12 +230,12 @@ class IQFeedHistoryProvider(object):
                 logging.getLogger(__name__).warning("No data found for filter: " + str(f))
                 return
 
-            data = self._process_data(data, f, adjust_data=adjust_data)
+            data = self._process_data(data, f)
 
             return data
         elif isinstance(f.ticker, list):
             q = queue.Queue()
-            self.request_data_by_filters([f._replace(ticker=t) for t in f.ticker], q, adjust_data=adjust_data)
+            self.request_data_by_filters([f._replace(ticker=t) for t in f.ticker], q)
 
             signals = {d[0].ticker: d[1] for d in iter(q.get, None)}
 
@@ -260,14 +249,14 @@ class IQFeedHistoryProvider(object):
 
             return signals if len(signals) > 0 else None
 
-    def request_data_by_filters(self, filters: list, q: queue.Queue, adjust_data=True):
+    def request_data_by_filters(self, filters: list, q: queue.Queue):
         """
         request data for multiple filters
         :param filters: list of filters
         :param q: queue to populate the results as they come. When all the results are returned, None is inserted to signal that no more are coming.
-        :param adjust_data: adjust the data or not
         :return: None
         """
+
         self._global_counter = 0
         lock = threading.Lock()
         no_data = set()
@@ -282,7 +271,7 @@ class IQFeedHistoryProvider(object):
                 logging.getLogger(__name__).exception(err)
 
             if raw_data is not None:
-                q.put((ft, self._process_data(raw_data, ft, adjust_data=adjust_data)))
+                q.put((ft, self._process_data(raw_data, ft)))
 
                 with lock:
                     self._global_counter += 1
@@ -413,15 +402,15 @@ class IQFeedHistoryProvider(object):
 
         return data
 
-    def _process_data(self, data, data_filter, adjust_data=True):
+    def _process_data(self, data, data_filter):
         if isinstance(data_filter, TicksFilter) or isinstance(data_filter, TicksForDaysFilter) or isinstance(data_filter, TicksInPeriodFilter):
-            return self._process_ticks(data, data_filter, adjust_data)
+            return self._process_ticks(data, data_filter)
         elif isinstance(data_filter, BarsFilter) or isinstance(data_filter, BarsForDaysFilter) or isinstance(data_filter, BarsInPeriodFilter):
-            return self._process_bars(data, data_filter, adjust_data)
+            return self._process_bars(data, data_filter)
         elif isinstance(data_filter, BarsDailyFilter) or isinstance(data_filter, BarsDailyForDatesFilter) or isinstance(data_filter, BarsWeeklyFilter) or isinstance(data_filter, BarsMonthlyFilter):
             return self._process_daily(data, data_filter)
 
-    def _process_ticks(self, data, data_filter, adjust_data=True):
+    def _process_ticks(self, data, data_filter):
         result = pd.DataFrame(data)
         sf = self.key_suffix
 
@@ -436,12 +425,9 @@ class IQFeedHistoryProvider(object):
 
         result.set_index("tick_id" + sf, inplace=True, drop=False)
 
-        if adjust_data:
-            adjust(result, get_fundamentals(data_filter.ticker, self.streaming_conn))
-
         return result
 
-    def _process_bars(self, data, data_filter, adjust_data=True):
+    def _process_bars(self, data, data_filter):
         result = pd.DataFrame(data)
         sf = self.key_suffix
 
@@ -452,9 +438,6 @@ class IQFeedHistoryProvider(object):
         result.rename({"high_p": "high" + sf, "low_p": "low" + sf, "open_p": "open" + sf, "close_p": "close" + sf, "tot_vlm": "total_volume" + sf, "prd_vlm": "period_volume" + sf, "num_trds": "number_of_trades" + sf}, axis="columns",
                       copy=False, inplace=True)
         result['symbol'] = data_filter.ticker
-
-        if adjust_data:
-            adjust(result, get_fundamentals(data_filter.ticker, self.streaming_conn))
 
         return result
 
@@ -484,18 +467,19 @@ class IQFeedHistoryEvents(IQFeedHistoryProvider):
     IQFeed historical data events. See the unit test on how to use
     """
 
-    def __init__(self, listeners, minibatch=None, fire_batches=False, fire_ticks=False, run_async=True, adjust_data=True, num_connections=10, key_suffix='', filter_provider=None, sync_timestamps=True):
+    def __init__(self, listeners, minibatch=None, fire_batches=False, fire_ticks=False, run_async=True, num_connections=10, key_suffix='', filter_provider=None, sync_timestamps=True, adjust_data=True, timestamp_first=False):
         """
         :param listeners: event listeners
         :param minibatch: size of the minibatch
         :param fire_batches: raise event for each batch
         :param fire_ticks: raise event for each tick
         :param run_async: run asynchronous
-        :param adjust_data: adjust data
         :param num_connections: number of connections to use when requesting data
         :param key_suffix: suffix for field names
         :param filter_provider: news filter list
         :param sync_timestamps: synchronize timestamps for each symbol
+        :param adjust_data: adjust data
+        :param timestamp_first: timestamp/symbol multiindex (symbol/timestamp) by default
         """
         super().__init__(num_connections=num_connections, key_suffix=key_suffix)
 
@@ -503,15 +487,24 @@ class IQFeedHistoryEvents(IQFeedHistoryProvider):
         self.minibatch = minibatch
         self.fire_batches = fire_batches
         self.fire_ticks = fire_ticks
-        self.adjust_data = adjust_data
         self.run_async = run_async
         self.current_minibatch = None
         self.filter_provider = filter_provider
         self._is_running = False
         self._background_thread = None
-        self.conn = None
-        self.streaming_conn = None
         self.sync_timestamps = sync_timestamps
+        self.adjust_data = adjust_data
+        self.timestamp_first = timestamp_first
+        self.streaming_conn = None
+
+    def __enter__(self):
+        super().__enter__()
+
+        # streaming conn for fundamental data
+        self.streaming_conn = iq.QuoteConn()
+        self.streaming_conn.connect()
+
+        return self
 
     def __exit__(self, exception_type, exception_value, traceback):
         if self._background_thread is not None and self._background_thread.is_alive():
@@ -555,7 +548,18 @@ class IQFeedHistoryEvents(IQFeedHistoryProvider):
         for f in self.filter_provider:
             logging.getLogger(__name__).info("Loading data for filter " + str(f))
 
-            d = self.request_data(f, sync_timestamps=self.sync_timestamps, adjust_data=self.adjust_data)
+            d = self.request_data(f, sync_timestamps=self.sync_timestamps)
+
+            if isinstance(d.index, pd.MultiIndex) and (self.adjust_data or self.timestamp_first):
+                d = d.swaplevel(0, 1)
+                d.sort_index(inplace=True)
+
+            if self.adjust_data:
+                adjustments = get_splits_dividends(symbol=f.ticker, conn=self.streaming_conn)
+                adjust_df(data=d, adjustments=adjustments)
+
+                if isinstance(d.index, pd.MultiIndex) and not self.timestamp_first:
+                    d = d.swaplevel(0, 1)
 
             self.current_filter = f
             self.current_batch = d

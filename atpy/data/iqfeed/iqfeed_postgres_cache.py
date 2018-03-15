@@ -17,7 +17,7 @@ def noncache_provider(history: IQFeedHistoryProvider):
             else:
                 new_filters.append(BarsInPeriodFilter(ticker=f.ticker, bgn_prd=f.bgn_prd, end_prd=None, interval_len=f.interval_len, interval_type=f.interval_type))
 
-        h.request_data_by_filters(new_filters, q, adjust_data=False)
+        h.request_data_by_filters(new_filters, q)
 
     return functools.partial(_request_noncache_data, h=history)
 

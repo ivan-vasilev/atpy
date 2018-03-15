@@ -89,18 +89,18 @@ def update_to_latest(client: DataFrameClient, noncache_provider: typing.Callable
         client.close()
 
 
-def add_adjustments(client: InfluxDBClient, adjustments: list, data_provider: str):
+def add_adjustments(client: InfluxDBClient, adjustments: list, provider: str):
     """
     add a list of splits/dividends to the database
     :param client: influxdb client
     :param adjustments: list of adjustments of the type [(timestamp: datetime.date, symbol: str, typ: str, value), ...]
-    :param data_provider: data provider
+    :param provider: data provider
     """
-    points = [_get_adjustment_json_query(*a, data_provider=data_provider) for a in adjustments]
+    points = [_get_adjustment_json_query(*a, provider=provider) for a in adjustments]
     return InfluxDBClient.write_points(client, points, protocol='json', time_precision='s')
 
 
-def add_adjustment(client: InfluxDBClient, timestamp: datetime.date, symbol: str, typ: str, value: float, data_provider: str):
+def add_adjustment(client: InfluxDBClient, timestamp: datetime.date, symbol: str, typ: str, value: float, provider: str):
     """
     add splits/dividends to the database
     :param client: influxdb client
@@ -108,18 +108,18 @@ def add_adjustment(client: InfluxDBClient, timestamp: datetime.date, symbol: str
     :param symbol: symbol
     :param typ: 'split' or 'dividend'
     :param value: split_factor/dividend_rate
-    :param data_provider: data provider
+    :param provider: data provider
     """
-    json_body = _get_adjustment_json_query(timestamp=timestamp, symbol=symbol, typ=typ, value=value, data_provider=data_provider)
+    json_body = _get_adjustment_json_query(timestamp=timestamp, symbol=symbol, typ=typ, value=value, provider=provider)
     return InfluxDBClient.write_points(client, [json_body], protocol='json', time_precision='s')
 
 
-def _get_adjustment_json_query(timestamp: datetime.date, symbol: str, typ: str, value: float, data_provider: str):
+def _get_adjustment_json_query(timestamp: datetime.date, symbol: str, typ: str, value: float, provider: str):
     return {
         "measurement": "splits_dividends",
         "tags": {
             "symbol": symbol,
-            "data_provider": data_provider,
+            "provider": provider,
         },
 
         "time": datetime.datetime.combine(timestamp, datetime.datetime.min.time()),

@@ -192,10 +192,7 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener):
                     if i % 100 == 0 and i > 0:
                         logging.getLogger(__name__).info("Fundamentals loaded: " + str(i))
 
-        if len(symbol) == 1:
-            return self.fundamentals[next(iter(symbol))]
-        else:
-            return {s: self.fundamentals[s] for s in symbol if s in self.fundamentals}
+        return {s: self.fundamentals[s] for s in symbol if s in self.fundamentals}
 
 
 def get_fundamentals(symbol: typing.Union[set, str], conn: iq.QuoteConn = None):
@@ -205,6 +202,7 @@ def get_fundamentals(symbol: typing.Union[set, str], conn: iq.QuoteConn = None):
 
 def get_splits_dividends(symbol: typing.Union[set, str], conn: iq.QuoteConn = None):
     funds = get_fundamentals(symbol=symbol, conn=conn)
+
     points = {'timestamp': list(), 'symbol': list(), 'type': list(), 'value': list()}
     for f in funds.values():
         if f['split_factor_1_date'] is not None and f['split_factor_1'] is not None:
@@ -228,5 +226,6 @@ def get_splits_dividends(symbol: typing.Union[set, str], conn: iq.QuoteConn = No
     result = pd.DataFrame(points)
     result['provider'] = 'iqfeed'
     result = result.set_index(['timestamp', 'symbol', 'type', 'provider'])
+    result.sort_index(inplace=True)
 
     return result

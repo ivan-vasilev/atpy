@@ -2,9 +2,9 @@ import datetime
 import typing
 
 import numpy as np
-from dateutil import relativedelta
-from dateutil.parser import parse
-from influxdb import InfluxDBClient, DataFrameClient
+import pandas as pd
+from dateutil.relativedelta import relativedelta
+from influxdb import DataFrameClient
 
 import atpy.data.iqfeed.bar_util as bars
 from atpy.data.ts_util import slice_periods
@@ -205,7 +205,7 @@ class InfluxDBDeltaRequest(InfluxDBValueRequest):
         super().__init__(value='close - open as delta, period_volume, total_volume', client=client, interval_len=interval_len, interval_type=interval_type)
 
 
-def get_adjustments(client: InfluxDBClient, symbol: typing.Union[list, str] = None, typ: str = None, data_provider: str = None):
+def get_adjustments(client: DataFrameClient, symbol: typing.Union[list, str] = None, typ: str = None, provider: str = None):
     query = "SELECT * FROM splits_dividends"
 
     where = list()
@@ -218,20 +218,21 @@ def get_adjustments(client: InfluxDBClient, symbol: typing.Union[list, str] = No
     if typ is not None:
         where.append("type='{}'".format(typ))
 
-    if data_provider is not None:
-        where.append("data_provider='{}'".format(data_provider))
+    if provider is not None:
+        where.append("provider='{}'".format(provider))
 
     if len(where) > 0:
         query += " WHERE " + " AND ".join(where)
 
-    result = dict()
-    for sd in InfluxDBClient.query(client, query).get_points():
-        if sd['symbol'] not in result:
-            result[sd['symbol']] = list()
+    result = DataFrameClient.query(client, query)
+    if result:
+        result = result['splits_dividends']
+        result.set_index(['symbol', 'type', 'provider'], inplace=True, drop=True, append=True)
+        result.sort_index(inplace=True)
 
-        result[sd['symbol']].append((parse(sd['time']).date(), sd['value'], sd['type']))
+        return result
 
-    return result[symbol] if isinstance(symbol, str) else result
+    return pd.DataFrame()
 
 
 def _query_where(interval_len: int, interval_type: str, symbol: typing.Union[list, str] = None, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None):
@@ -262,7 +263,7 @@ class BarsInPeriodProvider(object):
     OHLCV Bars in period provider
     """
 
-    def __init__(self, influxdb_cache: InfluxDBOHLCRequest, bgn_prd: datetime.datetime, delta: relativedelta, symbol: typing.Union[list, str]=None, ascend: bool = True, overlap: relativedelta = None):
+    def __init__(self, influxdb_cache: InfluxDBOHLCRequest, bgn_prd: datetime.datetime, delta: relativedelta, symbol: typing.Union[list, str] = None, ascend: bool = True, overlap: relativedelta = None):
         self._periods = slice_periods(bgn_prd=bgn_prd, delta=delta, ascend=ascend, overlap=overlap)
 
         self.influxdb_cache = influxdb_cache

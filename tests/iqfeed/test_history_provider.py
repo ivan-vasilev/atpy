@@ -1,10 +1,11 @@
 import unittest
 
 from dateutil.relativedelta import relativedelta
+import atpy.data.util as datautil
 
 import atpy.data.iqfeed.util as iqfeedutil
 from atpy.data.iqfeed.iqfeed_history_provider import *
-from atpy.data.iqfeed.iqfeed_level_1_provider import get_fundamentals
+from atpy.data.iqfeed.iqfeed_level_1_provider import get_fundamentals, get_splits_dividends
 from pyevents.events import AsyncListeners
 
 
@@ -321,7 +322,7 @@ class TestIQFeedHistory(unittest.TestCase):
 
         listeners = AsyncListeners()
 
-        with IQFeedHistoryEvents(listeners=listeners, fire_batches=True, fire_ticks=True, filter_provider=filter_provider) as listener, listener.batch_provider() as provider:
+        with IQFeedHistoryEvents(listeners=listeners, fire_batches=True, fire_ticks=True, filter_provider=filter_provider, timestamp_first=True) as listener, listener.batch_provider() as provider:
             listener.start()
 
             e1 = threading.Event()
@@ -347,49 +348,19 @@ class TestIQFeedHistory(unittest.TestCase):
 
     def test_bar_adjust_2(self):
         filter_provider = DefaultFilterProvider()
-        filter_provider += BarsInPeriodFilter(ticker="PLUS", bgn_prd=datetime.datetime(2017, 3, 24), end_prd=datetime.datetime(2017, 3, 29), interval_len=3600, ascend=True, interval_type='s', max_ticks=100)
-
-        listeners = AsyncListeners()
-
-        with IQFeedHistoryEvents(listeners=listeners, fire_batches=True, fire_ticks=True, filter_provider=filter_provider) as listener, listener.batch_provider() as provider:
-            listener.start()
-
-            e1 = threading.Event()
-
-            def process_bar(event):
-                if event['type'] == 'bar':
-                    try:
-                        self.assertLess(event['data']['open'], 68)
-                        self.assertGreater(event['data']['open'], 65)
-                    finally:
-                        e1.set()
-
-            listeners += process_bar
-
-            e1.wait()
-
-            for i, d in enumerate(provider):
-                self.assertLess(d['open'].max(), 68)
-                self.assertGreater(d['open'].min(), 65)
-
-                if i == 1:
-                    break
-
-    def test_bar_adjust_3(self):
-        filter_provider = DefaultFilterProvider()
         filter_provider += BarsInPeriodFilter(ticker=["PLUS", "AAPL"], bgn_prd=datetime.datetime(2017, 3, 31), end_prd=datetime.datetime(2017, 4, 5), interval_len=3600, ascend=True, interval_type='s')
 
         listeners = AsyncListeners()
 
-        with IQFeedHistoryEvents(listeners=listeners, fire_batches=True, adjust_data=False, filter_provider=filter_provider, sync_timestamps=False) as listener, listener.batch_provider() as provider:
+        with IQFeedHistoryEvents(listeners=listeners, fire_batches=True, filter_provider=filter_provider, sync_timestamps=False, timestamp_first=True) as listener, listener.batch_provider() as provider:
             listener.start()
 
             for i, d in enumerate(provider):
-                d.update(d.groupby(level=0).apply(lambda x: iqfeedutil.adjust(x, get_fundamentals(x.name, listener.streaming_conn))))
+                idx = pd.IndexSlice
 
-                self.assertLess(d.loc['PLUS', 'open'].max(), 68)
-                self.assertGreater(d.loc['PLUS', 'open'].min(), 65)
-                self.assertGreater(d.loc['AAPL', 'open'].min(), 142)
+                self.assertLess(d.loc[idx[:, 'PLUS'], 'open'].max(), 68)
+                self.assertGreater(d.loc[idx[:, 'PLUS'], 'open'].min(), 65)
+                self.assertGreater(d.loc[idx[:, 'AAPL'], 'open'].min(), 142)
 
                 if i == 1:
                     break

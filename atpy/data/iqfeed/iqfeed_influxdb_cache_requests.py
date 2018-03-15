@@ -1,31 +1,7 @@
-import datetime
 import json
 import typing
 
-import pandas as pd
-from influxdb import DataFrameClient, InfluxDBClient
-
-from atpy.data.cache.influxdb_cache_requests import InfluxDBOHLCRequest, get_adjustments
-from atpy.data.util import adjust
-
-
-class IQFeedInfluxDBOHLCRequest(InfluxDBOHLCRequest):
-
-    def __init__(self, client: DataFrameClient, interval_len: int, interval_type: str = 's', adjust_data: bool = True, listeners=None):
-        super().__init__(client=client, interval_len=interval_len, interval_type=interval_type, listeners=listeners)
-        self.adjust_data = adjust_data
-
-    def _request_raw_data(self, symbol: typing.Union[list, str] = None, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None, ascending: bool = True):
-        result = super()._request_raw_data(symbol=symbol, bgn_prd=bgn_prd, end_prd=end_prd, ascending=ascending)
-        if self.adjust_data:
-            if isinstance(result.index, pd.MultiIndex):
-                adjustments = get_adjustments(self.client, symbol=symbol, data_provider='iqfeed')
-                result.update(result.groupby(level=0).apply(lambda x: adjust(x, adjustments=adjustments[x.name]) if x.name in adjustments else x))
-                result['timestamp'] = result['timestamp'].dt.tz_localize('UTC')
-            elif isinstance(symbol, str):
-                adjust(result, get_adjustments(self.client, symbol, data_provider='iqfeed'))
-
-        return result
+from influxdb import InfluxDBClient
 
 
 def get_cache_fundamentals(client: InfluxDBClient, symbol: typing.Union[list, str] = None):

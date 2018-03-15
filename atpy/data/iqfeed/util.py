@@ -9,7 +9,6 @@ import numpy as np
 import pandas as pd
 import requests
 
-import atpy.data.util as datautil
 import pyiqfeed as iq
 
 
@@ -74,26 +73,6 @@ def iqfeed_to_dict(data, key_suffix=''):
             result[k] = None
 
     return result
-
-
-def adjust(data, fundamentals: dict):
-    if not isinstance(data, pd.DataFrame):
-        d = data['timestamp'].date()
-        if d > fundamentals['ex-dividend_date'] and d > fundamentals['split_factor_1_date'] and d > fundamentals['split_factor_2_date']:
-            return
-
-    fundamentals = {k: None if pd.isnull(v) else v for k, v in fundamentals.items()}
-    adjustments = list()
-    if fundamentals['split_factor_1'] is not None:
-        adjustments.append((fundamentals['split_factor_1_date'], fundamentals['split_factor_1'], 'split'))
-
-    if fundamentals['split_factor_2'] is not None:
-        adjustments.append((fundamentals['split_factor_2_date'], fundamentals['split_factor_2'], 'split'))
-
-    if fundamentals['dividend_amount'] is not None:
-        adjustments.append((fundamentals['ex-dividend_date'], fundamentals['dividend_amount'], 'dividend'))
-
-    return datautil.adjust(data=data, adjustments=adjustments)
 
 
 def get_symbols(symbols_file: str = None, flt: dict = None):

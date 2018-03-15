@@ -18,7 +18,7 @@ class TestTSUtils(unittest.TestCase):
 
         with IQFeedHistoryProvider() as provider:
             # One symbol, all periods
-            df = provider.request_data(BarsFilter(ticker="AAPL", interval_len=300, interval_type='s', max_bars=batch_len), sync_timestamps=False, adjust_data=False)
+            df = provider.request_data(BarsFilter(ticker="AAPL", interval_len=300, interval_type='s', max_bars=batch_len), sync_timestamps=False)
 
             set_periods(df)
             self.assertTrue('period' in df.columns)
@@ -26,7 +26,7 @@ class TestTSUtils(unittest.TestCase):
             self.assertEqual(len(df['period'].dropna()), len(df['period']))
 
             # Multiple symbols, all periods
-            df = provider.request_data(BarsFilter(ticker=["AAPL", "IBM"], interval_len=300, interval_type='s', max_bars=batch_len), sync_timestamps=False, adjust_data=False).swaplevel(0, 1).sort_index()
+            df = provider.request_data(BarsFilter(ticker=["AAPL", "IBM"], interval_len=300, interval_type='s', max_bars=batch_len), sync_timestamps=False).swaplevel(0, 1).sort_index()
 
             set_periods(df)
             self.assertTrue('period' in df.columns)
@@ -34,7 +34,7 @@ class TestTSUtils(unittest.TestCase):
             self.assertEqual(len(df['period'].dropna()), len(df['period']))
 
             # Multiple symbols, N periods
-            df = provider.request_data(BarsFilter(ticker=["AAPL", "IBM"], interval_len=300, interval_type='s', max_bars=batch_len), sync_timestamps=False, adjust_data=False).swaplevel(0, 1).sort_index()
+            df = provider.request_data(BarsFilter(ticker=["AAPL", "IBM"], interval_len=300, interval_type='s', max_bars=batch_len), sync_timestamps=False).swaplevel(0, 1).sort_index()
             lc = tcal.open_and_closes.loc[min(df['timestamp']): max(df['timestamp'])].iloc[::-1]
             xs = pd.IndexSlice
             df = df.loc[xs[:lc.iloc[0]['market_close'], :]].iloc[:-3]
@@ -50,7 +50,7 @@ class TestTSUtils(unittest.TestCase):
         batch_width = 1000
 
         with IQFeedHistoryProvider() as provider:
-            df = provider.request_data(BarsFilter(ticker="AAPL", interval_len=60, interval_type='s', max_bars=batch_len), sync_timestamps=False, adjust_data=False)
+            df = provider.request_data(BarsFilter(ticker="AAPL", interval_len=60, interval_type='s', max_bars=batch_len), sync_timestamps=False)
 
             dfs = {'AAPL': df}
             for i in range(batch_width):
@@ -67,20 +67,20 @@ class TestTSUtils(unittest.TestCase):
 
         with IQFeedHistoryProvider() as provider:
             # One symbol, all periods
-            df = provider.request_data(BarsFilter(ticker="AAPL", interval_len=300, interval_type='s', max_bars=batch_len), sync_timestamps=False, adjust_data=False)
+            df = provider.request_data(BarsFilter(ticker="AAPL", interval_len=300, interval_type='s', max_bars=batch_len), sync_timestamps=False)
 
             slc, period = current_period(df)
             self.assertTrue(period in ('trading-hours', 'after-hours'))
             self.assertGreater(len(df), len(slc))
 
             # Multiple symbols, all periods
-            df = provider.request_data(BarsFilter(ticker=["AAPL", "IBM"], interval_len=300, interval_type='s', max_bars=batch_len), sync_timestamps=False, adjust_data=False).swaplevel(0, 1).sort_index()
+            df = provider.request_data(BarsFilter(ticker=["AAPL", "IBM"], interval_len=300, interval_type='s', max_bars=batch_len), sync_timestamps=False).swaplevel(0, 1).sort_index()
 
             slc, period = current_period(df)
             self.assertTrue(period in ('trading-hours', 'after-hours'))
             self.assertGreater(len(df), len(slc))
 
-            df = provider.request_data(BarsFilter(ticker=["AAPL", "IBM"], interval_len=300, interval_type='s', max_bars=batch_len), sync_timestamps=False, adjust_data=False).swaplevel(0, 1).sort_index()
+            df = provider.request_data(BarsFilter(ticker=["AAPL", "IBM"], interval_len=300, interval_type='s', max_bars=batch_len), sync_timestamps=False).swaplevel(0, 1).sort_index()
             lc = tcal.open_and_closes.loc[min(df['timestamp']): max(df['timestamp'])].iloc[::-1]
             xs = pd.IndexSlice
             df = df.loc[xs[:lc.iloc[0]['market_close'], :]].iloc[:-3]
@@ -98,7 +98,7 @@ class TestTSUtils(unittest.TestCase):
         l1, l2 = list(), list()
         with IQFeedHistoryProvider() as provider, DataReplay().add_source(iter(l1), 'e1', historical_depth=1000) as dr:
             now = datetime.datetime.now()
-            df = provider.request_data(BarsFilter(ticker="AAPL", interval_len=60, interval_type='s', max_bars=batch_len), adjust_data=False, sync_timestamps=False)
+            df = provider.request_data(BarsFilter(ticker="AAPL", interval_len=60, interval_type='s', max_bars=batch_len), sync_timestamps=False)
 
             dfs1 = {'AAPL': df}
             for i in range(batch_width):
@@ -139,7 +139,7 @@ class TestTSUtils(unittest.TestCase):
         l1, l2 = list(), list()
         with IQFeedHistoryProvider() as provider, DataReplay().add_source(iter(l1), 'e1', historical_depth=100) as dr:
             now = datetime.datetime.now()
-            df = provider.request_data(BarsFilter(ticker="AAPL", interval_len=3600, interval_type='s', max_bars=batch_len), adjust_data=False, sync_timestamps=False)
+            df = provider.request_data(BarsFilter(ticker="AAPL", interval_len=3600, interval_type='s', max_bars=batch_len), sync_timestamps=False)
 
             dfs1 = {'AAPL': df}
             for i in range(batch_width):
@@ -167,7 +167,7 @@ class TestTSUtils(unittest.TestCase):
                     current_day(r[e], 'US/Eastern')
                     period = current_day(r[e])
                     self.assertTrue(not period.empty)
-                    self.assertEqual(period.iloc[0].timestamp.date(), period.iloc[1].timestamp.date())
+                    self.assertEqual(period.iloc[0].name[0].date(), period.iloc[1].name[0].date())
 
             elapsed = datetime.datetime.now() - now
             logging.getLogger(__name__).debug('Time elapsed ' + str(elapsed) + ' for ' + str(i + 1) + ' iterations; ' + str(elapsed / (i % 1000)) + ' per iteration')
