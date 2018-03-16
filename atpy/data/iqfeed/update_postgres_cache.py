@@ -4,16 +4,17 @@ Script that updates the bars/splits/dividends/fundamentals cache
 
 import argparse
 import logging
+import typing
 
 import psycopg2
 from dateutil.relativedelta import relativedelta
-from pyevents.events import SyncListeners
 
 import atpy.data.iqfeed.util as iqutil
 from atpy.data.cache.postgres_cache import update_to_latest, create_adjustments, adjustments_indices, insert_df
 from atpy.data.iqfeed.iqfeed_history_provider import IQFeedHistoryProvider
-from atpy.data.iqfeed.iqfeed_level_1_provider import get_splits_dividends, IQFeedLevel1Listener
+from atpy.data.iqfeed.iqfeed_level_1_provider import get_splits_dividends, get_fundamentals, IQFeedLevel1Listener
 from atpy.data.iqfeed.iqfeed_postgres_cache import noncache_provider
+from pyevents.events import SyncListeners
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
@@ -69,3 +70,8 @@ if __name__ == "__main__":
                 cur.execute(adjustments_indices.format(args.table_name))
 
                 insert_df(con, args.table_name, adjustments)
+
+        if args.update_fundamentals:
+            with IQFeedLevel1Listener(listeners=SyncListeners(), fire_ticks=False) as listener:
+                fundamentals = get_fundamentals(all_symbols, listener.conn)
+

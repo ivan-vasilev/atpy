@@ -75,9 +75,9 @@ bars_indices = \
 
     -- Index: interval_ind
     
-    -- DROP INDEX public.interval_ind;
+    -- DROP INDEX public.{0}_interval_ind;
     
-    CREATE INDEX interval_ind
+    CREATE INDEX {0}_interval_ind
         ON public.{0} USING btree
         ("interval" COLLATE pg_catalog."default")
         TABLESPACE pg_default;
@@ -139,9 +139,7 @@ adjustments_indices = \
     """
 
 
-def update_to_latest(url: str, bars_table: str, noncache_provider: typing.Callable, symbols: set = None, time_delta_back: relativedelta = relativedelta(years=5), skip_if_older_than: relativedelta = None):
-    con = psycopg2.connect(url)
-    con.autocommit = True
+def update_to_latest(con, bars_table: str, noncache_provider: typing.Callable, symbols: set = None, time_delta_back: relativedelta = relativedelta(years=5), skip_if_older_than: relativedelta = None):
     cur = con.cursor()
 
     cur.execute("SELECT to_regclass('public.{0}')".format(bars_table))
@@ -185,9 +183,6 @@ def update_to_latest(url: str, bars_table: str, noncache_provider: typing.Callab
     global_counter = {"counter": 0}
 
     def worker():
-        conn = psycopg2.connect(url)
-        conn.autocommit = True
-
         while True:
             tupl = q.get()
 
@@ -203,7 +198,7 @@ def update_to_latest(url: str, bars_table: str, noncache_provider: typing.Callab
                 del df['timestamp']
                 df['interval'] = str(ft.interval_len) + '_' + ft.interval_type
 
-                insert_df(conn, bars_table, df)
+                insert_df(con, bars_table, df)
             except Exception as err:
                 logging.getLogger(__name__).exception(err)
                 if cursor is not None:

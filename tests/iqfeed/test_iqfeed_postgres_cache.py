@@ -1,18 +1,11 @@
 import unittest
 
-import datetime
-import pandas as pd
-import psycopg2
-from atpy.data.iqfeed.iqfeed_level_1_provider import get_fundamentals, get_splits_dividends
-
-from atpy.data.iqfeed.iqfeed_history_provider import BarsInPeriodFilter, IQFeedHistoryProvider
-from dateutil.relativedelta import relativedelta
 from pandas.util.testing import assert_frame_equal
 from sqlalchemy import create_engine
 
 from atpy.data.cache.postgres_cache import *
-from atpy.data.iqfeed.iqfeed_postgres_cache import noncache_provider
-from dateutil import tz
+from atpy.data.iqfeed.iqfeed_level_1_provider import get_fundamentals, get_splits_dividends
+from atpy.data.iqfeed.iqfeed_postgres_cache import *
 
 
 class TestInfluxDBCache(unittest.TestCase):
@@ -22,9 +15,8 @@ class TestInfluxDBCache(unittest.TestCase):
 
     def test_update_to_latest(self):
         with IQFeedHistoryProvider(num_connections=2) as history:
+            table_name = 'bars_test'
             try:
-                table_name = 'bars_test'
-
                 url = 'postgresql://postgres:postgres@localhost:5432/test'
 
                 engine = create_engine(url)
@@ -56,7 +48,7 @@ class TestInfluxDBCache(unittest.TestCase):
 
                 latest_old = pd.read_sql("select symbol, max(timestamp) as timestamp from {0} group by symbol".format(table_name), con=con, index_col=['symbol'])['timestamp']
 
-                update_to_latest(url=url, bars_table=table_name, symbols={('AAPL', 3600, 's'), ('AMZN', 3600, 's')}, noncache_provider=noncache_provider(history), time_delta_back=relativedelta(years=10))
+                update_to_latest(con, bars_table=table_name, symbols={('AAPL', 3600, 's'), ('AMZN', 3600, 's')}, noncache_provider=noncache_provider(history), time_delta_back=relativedelta(years=10))
 
                 latest_current = pd.read_sql("select symbol, max(timestamp) as timestamp from {0} group by symbol".format(table_name), con=con, index_col=['symbol'])['timestamp']
 
@@ -167,6 +159,27 @@ class TestInfluxDBCache(unittest.TestCase):
 
             self.assertFalse(df.empty)
             assert_frame_equal(adjustments, df)
+        finally:
+            con.cursor().execute("DROP TABLE IF EXISTS {0};".format(table_name))
+
+    def test_update_fundamentals(self):
+        table_name = 'iqfeed_fundamentals'
+
+        try:
+            fundamentals = get_fundamentals({'IBM', 'AAPL', 'GOOG', 'MSFT'})
+
+            url = 'postgresql://postgres:postgres@localhost:5432/test'
+
+            con = psycopg2.connect(url)
+            con.autocommit = True
+
+            engine = create_engine(url)
+
+            update_fundamentals(engine, fundamentals)
+            fund = request_fundamentals(engine, symbol=['IBM', 'AAPL', 'GOOG'])
+
+            self.assertTrue(isinstance(fund, pd.DataFrame))
+            self.assertEqual(len(fund), 3)
         finally:
             con.cursor().execute("DROP TABLE IF EXISTS {0};".format(table_name))
 
