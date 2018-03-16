@@ -1,3 +1,4 @@
+#!/bin/python3
 """
 Script that updates the bars/splits/dividends/fundamentals cache
 """
@@ -7,6 +8,7 @@ import logging
 import typing
 
 import psycopg2
+import sqlalchemy
 from dateutil.relativedelta import relativedelta
 
 import atpy.data.iqfeed.util as iqutil
@@ -19,7 +21,7 @@ from pyevents.events import SyncListeners
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
-    parser = argparse.ArgumentParser(description="InfluxDB and IQFeed configuration")
+    parser = argparse.ArgumentParser(description="PostgreSQL and IQFeed configuration")
 
     parser.add_argument('-url', type=str, default=None, help="PostgreSQL connection string")
     parser.add_argument('-drop', action='store_true', help="Drop the table")

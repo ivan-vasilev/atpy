@@ -139,7 +139,9 @@ adjustments_indices = \
     """
 
 
-def update_to_latest(con, bars_table: str, noncache_provider: typing.Callable, symbols: set = None, time_delta_back: relativedelta = relativedelta(years=5), skip_if_older_than: relativedelta = None):
+def update_to_latest(url: str, bars_table: str, noncache_provider: typing.Callable, symbols: set = None, time_delta_back: relativedelta = relativedelta(years=5), skip_if_older_than: relativedelta = None):
+    con = psycopg2.connect(url)
+    con.autocommit = True
     cur = con.cursor()
 
     cur.execute("SELECT to_regclass('public.{0}')".format(bars_table))
@@ -183,6 +185,9 @@ def update_to_latest(con, bars_table: str, noncache_provider: typing.Callable, s
     global_counter = {"counter": 0}
 
     def worker():
+        con = psycopg2.connect(url)
+        con.autocommit = True
+
         while True:
             tupl = q.get()
 
@@ -191,8 +196,6 @@ def update_to_latest(con, bars_table: str, noncache_provider: typing.Callable, s
                 return
 
             ft, df = tupl
-            cursor = None
-
             try:
                 # Prepare data
                 del df['timestamp']
@@ -200,9 +203,8 @@ def update_to_latest(con, bars_table: str, noncache_provider: typing.Callable, s
 
                 insert_df(con, bars_table, df)
             except Exception as err:
+                logging.getLogger(__name__).error("Error loading " + ft.ticker)
                 logging.getLogger(__name__).exception(err)
-                if cursor is not None:
-                    cursor.close()
 
             global_counter['counter'] += 1
             i = global_counter['counter']

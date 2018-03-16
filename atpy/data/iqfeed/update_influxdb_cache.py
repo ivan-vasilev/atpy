@@ -1,3 +1,4 @@
+#!/bin/python3
 """
 Script that populates the InfluxDB cache initially and the updates it incrementally
 """

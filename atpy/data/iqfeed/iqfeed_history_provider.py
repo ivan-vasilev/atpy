@@ -258,6 +258,8 @@ class IQFeedHistoryProvider(object):
         """
 
         self._global_counter = 0
+        self._global_not_found_counter = 0
+
         lock = threading.Lock()
         no_data = set()
 
@@ -266,30 +268,34 @@ class IQFeedHistoryProvider(object):
 
             try:
                 raw_data = self.request_raw_symbol_data(ft, conn)
+                if raw_data is not None:
+                    q.put((ft, self._process_data(raw_data, ft)))
             except Exception as err:
                 raw_data = None
                 logging.getLogger(__name__).exception(err)
 
             if raw_data is not None:
-                q.put((ft, self._process_data(raw_data, ft)))
-
                 with lock:
                     self._global_counter += 1
                     if self._global_counter % 20 == 0 or self._global_counter == len(filters):
-                        logging.getLogger(__name__).info("Loaded " + str(self._global_counter) + " symbols")
+                        log = "Found " + str(self._global_counter)
                         if len(no_data) > 0:
                             no_data_list = list(no_data)
                             no_data_list.sort()
-                            logging.getLogger(__name__).info("No data found for " + str(len(no_data_list)) + " symbols: " + str(no_data_list))
+                            log += "; not found " + str(len(no_data_list)) + " (total " + str(self._global_not_found_counter) + "): " + str(no_data_list)
                             no_data.clear()
+
+                        logging.getLogger(__name__).info(log)
             else:
-                no_data.add(ft)
+                self._global_not_found_counter += 1
+                no_data.add(ft.ticker)
 
         pool = ThreadPool(self.num_connections)
         pool.map(mp_worker, ((f, self.conn[i % self.num_connections]) for i, f in enumerate(filters)))
         pool.close()
 
         del self._global_counter
+        del self._global_not_found_counter
 
         q.put(None)
 
