@@ -48,13 +48,6 @@ create_bars = \
 
 bars_indices = \
     """
-    -- Constraint: {0}_pkey
-
-    -- ALTER TABLE public.{0} DROP CONSTRAINT {0}_pkey;
-
-    ALTER TABLE public.{0}
-        ADD CONSTRAINT {0}_pkey PRIMARY KEY ("timestamp", symbol);
-
     -- Index: {0}_symbol_ind
 
     -- DROP INDEX public.{0}_symbol_ind;

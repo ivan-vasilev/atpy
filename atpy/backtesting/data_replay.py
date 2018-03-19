@@ -1,7 +1,6 @@
 import datetime
 import logging
 import queue
-import threading
 import typing
 
 import numpy as np
@@ -12,13 +11,14 @@ class DataReplay(object):
     """Replay data from multiple sources, sorted by time. Each source provides a dataframe."""
 
     def __init__(self):
-        self._sources = list()
+        self._sources_defs = list()
         self._is_running = False
 
-    def __enter__(self):
-        self._is_running = True
+    def __iter__(self):
+        if self._is_running:
+            raise Exception("Cannot start iteration while the generator is working")
 
-        self._threads = list()
+        self._is_running = True
 
         self._data = dict()
 
@@ -26,28 +26,10 @@ class DataReplay(object):
 
         sources = dict()
 
-        for (iterator, name, run_async, historical_depth) in self._sources:
-            if run_async:
-                q = queue.Queue()
-                sources[name] = (q, historical_depth)
-
-                self._threads.append(_DataGeneratorThread(q=q, next_item=iterator))
-            else:
-                sources[name] = (iterator, historical_depth)
+        for (iterator, name, historical_depth) in self._sources_defs:
+            sources[name] = (iterator, historical_depth)
 
         self._sources = sources
-
-        return self
-
-    def __exit__(self, exception_type, exception_value, traceback):
-        for t in self._threads:
-            t.stop()
-
-        self._is_running = False
-
-    def __iter__(self):
-        for t in self._threads:
-            t.start()
 
         return self
 
@@ -149,47 +131,19 @@ class DataReplay(object):
         elif isinstance(index, pd.MultiIndex):
             return [l for l in index.levels if isinstance(l, pd.DatetimeIndex)][0]
 
-    def add_source(self, data_provider: typing.Union[typing.Iterator, typing.Callable], name: str, run_async: bool = False, historical_depth: int = 0):
+    def add_source(self, data_provider: typing.Union[typing.Iterator, typing.Callable], name: str, historical_depth: int = 0):
         """
         :param data_provider: return pd.DataFrame with either DateTimeIndex or MultiIndex, where one of the levels is of datetime type
         :param name: data set name for each of the data sources
-        :param run_async: whether to retrieve data synchronously or asynchronously
         :param historical_depth: whether to return only the current element or with historical depth
         :return:
         """
         if self._is_running:
             raise Exception("Cannot add sources while the generator is working")
 
-        self._sources.append((data_provider, name, run_async, historical_depth))
+        self._sources_defs.append((data_provider, name, historical_depth))
 
         return self
-
-
-class _DataGeneratorThread(threading.Thread):
-
-    def __init__(self, q: queue.Queue, next_item: typing.Union[typing.Iterator, typing.Callable]):
-        super().__init__(target=self.run, daemon=True)
-        self.q = q
-        self.next_item = next_item
-        self._is_running = False
-
-    def run(self):
-        self._is_running = True
-
-        while self._is_running:
-            try:
-                self.q.put(next(self.next_item))
-            except StopIteration:
-                self.q.put(None)
-                self.stop()
-            except Exception:
-                item = self.next_item()
-                self.q.put(item)
-                if item is None:
-                    self.stop()
-
-    def stop(self):
-        self._is_running = False
 
 
 class DataReplayEvents(object):
@@ -201,4 +155,5 @@ class DataReplayEvents(object):
 
     def start(self):
         for d in self.data_replay:
-            self.listeners({'type': self.event_name, 'data': d})
+            d['type'] = self.event_name
+            self.listeners(d)

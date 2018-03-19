@@ -119,7 +119,7 @@ def adjust_df(data: pd.DataFrame, adjustments: pd.DataFrame):
 
 def adjust(data, adjustments: pd.DataFrame):
     """
-    IMPORTANT !!! This method supports single index
+    IMPORTANT !!! This method supports single index df
     :param data: dataframe with data.
     :param adjustments: list of adjustments in the form of [(date, split_factor/dividend_amount, 'split'/'dividend'), ...]
     :return adjusted data
