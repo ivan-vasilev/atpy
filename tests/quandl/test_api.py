@@ -1,12 +1,18 @@
 import unittest
 
+import datetime
 import pandas as pd
+import psycopg2
+from atpy.backtesting.data_replay import DataReplay
+from influxdb import DataFrameClient
+from pandas.util.testing import assert_frame_equal
+from sqlalchemy import create_engine
 
 from atpy.data.quandl.api import QuandlEvents, get_sf, bulkdownload_sf
 from atpy.data.quandl.influxdb_cache import InfluxDBCache
+from atpy.data.quandl.postgres_cache import bulkinsert_SF0, request_sf, SFInPeriodProvider
 from pyevents.events import SyncListeners
-from influxdb import DataFrameClient
-from pandas.util.testing import assert_frame_equal
+from dateutil.relativedelta import relativedelta
 
 
 class TestQuandlAPI(unittest.TestCase):
@@ -55,7 +61,7 @@ class TestQuandlAPI(unittest.TestCase):
 
         self.assertTrue(called)
 
-    def test_cache(self):
+    def test_influxdb_cache(self):
         client = DataFrameClient(host='localhost', port=8086, username='root', password='root', database='test_cache')
 
         try:
@@ -80,6 +86,78 @@ class TestQuandlAPI(unittest.TestCase):
         finally:
             client.drop_database('test_cache')
             client.close()
+
+    def test_postgres_cache(self):
+        table_name = 'quandl_sf0'
+        url = 'postgresql://postgres:postgres@localhost:5432/test'
+        con = psycopg2.connect(url)
+        con.autocommit = True
+
+        try:
+            engine = create_engine(url)
+
+            bulkinsert_SF0(url, table_name=table_name)
+
+            df = request_sf(conn=engine, symbol=['AAPL', 'IBM'])
+
+            self.assertTrue(set(df.index.levels[1]) == {'AAPL', 'IBM'})
+
+            df = request_sf(conn=engine, symbol=['AAPL', 'IBM'], bgn_prd=datetime.datetime(year=2017, month=1, day=1), end_prd=datetime.datetime.now())
+
+            self.assertTrue(set(df.index.levels[1]) == {'AAPL', 'IBM'})
+            self.assertEqual(min(df.index.levels[0]).year, 2017)
+        finally:
+            con.cursor().execute("DROP TABLE IF EXISTS {0};".format(table_name))
+
+    def test_in_period_provider(self):
+        table_name = 'quandl_sf0'
+        url = 'postgresql://postgres:postgres@localhost:5432/test'
+        con = psycopg2.connect(url)
+        con.autocommit = True
+
+        try:
+            engine = create_engine(url)
+
+            bulkinsert_SF0(url, table_name=table_name)
+
+            now = datetime.datetime.now()
+            bars_in_period = SFInPeriodProvider(conn=engine, bgn_prd=datetime.datetime(year=now.year - 5, month=1, day=1), delta=relativedelta(years=1), overlap=relativedelta(microseconds=-1))
+            for df in bars_in_period:
+                self.assertEqual(len(df.index.levels), 4)
+                self.assertFalse(df.empty)
+        finally:
+            con.cursor().execute("DROP TABLE IF EXISTS {0};".format(table_name))
+
+    def test_data_replay(self):
+        table_name = 'quandl_sf0'
+        url = 'postgresql://postgres:postgres@localhost:5432/test'
+        con = psycopg2.connect(url)
+        con.autocommit = True
+
+        dates = set()
+        try:
+            engine = create_engine(url)
+
+            bulkinsert_SF0(url, table_name=table_name)
+
+            now = datetime.datetime.now()
+            bars_in_period = SFInPeriodProvider(conn=engine, bgn_prd=datetime.datetime(year=now.year - 10, month=1, day=1), delta=relativedelta(years=1), overlap=relativedelta(microseconds=-1))
+
+            dr = DataReplay().add_source(iter(bars_in_period), 'e1', historical_depth=2)
+
+            for i, r in enumerate(dr):
+                for e in r:
+                    d = r[e].iloc[-1].name[0].to_pydatetime()
+
+                if len(dates) > 0:
+                    self.assertGreater(d, max(dates))
+
+                dates.add(d)
+
+                self.assertTrue(isinstance(r, dict))
+                self.assertGreaterEqual(len(r), 1)
+        finally:
+            con.cursor().execute("DROP TABLE IF EXISTS {0};".format(table_name))
 
 
 if __name__ == '__main__':

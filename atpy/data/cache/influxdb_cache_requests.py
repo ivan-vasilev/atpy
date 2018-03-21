@@ -278,9 +278,6 @@ class BarsInPeriodProvider(object):
         self._deltas += 1
 
         if self._deltas < len(self._periods):
-            return self._request(*self._periods[self._deltas])
+            return self.influxdb_cache.request(symbol=self.symbol, bgn_prd=self._periods[self._deltas][0], end_prd=self._periods[self._deltas][1], ascending=self.ascending)
         else:
             raise StopIteration
-
-    def _request(self, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None):
-        return self.influxdb_cache.request(symbol=self.symbol, bgn_prd=bgn_prd, end_prd=end_prd, ascending=self.ascending)

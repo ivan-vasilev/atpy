@@ -1,11 +1,6 @@
 import unittest
 
-from dateutil.relativedelta import relativedelta
-import atpy.data.util as datautil
-
-import atpy.data.iqfeed.util as iqfeedutil
 from atpy.data.iqfeed.iqfeed_history_provider import *
-from atpy.data.iqfeed.iqfeed_level_1_provider import get_fundamentals, get_splits_dividends
 from pyevents.events import AsyncListeners
 
 
@@ -417,7 +412,7 @@ class TestIQFeedHistory(unittest.TestCase):
     def test_continuous_bars(self):
         now = datetime.datetime.now()
 
-        filter_provider = BarsInPeriodProvider(ticker=['AAPL', 'GOOG'], bgn_prd=datetime.date(now.year - 2, 1, 1), delta=relativedelta(days=10), interval_len=3600, ascend=True, interval_type='s')
+        filter_provider = BarsInPeriodProvider(ticker=['AAPL', 'GOOG'], bgn_prd=datetime.datetime(now.year - 2, 1, 1), delta=relativedelta(days=10), interval_len=3600, ascend=True, interval_type='s')
 
         listeners = AsyncListeners()
 
@@ -477,7 +472,7 @@ class TestIQFeedHistory(unittest.TestCase):
             e3.wait()
 
     def test_continuous_ticks(self):
-        filter_provider = TicksInPeriodProvider(ticker=['AAPL', 'GOOG'], bgn_prd=datetime.datetime.now() - datetime.timedelta(days=10), ascend=True, delta=datetime.timedelta(hours=1))
+        filter_provider = TicksInPeriodProvider(ticker=['AAPL', 'GOOG'], bgn_prd=datetime.datetime.now() - datetime.timedelta(days=10), ascend=True, delta=relativedelta(hours=1))
 
         listeners = AsyncListeners()
 
@@ -536,7 +531,7 @@ class TestIQFeedHistory(unittest.TestCase):
         now = datetime.datetime.now()
         filter_provider = BarsInPeriodProvider(
             ticker=['MMM', 'AXP', 'AAPL', 'BA', 'CAT', 'CVX', 'CSCO', 'KO', 'DO', 'XOM', 'GE', 'GS', 'HD', 'IBM', 'INTC', 'JNJ', 'JPM', 'MCD', 'MRK', 'MSFT', 'NKE', 'PFE', 'PG', 'TRV', 'UNH', 'UTX', 'VZ', 'V', 'WMT', 'DIS'],
-            bgn_prd=datetime.datetime.combine(datetime.date(now.year - 1, month=now.month, day=now.day), datetime.datetime.min.time()), delta=datetime.timedelta(days=100), interval_len=300, ascend=True, interval_type='s')
+            bgn_prd=datetime.datetime.combine(datetime.date(now.year - 1, month=now.month, day=now.day), datetime.datetime.min.time()), delta=relativedelta(days=100), interval_len=300, ascend=True, interval_type='s')
 
         with IQFeedHistoryEvents(fire_batches=True, fire_ticks=False, minibatch=128, num_connections=10, filter_provider=filter_provider, run_async=False) as listener:
             e1 = threading.Event()

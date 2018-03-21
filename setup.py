@@ -79,6 +79,7 @@ setup(
         'pyevents_util': ['pyevents_util'],
         'influxdb': ['influxdb'],
         'TA-Lib': ['TA-Lib'],
+        'quandl': ['quandl'],
     },
 
     dependency_links=[

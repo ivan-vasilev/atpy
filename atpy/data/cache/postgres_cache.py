@@ -48,15 +48,6 @@ create_bars = \
 
 bars_indices = \
     """
-    -- Index: {0}_symbol_ind
-
-    -- DROP INDEX public.{0}_symbol_ind;
-
-    CREATE INDEX {0}_symbol_ind
-        ON public.{0} USING btree
-        (symbol COLLATE pg_catalog."default")
-        TABLESPACE pg_default;
-
     -- Index: {0}_timestamp_ind
 
     -- DROP INDEX public.{0}_timestamp_ind;
@@ -64,6 +55,20 @@ bars_indices = \
     CREATE INDEX {0}_timestamp_ind
         ON public.{0} USING btree
         ("timestamp")
+        TABLESPACE pg_default;
+
+    ALTER TABLE public.{0}
+            CLUSTER ON {0}_timestamp_ind;
+
+    CLUSTER {0};
+
+    -- Index: {0}_symbol_ind
+
+    -- DROP INDEX public.{0}_symbol_ind;
+
+    CREATE INDEX {0}_symbol_ind
+        ON public.{0} USING btree
+        (symbol COLLATE pg_catalog."default")
         TABLESPACE pg_default;
 
     -- Index: interval_ind
@@ -360,9 +365,6 @@ class BarsInPeriodProvider(object):
         self._deltas += 1
 
         if self._deltas < len(self._periods):
-            return self._request(*self._periods[self._deltas])
+            return request_bars(conn=self.conn, bars_table=self.bars_table, symbol=self.symbol, interval_len=self.interval_len, interval_type=self.interval_type, bgn_prd=self._periods[self._deltas][0], end_prd=self._periods[self._deltas][1], ascending=self.ascending)
         else:
             raise StopIteration
-
-    def _request(self, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None):
-        return request_bars(conn=self.conn, bars_table=self.bars_table, symbol=self.symbol, interval_len=self.interval_len, interval_type=self.interval_type, bgn_prd=bgn_prd, end_prd=end_prd, ascending=self.ascending)
