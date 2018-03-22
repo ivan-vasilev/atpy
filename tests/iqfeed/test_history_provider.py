@@ -15,22 +15,8 @@ class TestIQFeedHistory(unittest.TestCase):
 
         listeners = AsyncListeners()
 
-        with IQFeedHistoryEvents(listeners=listeners, minibatch=4, fire_batches=True, fire_ticks=True, filter_provider=filter_provider) as listener, listener.minibatch_provider() as provider:
-            listener.start()
-
+        with IQFeedHistoryEvents(listeners=listeners, fire_batches=True, filter_provider=filter_provider, num_connections=2) as listener, listener.batch_provider() as provider:
             e1 = threading.Event()
-
-            def process_tick(event):
-                if event['type'] == 'level_1_tick':
-                    try:
-                        data = event['data']
-                        self.assertEqual(len(list(data.keys())), 14)
-                    finally:
-                        e1.set()
-
-            listeners += process_tick
-
-            e2 = threading.Event()
 
             def process_batch_listener_column(event):
                 if event['type'] == 'level_1_tick_batch':
@@ -38,33 +24,21 @@ class TestIQFeedHistory(unittest.TestCase):
                         batch = event['data']
                         self.assertEqual(batch.shape, (20, 14))
                     finally:
-                        e2.set()
+                        e1.set()
 
             listeners += process_batch_listener_column
 
-            e3 = threading.Event()
+            listener.start()
 
-            def process_minibatch_listener_column(event):
-                if event['type'] == 'level_1_tick_mb':
-                    try:
-                        batch = event['data']
-                        self.assertEqual(batch.shape, (4, 14))
-                    finally:
-                        e3.set()
-
-            listeners += process_minibatch_listener_column
+            e1.wait()
 
             for i, d in enumerate(provider):
-                self.assertEqual(d.shape, (4, 14))
+                self.assertEqual(d.shape, (20, 14))
 
                 self.assertNotEqual(d['tick_id'].iloc[0], d['tick_id'].iloc[1])
 
                 if i == 1:
                     break
-
-            e1.wait()
-            e2.wait()
-            e3.wait()
 
     def test_multiple_ticks(self):
         filter_provider = DefaultFilterProvider()
@@ -72,23 +46,8 @@ class TestIQFeedHistory(unittest.TestCase):
 
         listeners = AsyncListeners()
 
-        with IQFeedHistoryEvents(listeners=listeners, minibatch=4, fire_batches=True, fire_ticks=True, filter_provider=filter_provider) as listener, listener.minibatch_provider() as provider:
-            listener.start()
-
+        with IQFeedHistoryEvents(listeners=listeners, fire_batches=True, filter_provider=filter_provider, num_connections=2) as listener, listener.batch_provider() as provider:
             e1 = threading.Event()
-
-            def process_tick(event):
-                if event['type'] == 'level_1_tick':
-                    try:
-                        data = event['data']
-                        self.assertEqual(data.size, 14)
-                        self.assertTrue(data['symbol'] in ["IBM", "AAPL"])
-                    finally:
-                        e1.set()
-
-            listeners += process_tick
-
-            e2 = threading.Event()
 
             def process_batch_listener_column(event):
                 if event['type'] == 'level_1_tick_batch':
@@ -96,31 +55,19 @@ class TestIQFeedHistory(unittest.TestCase):
                         batch = event['data']
                         self.assertEqual(batch.shape[1], 14)
                     finally:
-                        e2.set()
+                        e1.set()
 
             listeners += process_batch_listener_column
 
-            e3 = threading.Event()
+            listener.start()
 
-            def process_minibatch_listener_column(event):
-                if event['type'] == 'level_1_tick_mb':
-                    try:
-                        batch = event['data']
-                        self.assertEqual(batch.shape, (4, 14))
-                    finally:
-                        e3.set()
-
-            listeners += process_minibatch_listener_column
+            e1.wait()
 
             for i, d in enumerate(provider):
-                self.assertEqual(d.shape, (4, 14))
+                self.assertEqual(d.shape[1], 14)
 
                 if i == 1:
                     break
-
-            e1.wait()
-            e2.wait()
-            e3.wait()
 
     def test_bar(self):
         filter_provider = DefaultFilterProvider()
@@ -128,48 +75,27 @@ class TestIQFeedHistory(unittest.TestCase):
 
         listeners = AsyncListeners()
 
-        with IQFeedHistoryEvents(listeners=listeners, minibatch=4, fire_batches=True, fire_ticks=True, filter_provider=filter_provider) as listener, listener.minibatch_provider() as provider:
-            listener.start()
-
+        with IQFeedHistoryEvents(listeners=listeners, fire_batches=True, filter_provider=filter_provider, num_connections=2) as listener, listener.batch_provider() as provider:
             e1 = threading.Event()
-
-            def process_bar(event):
-                if event['type'] == 'bar':
-                    data = event['data']
-                    self.assertEqual(len(list(data.keys())), 9)
-                    e1.set()
-
-            listeners += process_bar
-
-            e2 = threading.Event()
 
             def process_batch_listener_column(event):
                 if event['type'] == 'bar_batch':
                     batch = event['data']
                     self.assertEqual(batch.shape, (20, 9))
-                    e2.set()
+                    e1.set()
 
             listeners += process_batch_listener_column
 
-            e3 = threading.Event()
+            listener.start()
 
-            def process_minibatch_listener_column(event):
-                if event['type'] == 'bar_mb':
-                    batch = event['data']
-                    self.assertEqual(batch.shape, (4, 9))
-                    e3.set()
-
-            listeners += process_minibatch_listener_column
+            e1.wait()
 
             for i, d in enumerate(provider):
-                self.assertEqual(d.shape, (4, 9))
+                self.assertEqual(d.shape, (20, 9))
                 self.assertNotEqual(d['timestamp'].iloc[0], d['timestamp'].iloc[1])
 
                 if i == 1:
                     break
-
-            e2.wait()
-            e3.wait()
 
     def test_bars(self):
         batch_len = 20
@@ -178,22 +104,8 @@ class TestIQFeedHistory(unittest.TestCase):
 
         listeners = AsyncListeners()
 
-        with IQFeedHistoryEvents(listeners=listeners, minibatch=4, fire_batches=True, fire_ticks=True, filter_provider=filter_provider) as listener, listener.minibatch_provider() as provider:
-            listener.start()
-
+        with IQFeedHistoryEvents(listeners=listeners, fire_batches=True, filter_provider=filter_provider, num_connections=2) as listener, listener.batch_provider() as provider:
             e1 = threading.Event()
-
-            def process_bar(event):
-                if event['type'] == 'bar':
-                    data = event['data']
-                    self.assertEqual(data.shape, (3, 9))
-                    self.assertEqual(len(list(data.loc['IBM'].keys())), 9)
-                    self.assertEqual(len(list(data.loc['AAPL'].keys())), 9)
-                    e1.set()
-
-            listeners += process_bar
-
-            e2 = threading.Event()
 
             def process_batch_listener_column(event):
                 if event['type'] == 'bar_batch':
@@ -210,40 +122,29 @@ class TestIQFeedHistory(unittest.TestCase):
 
                     self.assertFalse(batch.isnull().values.any())
 
-                    e2.set()
+                    e1.set()
 
             listeners += process_batch_listener_column
 
-            e3 = threading.Event()
+            listener.start()
 
-            def process_minibatch_listener_column(event):
-                if event['type'] == 'bar_mb':
-                    batch = event['data']
-                    self.assertEqual(len(batch.index.levels), 2)
-                    self.assertEqual(batch.loc['AAPL'].shape, (4, 9))
-                    self.assertEqual(batch.loc['IBM'].shape, (4, 9))
-                    self.assertEqual(len(batch.loc['AAPL'][batch.loc['IBM'].columns[0]]), 4)
-                    self.assertFalse(batch.isnull().values.any())
-                    e3.set()
-
-            listeners += process_minibatch_listener_column
+            e1.wait()
 
             for i, d in enumerate(provider):
                 self.assertEqual(len(d.index.levels), 2)
-                self.assertEqual(d.loc['AAPL'].shape, (4, 9))
-                self.assertEqual(d.loc['IBM'].shape, (4, 9))
-                self.assertEqual(len(d.loc['AAPL'][d.loc['IBM'].columns[0]]), 4)
+                self.assertEqual(len(d.index.levels[0]), 3)
 
-                self.assertEqual(d.loc['IBM'].index[0], d.loc['AAPL'].index[0])
-                self.assertNotEqual(d.loc['IBM'].index[0], d.loc['AAPL'].index[1])
+                self.assertGreaterEqual(len(d.index.levels[1]), batch_len)
+
+                self.assertEqual(d.loc['AAPL'].shape[1], 9)
+                self.assertEqual(d.loc['IBM'].shape[1], 9)
+
+                self.assertGreaterEqual(len(d.loc['AAPL'][d.loc['IBM'].columns[0]]), batch_len)
 
                 self.assertFalse(d.isnull().values.any())
 
                 if i == 1:
                     break
-
-            e2.wait()
-            e3.wait()
 
     def test_bars_2(self):
         filter_provider = DefaultFilterProvider()
@@ -251,23 +152,8 @@ class TestIQFeedHistory(unittest.TestCase):
 
         listeners = AsyncListeners()
 
-        with IQFeedHistoryEvents(listeners=listeners, minibatch=4, fire_batches=True, fire_ticks=True, num_connections=2, filter_provider=filter_provider) as listener, listener.minibatch_provider() as provider:
-            listener.start()
-
+        with IQFeedHistoryEvents(listeners=listeners, fire_batches=True, num_connections=2, filter_provider=filter_provider) as listener, listener.batch_provider() as provider:
             e1 = threading.Event()
-
-            def process_bar(event):
-                if event['type'] == 'bar':
-                    data = event['data']
-                    self.assertEqual(data.shape, (2, 9))
-                    self.assertEqual(len(list(data.loc['IBM'].keys())), 9)
-                    self.assertEqual(len(list(data.loc['AAPL'].keys())), 9)
-                    self.assertFalse(data.isnull().values.any())
-                    e1.set()
-
-            listeners += process_bar
-
-            e2 = threading.Event()
 
             def process_batch_listener_column(event):
                 if event['type'] == 'bar_batch':
@@ -276,40 +162,22 @@ class TestIQFeedHistory(unittest.TestCase):
                     self.assertEqual(batch.loc['AAPL'].shape[1], 9)
                     self.assertEqual(batch.loc['IBM'].shape[1], 9)
                     self.assertFalse(batch.isnull().values.any())
-                    e2.set()
+                    e1.set()
 
             listeners += process_batch_listener_column
 
-            e3 = threading.Event()
+            listener.start()
 
-            def process_minibatch_listener_column(event):
-                if event['type'] == 'bar_mb':
-                    batch = event['data']
-                    self.assertEqual(len(batch.index.levels), 2)
-                    self.assertEqual(batch.loc['AAPL'].shape, (4, 9))
-                    self.assertEqual(batch.loc['IBM'].shape, (4, 9))
-                    self.assertEqual(len(list(batch.loc['AAPL'][batch.loc['IBM'].columns[0]])), 4)
-                    self.assertFalse(batch.isnull().values.any())
-                    e3.set()
-
-            listeners += process_minibatch_listener_column
+            e1.wait()
 
             for i, d in enumerate(provider):
                 self.assertEqual(len(d.index.levels), 2)
-                self.assertEqual(d.loc['AAPL'].shape, (4, 9))
-                self.assertEqual(d.loc['IBM'].shape, (4, 9))
-                self.assertEqual(len(list(d.loc['AAPL'][d.loc['IBM'].columns[0]])), 4)
-
-                self.assertEqual(d.loc['IBM'].index[0], d.loc['AAPL'].index[0])
-                self.assertNotEqual(d.loc['IBM'].index[0], d.loc['AAPL'].index[1])
-
+                self.assertEqual(d.loc['AAPL'].shape[1], 9)
+                self.assertEqual(d.loc['IBM'].shape[1], 9)
                 self.assertFalse(d.isnull().values.any())
 
                 if i == 1:
                     break
-
-        e2.wait()
-        e3.wait()
 
     def test_bar_adjust_1(self):
         filter_provider = DefaultFilterProvider()
@@ -317,20 +185,21 @@ class TestIQFeedHistory(unittest.TestCase):
 
         listeners = AsyncListeners()
 
-        with IQFeedHistoryEvents(listeners=listeners, fire_batches=True, fire_ticks=True, filter_provider=filter_provider, timestamp_first=True) as listener, listener.batch_provider() as provider:
-            listener.start()
-
+        with IQFeedHistoryEvents(listeners=listeners, fire_batches=True, filter_provider=filter_provider, timestamp_first=True, num_connections=2) as listener, listener.batch_provider() as provider:
             e1 = threading.Event()
 
             def process_bar(event):
-                if event['type'] == 'bar':
+                if event['type'] == 'bar_batch':
+                    d = event['data']
                     try:
-                        self.assertLess(event['data']['open'], 68)
-                        self.assertGreater(event['data']['open'], 65)
+                        self.assertLess(d['open'].max(), 68)
+                        self.assertGreater(d['open'].min(), 65)
                     finally:
                         e1.set()
 
             listeners += process_bar
+
+            listener.start()
 
             e1.wait()
 
@@ -347,7 +216,7 @@ class TestIQFeedHistory(unittest.TestCase):
 
         listeners = AsyncListeners()
 
-        with IQFeedHistoryEvents(listeners=listeners, fire_batches=True, filter_provider=filter_provider, sync_timestamps=False, timestamp_first=True) as listener, listener.batch_provider() as provider:
+        with IQFeedHistoryEvents(listeners=listeners, fire_batches=True, filter_provider=filter_provider, sync_timestamps=False, timestamp_first=True, num_connections=2) as listener, listener.batch_provider() as provider:
             listener.start()
 
             for i, d in enumerate(provider):
@@ -366,48 +235,51 @@ class TestIQFeedHistory(unittest.TestCase):
 
         listeners = AsyncListeners()
 
-        with IQFeedHistoryEvents(listeners=listeners, minibatch=4, fire_batches=True, fire_ticks=True, filter_provider=filter_provider) as listener, listener.minibatch_provider() as provider:
-            listener.start()
-
+        with IQFeedHistoryEvents(listeners=listeners, fire_batches=True, filter_provider=filter_provider, num_connections=2) as listener, listener.batch_provider() as provider:
             e1 = threading.Event()
-
-            def process_tick(event):
-                if event['type'] == 'daily':
-                    data = event['data']
-                    self.assertEqual(len(list(data.keys())), 8)
-                    e1.set()
-
-            listeners += process_tick
-
-            e2 = threading.Event()
 
             def process_batch_listener_column(event):
                 if event['type'] == 'daily_batch':
                     batch = event['data']
                     self.assertEqual(batch.shape, (20, 8))
-                    e2.set()
+                    e1.set()
 
             listeners += process_batch_listener_column
-
-            e3 = threading.Event()
-
-            def process_minibatch_listener_column(event):
-                if event['type'] == 'daily_mb':
-                    batch = event['data']
-                    self.assertEqual(batch.shape, (4, 8))
-                    e3.set()
-
-            listeners += process_minibatch_listener_column
+            listener.start()
+            e1.wait()
 
             for i, d in enumerate(provider):
-                self.assertEqual(d.shape, (4, 8))
-                self.assertNotEqual(d['date'].iloc[0], d['date'].iloc[1])
+                self.assertEqual(d.shape, (20, 8))
 
                 if i == 1:
                     break
 
-            e2.wait()
-            e3.wait()
+    def test_daily_2(self):
+        filter_provider = DefaultFilterProvider()
+        filter_provider += BarsDailyFilter(ticker=["IBM", "AAPL"], num_days=20)
+
+        listeners = AsyncListeners()
+
+        with IQFeedHistoryEvents(listeners=listeners, fire_batches=True, filter_provider=filter_provider, num_connections=2) as listener, listener.batch_provider() as provider:
+            e1 = threading.Event()
+
+            def process_batch_listener_column(event):
+                if event['type'] == 'daily_batch':
+                    batch = event['data']
+                    self.assertEqual(batch.shape, (40, 8))
+                    e1.set()
+
+            listeners += process_batch_listener_column
+
+            listener.start()
+
+            e1.wait()
+
+            for i, d in enumerate(provider):
+                self.assertEqual(d.shape, (40, 8))
+
+                if i == 1:
+                    break
 
     def test_continuous_bars(self):
         now = datetime.datetime.now()
@@ -416,25 +288,10 @@ class TestIQFeedHistory(unittest.TestCase):
 
         listeners = AsyncListeners()
 
-        with IQFeedHistoryEvents(listeners=listeners, fire_batches=True, fire_ticks=True, minibatch=10, filter_provider=filter_provider) as listener:
-            listener.start()
-
+        with IQFeedHistoryEvents(listeners=listeners, fire_batches=True, filter_provider=filter_provider, num_connections=2) as listener:
             events_count = {'bars': 0, 'batches': 0, 'minibatches': 0}
 
             e1 = threading.Event()
-
-            def process_bar(event):
-                if event['type'] == 'bar':
-                    try:
-                        self.assertTrue(len(event['data']) > 0)
-                    finally:
-                        events_count['bars'] += 1
-                        if events_count['bars'] >= 2:
-                            e1.set()
-
-            listeners += process_bar
-
-            e2 = threading.Event()
 
             def process_batch_listener(event):
                 if event['type'] == 'bar_batch':
@@ -444,57 +301,21 @@ class TestIQFeedHistory(unittest.TestCase):
                     finally:
                         events_count['batches'] += 1
                         if events_count['batches'] >= 2:
-                            e2.set()
+                            e1.set()
 
             listeners += process_batch_listener
-
-            e3 = threading.Event()
-
-            def process_minibatch_listener(event):
-                if event['type'] == 'bar_mb':
-                    try:
-                        self.assertTrue(len(event['data'].index.levels[0]) > 0)
-                        self.assertEqual(event['data'].loc['AAPL'].shape[1], 9)
-                        self.assertEqual(event['data'].loc['GOOG'].shape[1], 9)
-                        self.assertLessEqual(event['data'].loc['AAPL'].shape[0], 10)
-                        self.assertLessEqual(event['data'].loc['GOOG'].shape[0], 10)
-                        self.assertFalse(event['data'].isnull().values.any())
-
-                    finally:
-                        events_count['minibatches'] += 1
-                        if events_count['minibatches'] >= 2:
-                            e3.set()
-
-            listeners += process_minibatch_listener
-
+            listener.start()
             e1.wait()
-            e2.wait()
-            e3.wait()
 
     def test_continuous_ticks(self):
         filter_provider = TicksInPeriodProvider(ticker=['AAPL', 'GOOG'], bgn_prd=datetime.datetime.now() - datetime.timedelta(days=10), ascend=True, delta=relativedelta(hours=1))
 
         listeners = AsyncListeners()
 
-        with IQFeedHistoryEvents(listeners=listeners, fire_batches=True, fire_ticks=True, minibatch=10, filter_provider=filter_provider) as listener:
-            listener.start()
-
+        with IQFeedHistoryEvents(listeners=listeners, fire_batches=True, filter_provider=filter_provider, num_connections=2) as listener:
             events_count = {'ticks': 0, 'batches': 0, 'minibatches': 0}
 
             e1 = threading.Event()
-
-            def process_tick(event):
-                if event['type'] == 'level_1_tick':
-                    try:
-                        self.assertTrue(len(event['data']) > 0)
-                    finally:
-                        events_count['ticks'] += 1
-                        if events_count['ticks'] >= 2:
-                            e1.set()
-
-            listeners += process_tick
-
-            e2 = threading.Event()
 
             def process_batch_listener(event):
                 if event['type'] == 'level_1_tick_batch':
@@ -505,27 +326,11 @@ class TestIQFeedHistory(unittest.TestCase):
                     finally:
                         events_count['batches'] += 1
                         if events_count['batches'] >= 2:
-                            e2.set()
+                            e1.set()
 
             listeners += process_batch_listener
-
-            e3 = threading.Event()
-
-            def process_minibatch_listener(event):
-                if event['type'] == 'level_1_tick_mb':
-                    try:
-                        self.assertTrue(len(event['data']) > 0)
-                        self.assertEqual(event['data'].shape, (10, 14))
-                    finally:
-                        events_count['minibatches'] += 1
-                        if events_count['minibatches'] >= 2:
-                            e3.set()
-
-            listeners += process_minibatch_listener
-
+            listener.start()
             e1.wait()
-            e2.wait()
-            e3.wait()
 
     def test_bars_performance(self):
         now = datetime.datetime.now()
@@ -533,7 +338,7 @@ class TestIQFeedHistory(unittest.TestCase):
             ticker=['MMM', 'AXP', 'AAPL', 'BA', 'CAT', 'CVX', 'CSCO', 'KO', 'DO', 'XOM', 'GE', 'GS', 'HD', 'IBM', 'INTC', 'JNJ', 'JPM', 'MCD', 'MRK', 'MSFT', 'NKE', 'PFE', 'PG', 'TRV', 'UNH', 'UTX', 'VZ', 'V', 'WMT', 'DIS'],
             bgn_prd=datetime.datetime.combine(datetime.date(now.year - 1, month=now.month, day=now.day), datetime.datetime.min.time()), delta=relativedelta(days=100), interval_len=300, ascend=True, interval_type='s')
 
-        with IQFeedHistoryEvents(fire_batches=True, fire_ticks=False, minibatch=128, num_connections=10, filter_provider=filter_provider, run_async=False) as listener:
+        with IQFeedHistoryEvents(fire_batches=True, num_connections=10, filter_provider=filter_provider, run_async=False) as listener:
             e1 = threading.Event()
 
             def process_batch_listener(event):
@@ -542,20 +347,11 @@ class TestIQFeedHistory(unittest.TestCase):
 
             listener.process_batch += process_batch_listener
 
-            e2 = threading.Event()
-
-            def process_minibatch_listener(event):
-                self.assertFalse(event['data'].isnull().values.any())
-                e2.set()
-
-            listener.process_minibatch += process_minibatch_listener
-
             now = datetime.datetime.now()
 
             listener.start()
 
             e1.wait()
-            e2.wait()
 
             self.assertLess(datetime.datetime.now() - now, datetime.timedelta(seconds=40))
 

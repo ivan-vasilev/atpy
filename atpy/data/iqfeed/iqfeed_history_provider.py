@@ -311,7 +311,7 @@ class IQFeedHistoryProvider(object):
         elif 'tick_id' + self.key_suffix in iter(signals.values()).__next__():
             signals = pd.concat(signals)
             signals.index.set_names('symbol', level=0, inplace=True)
-            signals.sort_index(level=['symbol', 'tick_id'], inplace=True, ascending=f.ascend)
+            signals.sort_index(level=['symbol', 'timestamp'], inplace=True, ascending=f.ascend)
 
             result = signals
         else:
@@ -429,8 +429,6 @@ class IQFeedHistoryProvider(object):
             axis="columns", copy=False, inplace=True)
         result['symbol'] = data_filter.ticker
 
-        result.set_index("tick_id" + sf, inplace=True, drop=False)
-
         return result
 
     def _process_bars(self, data, data_filter):
@@ -450,11 +448,14 @@ class IQFeedHistoryProvider(object):
     def _process_daily(self, data, data_filter):
         result = pd.DataFrame(data)
         sf = self.key_suffix
-        result.rename({"date": "date" + sf, "high_p": "high" + sf, "low_p": "low" + sf, "open_p": "open" + sf, "close_p": "close" + sf, "prd_vlm": "period_volume" + sf, "open_int": "open_interest" + sf}, axis="columns", copy=False,
+        result.rename({"date": "timestamp" + sf, "high_p": "high" + sf, "low_p": "low" + sf, "open_p": "open" + sf, "close_p": "close" + sf, "prd_vlm": "period_volume" + sf, "open_int": "open_interest" + sf}, axis="columns", copy=False,
                       inplace=True)
+
+        result['timestamp' + sf] = pd.Index(result['timestamp' + sf]).tz_localize('US/Eastern').tz_convert('UTC')
+
         result['symbol'] = data_filter.ticker
 
-        result.set_index('date' + sf, inplace=True, drop=False)
+        result.set_index('timestamp' + sf, inplace=True, drop=False)
 
         return result
 
@@ -473,12 +474,10 @@ class IQFeedHistoryEvents(IQFeedHistoryProvider):
     IQFeed historical data events. See the unit test on how to use
     """
 
-    def __init__(self, listeners, minibatch=None, fire_batches=False, fire_ticks=False, run_async=True, num_connections=10, key_suffix='', filter_provider=None, sync_timestamps=True, adjust_data=True, timestamp_first=False):
+    def __init__(self, listeners, fire_batches=False, run_async=True, num_connections=10, key_suffix='', filter_provider=None, sync_timestamps=True, adjust_data=True, timestamp_first=False):
         """
         :param listeners: event listeners
-        :param minibatch: size of the minibatch
         :param fire_batches: raise event for each batch
-        :param fire_ticks: raise event for each tick
         :param run_async: run asynchronous
         :param num_connections: number of connections to use when requesting data
         :param key_suffix: suffix for field names
@@ -490,11 +489,8 @@ class IQFeedHistoryEvents(IQFeedHistoryProvider):
         super().__init__(num_connections=num_connections, key_suffix=key_suffix)
 
         self.listeners = listeners
-        self.minibatch = minibatch
         self.fire_batches = fire_batches
-        self.fire_ticks = fire_ticks
         self.run_async = run_async
-        self.current_minibatch = None
         self.filter_provider = filter_provider
         self._is_running = False
         self._background_thread = None
@@ -578,75 +574,16 @@ class IQFeedHistoryEvents(IQFeedHistoryProvider):
         self._is_running = False
 
     def fire_events(self, data, f):
-        event_type = self._event_type(f)
-        if data is None:
-            return
+        if self.fire_batches:
+            event_type = self._event_type(f)
+            if data is None:
+                return
 
-        if isinstance(data.index, pd.DatetimeIndex):
-            if self.fire_ticks:
-                for i in range(data.shape[0]):
-                    self.listeners({'type': event_type, 'data': data.iloc[i]})
-
-            if self.minibatch is not None:
-                if self.current_minibatch is None or (self.current_filter is not None and type(self.current_filter) != type(f)):
-                    self.current_minibatch = data.copy(deep=True)
-                else:
-                    self.current_minibatch = pd.concat([self.current_minibatch, data], axis=0)
-                    self.current_minibatch.sort_index(inplace=True, ascending=f.ascend)
-
-                for i in range(self.minibatch, self.current_minibatch.shape[0] - self.current_minibatch.shape[0] % self.minibatch + 1, self.minibatch):
-                    mb = self.current_minibatch.iloc[i - self.minibatch: i]
-                    mb.set_index(keys='tick_id' if 'tick_id' in mb.columns else 'timestamp' if 'timestamp' in mb.columns else 'date', drop=False, inplace=True)
-                    self.listeners({'type': event_type + '_mb', 'data': mb})
-
-                self.current_minibatch = None if self.current_minibatch.shape[0] - i == 0 else self.current_minibatch.iloc[i:]
-                if self.current_minibatch is not None:
-                    self.current_minibatch.set_index(keys='tick_id' if 'tick_id' in self.current_minibatch.columns else 'timestamp' if 'timestamp' in self.current_minibatch.columns else 'date', drop=False, inplace=True)
-
-            if self.fire_batches:
+            if isinstance(data.index, pd.DatetimeIndex):
                 self.listeners({'type': event_type + '_batch', 'data': data})
-
-        elif 'timestamp' in data.index.names:
-            if self.fire_ticks:
-                for i in range(data.index.levels[1].shape[0]):
-                    self.listeners({'type': event_type, 'data': data.groupby(level=0).nth(i)})
-
-            if self.minibatch is not None:
-                if self.current_minibatch is None or (self.current_filter is not None and type(self.current_filter) != type(f)):
-                    self.current_minibatch = data.copy(deep=True)
-                else:
-                    self.current_minibatch = pd.concat([self.current_minibatch, data], axis=0)
-                    self.current_minibatch.sort_index(inplace=True, ascending=f.ascend)
-
-                for i in range(self.minibatch, self.current_minibatch.index.levels[1].shape[0] - self.current_minibatch.index.levels[1].shape[0] % self.minibatch + 1, self.minibatch):
-                    self.listeners({'type': event_type + '_mb', 'data': self.current_minibatch.loc[pd.IndexSlice[:, data.index.levels[1][i - self.minibatch: i]], :]})
-
-                self.current_minibatch = None if self.current_minibatch.index.levels[1].shape[0] - i == 0 else self.current_minibatch.groupby(level=0).tail(self.current_minibatch.index.levels[1].shape[0] - i)
-
-            if self.fire_batches:
+            elif 'timestamp' in data.index.names:
                 self.listeners({'type': event_type + '_batch', 'data': data})
-        elif 'tick_id' in data.index.names:
-            if self.fire_ticks:
-                for i in range(data.shape[0]):
-                    self.listeners({'type': event_type, 'data': data.iloc[i]})
-
-            if self.minibatch is not None:
-                if self.current_minibatch is None or (self.current_filter is not None and type(self.current_filter) != type(f)):
-                    self.current_minibatch = data.copy(deep=True)
-                else:
-                    self.current_minibatch = pd.concat([self.current_minibatch, data], axis=0)
-                    self.current_minibatch.sort_index(inplace=True, ascending=f.ascend)
-
-                for i in range(self.minibatch, self.current_minibatch.shape[0] - self.current_minibatch.shape[0] % self.minibatch + 1, self.minibatch):
-                    mb = self.current_minibatch.iloc[i - self.minibatch: i]
-                    mb.set_index(keys=['symbol', 'tick_id'], drop=False, inplace=True)
-                    self.listeners({'type': event_type + '_mb', 'data': mb})
-
-                self.current_minibatch = None if self.current_minibatch.shape[0] - i == 0 else self.current_minibatch.iloc[i:]
-                if self.current_minibatch is not None:
-                    self.current_minibatch.set_index(keys=['symbol', 'tick_id'], drop=False, inplace=True)
-
-            if self.fire_batches:
+            elif 'tick_id' in data.index.names:
                 self.listeners({'type': event_type + '_batch', 'data': data})
 
     @staticmethod
@@ -660,9 +597,6 @@ class IQFeedHistoryEvents(IQFeedHistoryProvider):
 
     def batch_provider(self):
         return IQFeedDataProvider(self.listeners, accept_event=lambda e: True if e['type'].endswith('_batch') else False)
-
-    def minibatch_provider(self):
-        return IQFeedDataProvider(self.listeners, accept_event=lambda e: True if e['type'].endswith('_mb') else False)
 
 
 class TicksInPeriodProvider(object):
