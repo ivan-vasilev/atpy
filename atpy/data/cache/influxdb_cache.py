@@ -45,7 +45,7 @@ def update_to_latest(client: DataFrameClient, noncache_provider: typing.Callable
     :param skip_if_older_than: skip symbol update if the symbol is older than...
     :return:
     """
-    filters = list()
+    filters = dict()
 
     new_symbols = set() if new_symbols is None else new_symbols
 
@@ -58,11 +58,11 @@ def update_to_latest(client: DataFrameClient, noncache_provider: typing.Callable
 
         if skip_if_older_than is None or time > skip_if_older_than:
             bgn_prd = datetime.datetime.combine(time.date(), datetime.datetime.min.time()).replace(tzinfo=tz.gettz('US/Eastern'))
-            filters.append(BarsFilter(ticker=key[0], bgn_prd=bgn_prd, interval_len=key[1], interval_type=key[2]))
+            filters[BarsFilter(ticker=key[0], bgn_prd=bgn_prd, interval_len=key[1], interval_type=key[2])] = None
 
     bgn_prd = datetime.datetime.combine(datetime.datetime.utcnow().date() - time_delta_back, datetime.datetime.min.time()).replace(tzinfo=tz.gettz('US/Eastern'))
     for (symbol, interval_len, interval_type) in new_symbols:
-        filters.append(BarsFilter(ticker=symbol, bgn_prd=bgn_prd, interval_len=interval_len, interval_type=interval_type))
+        filters[BarsFilter(ticker=symbol, bgn_prd=bgn_prd, interval_len=interval_len, interval_type=interval_type)] = None
 
     logging.getLogger(__name__).info("Updating " + str(len(filters)) + " total symbols and intervals; New symbols and intervals: " + str(len(new_symbols)))
 
@@ -72,19 +72,22 @@ def update_to_latest(client: DataFrameClient, noncache_provider: typing.Callable
 
     try:
         for i, tupl in enumerate(iter(q.get, None)):
-            ft, to_cache = tupl
+            ft, to_cache = filters[tupl[0]], tupl[1]
 
             if to_cache is not None and not to_cache.empty:
-                to_cache.drop('timestamp', axis=1, inplace=True)
+                # Prepare data
+                for c in [c for c in to_cache.columns if c not in ['symbol', 'open', 'high', 'low', 'close', 'period_volume']]:
+                    to_cache.drop(c, axis=1, inplace=True)
+
                 to_cache['interval'] = str(ft.interval_len) + '_' + ft.interval_type
 
-            if to_cache.iloc[0].name == ft.bgn_prd:
-                to_cache = to_cache.iloc[1:]
+                if to_cache.iloc[0].name == ft.bgn_prd:
+                    to_cache = to_cache.iloc[1:]
 
-            try:
-                client.write_points(to_cache, 'bars', protocol='line', tag_columns=['symbol', 'interval'], time_precision='s')
-            except Exception as err:
-                logging.getLogger(__name__).exception(err)
+                try:
+                    client.write_points(to_cache, 'bars', protocol='line', tag_columns=['symbol', 'interval'], time_precision='s')
+                except Exception as err:
+                    logging.getLogger(__name__).exception(err)
 
             if i > 0 and (i % 20 == 0 or i == len(filters)):
                 logging.getLogger(__name__).info("Cached " + str(i) + " queries")

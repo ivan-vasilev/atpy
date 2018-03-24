@@ -28,7 +28,7 @@ class TestInfluxDBCache(unittest.TestCase):
         self._client.drop_database('test_cache')
         self._client.close()
 
-    def test_update_to_latest(self):
+    def test_update_to_latest_intraday(self):
         with IQFeedHistoryProvider(num_connections=2) as history:
             cache_requests = inf_cache.InfluxDBOHLCRequest(client=self._client, interval_len=3600, interval_type='s')
 
@@ -59,10 +59,45 @@ class TestInfluxDBCache(unittest.TestCase):
             data_no_limit = [history.request_data(f, sync_timestamps=False) for f in filters_no_limit]
             cache_data_no_limit = [cache_requests.request(symbol=f.ticker, bgn_prd=f.bgn_prd)[0] for f in filters_no_limit]
             for df1, df2 in zip(data_no_limit, cache_data_no_limit):
-                del df1['period_volume']
                 del df1['total_volume']
+                del df1['number_of_trades']
+
+                assert_frame_equal(df1, df2)
+
+    def test_update_to_latest_daily(self):
+        with IQFeedHistoryProvider(num_connections=2) as history:
+            cache_requests = inf_cache.InfluxDBOHLCRequest(client=self._client, interval_len=3600, interval_type='s')
+
+            bgn_prd = datetime.datetime(2017, 3, 1).date()
+            end_prd = datetime.datetime(2017, 3, 2).date()
+            filters = (BarsDailyForDatesFilter(ticker="IBM", bgn_dt=bgn_prd, end_dt=end_prd, ascend=True),
+                       BarsDailyForDatesFilter(ticker="AAPL", bgn_dt=bgn_prd, end_dt=end_prd, ascend=True))
+
+            filters_no_limit = (BarsDailyForDatesFilter(ticker="IBM", bgn_dt=bgn_prd, end_dt=None, ascend=True),
+                                BarsDailyForDatesFilter(ticker="AAPL", bgn_dt=bgn_prd, end_dt=None, ascend=True),
+                                BarsDailyForDatesFilter(ticker="AMZN", bgn_dt=bgn_prd, end_dt=None, ascend=True))
+
+            data = [history.request_data(f, sync_timestamps=False) for f in filters]
+
+            for datum, f in zip(data, filters):
+                datum.drop('timestamp', axis=1, inplace=True)
+                datum['interval'] = '1_d'
+                self._client.write_points(datum, 'bars', protocol='line', tag_columns=['symbol', 'interval'], time_precision='s')
+
+            latest_old = ranges(self._client)
+            update_to_latest(self._client, noncache_provider=noncache_provider(history), new_symbols={('AAPL', 1, 'd'), ('AMZN', 1, 'd')}, time_delta_back=relativedelta(days=30))
+
+            latest_current = ranges(self._client)
+            self.assertEqual(len(latest_current), len(latest_old) + 1)
+            self.assertEqual(len([k for k in latest_current.keys() & latest_old.keys()]) + 1, len(latest_current))
+            for k in latest_current.keys() & latest_old.keys():
+                self.assertGreater(latest_current[k][1], latest_old[k][1])
+
+            data_no_limit = [history.request_data(f, sync_timestamps=False) for f in filters_no_limit]
+            cache_data_no_limit = [cache_requests.request(symbol=f.ticker, bgn_prd=datetime.datetime.combine(f.bgn_dt, datetime.datetime.min.time()).astimezone(tz.tzutc()) + relativedelta(microseconds=1)) for f in filters_no_limit]
+            for df1, df2 in zip(data_no_limit, cache_data_no_limit):
+                del df1['period_volume']
                 del df2['period_volume']
-                del df2['total_volume']
 
                 assert_frame_equal(df1, df2)
 

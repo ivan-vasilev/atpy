@@ -62,7 +62,7 @@ class InfluxDBOHLCRequest(object):
                 result = result.swaplevel(0, 1, axis=0)
                 result.sort_index(inplace=True, ascending=ascending)
 
-            result = result[[c for c in ['open', 'high', 'low', 'close', 'total_volume', 'period_volume', 'number_of_trades', 'open_interest', 'timestamp', 'symbol'] if c in result.columns]]
+            result = result[[c for c in ['open', 'high', 'low', 'close', 'period_volume', 'timestamp', 'symbol'] if c in result.columns]]
 
         return result
 
