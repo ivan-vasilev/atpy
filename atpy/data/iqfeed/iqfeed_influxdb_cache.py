@@ -6,8 +6,8 @@ import logging
 from dateutil import tz
 from influxdb import InfluxDBClient
 
-from atpy.data.cache.influxdb_cache import add_adjustments
-from atpy.data.iqfeed.iqfeed_history_provider import IQFeedHistoryProvider, BarsInPeriodFilter
+from atpy.data.cache.influxdb_cache import add_adjustments, BarsFilter
+from atpy.data.iqfeed.iqfeed_history_provider import IQFeedHistoryProvider, BarsInPeriodFilter, BarsDailyForDatesFilter
 
 
 def noncache_provider(history: IQFeedHistoryProvider):
@@ -16,11 +16,14 @@ def noncache_provider(history: IQFeedHistoryProvider):
         :return: request data from data provider (has to be UTC localized)
         """
         new_filters = list()
-        for f in filters:
-            if f.bgn_prd is not None:
-                new_filters.append(BarsInPeriodFilter(ticker=f.ticker, bgn_prd=f.bgn_prd.astimezone(tz.gettz('US/Eastern')), end_prd=None, interval_len=f.interval_len, interval_type=f.interval_type))
-            else:
-                new_filters.append(BarsInPeriodFilter(ticker=f.ticker, bgn_prd=f.bgn_prd, end_prd=None, interval_len=f.interval_len, interval_type=f.interval_type))
+        for f in [f for f in filters]:
+            if isinstance(f, BarsFilter):
+                if f.bgn_prd is not None:
+                    new_filters.append(BarsInPeriodFilter(ticker=f.ticker, bgn_prd=f.bgn_prd.astimezone(tz.gettz('US/Eastern')), end_prd=None, interval_len=f.interval_len, interval_type=f.interval_type))
+                else:
+                    new_filters.append(BarsInPeriodFilter(ticker=f.ticker, bgn_prd=f.bgn_prd, end_prd=None, interval_len=f.interval_len, interval_type=f.interval_type))
+            elif isinstance(f, BarsDailyForDatesFilter):
+                new_filters.append(f)
 
         h.request_data_by_filters(new_filters, q)
 

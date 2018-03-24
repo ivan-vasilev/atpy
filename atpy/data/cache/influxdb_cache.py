@@ -78,6 +78,9 @@ def update_to_latest(client: DataFrameClient, noncache_provider: typing.Callable
                 to_cache.drop('timestamp', axis=1, inplace=True)
                 to_cache['interval'] = str(ft.interval_len) + '_' + ft.interval_type
 
+            if to_cache.iloc[0].name == ft.bgn_prd:
+                to_cache = to_cache.iloc[1:]
+
             try:
                 client.write_points(to_cache, 'bars', protocol='line', tag_columns=['symbol', 'interval'], time_precision='s')
             except Exception as err:

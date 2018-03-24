@@ -7,20 +7,26 @@ import pandas as pd
 import sqlalchemy
 from dateutil import tz
 
-from atpy.data.iqfeed.iqfeed_history_provider import IQFeedHistoryProvider, BarsInPeriodFilter
+from atpy.data.iqfeed.iqfeed_history_provider import IQFeedHistoryProvider, BarsInPeriodFilter, BarsDailyForDatesFilter
 
 
 def noncache_provider(history: IQFeedHistoryProvider):
-    def _request_noncache_data(filters, q, h: IQFeedHistoryProvider):
+    def _request_noncache_data(filters: dict, q, h: IQFeedHistoryProvider):
         """
         :return: request data from data provider (has to be UTC localized)
         """
         new_filters = list()
-        for f in filters:
-            if f.bgn_prd is not None:
-                new_filters.append(BarsInPeriodFilter(ticker=f.ticker, bgn_prd=f.bgn_prd.astimezone(tz.gettz('US/Eastern')), end_prd=None, interval_len=f.interval_len, interval_type=f.interval_type))
-            else:
-                new_filters.append(BarsInPeriodFilter(ticker=f.ticker, bgn_prd=f.bgn_prd, end_prd=None, interval_len=f.interval_len, interval_type=f.interval_type))
+        filters_copy = filters.copy()
+
+        for f in filters_copy:
+            if f.interval_type == 's':
+                new_f = BarsInPeriodFilter(ticker=f.ticker, bgn_prd=f.bgn_prd.astimezone(tz.gettz('US/Eastern')) if f.bgn_prd is not None else None, end_prd=None, interval_len=f.interval_len, interval_type=f.interval_type)
+            elif f.interval_type == 'd':
+                new_f = BarsDailyForDatesFilter(ticker=f.ticker, bgn_dt=f.bgn_prd.date() if f.bgn_prd is not None else None, end_dt=None)
+
+            filters[new_f] = f
+
+            new_filters.append(new_f)
 
         h.request_data_by_filters(new_filters, q)
 

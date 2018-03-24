@@ -51,7 +51,6 @@ class InfluxDBOHLCRequest(object):
             result = result['bars']
             result.drop('interval', axis=1, inplace=True)
             result.index.name = 'timestamp'
-            result = result[['open', 'high', 'low', 'close', 'total_volume', 'period_volume', 'number_of_trades', 'symbol']]
 
             for c in [c for c in result.columns if result[c].dtype == np.int64]:
                 result[c] = result[c].astype(np.uint64, copy=False)
@@ -63,7 +62,7 @@ class InfluxDBOHLCRequest(object):
                 result = result.swaplevel(0, 1, axis=0)
                 result.sort_index(inplace=True, ascending=ascending)
 
-            result = result[['open', 'high', 'low', 'close', 'total_volume', 'period_volume', 'number_of_trades', 'timestamp', 'symbol']]
+            result = result[[c for c in ['open', 'high', 'low', 'close', 'total_volume', 'period_volume', 'number_of_trades', 'open_interest', 'timestamp', 'symbol'] if c in result.columns]]
 
         return result
 
@@ -193,16 +192,6 @@ class InfluxDBValueRequest(object):
 
         rs = super(DataFrameClient, self.client).query(query, chunked=True)
         self.stddev = {k[1]['symbol']: next(data)['stddev'] for k, data in rs.items()}
-
-
-class InfluxDBDeltaAdjustedRequest(InfluxDBValueRequest):
-    def __init__(self, client: DataFrameClient, interval_len: int, interval_type: str = 's'):
-        super().__init__(value='(close - open) / open as delta, period_volume, total_volume', client=client, interval_len=interval_len, interval_type=interval_type)
-
-
-class InfluxDBDeltaRequest(InfluxDBValueRequest):
-    def __init__(self, client: DataFrameClient, interval_len: int, interval_type: str = 's'):
-        super().__init__(value='close - open as delta, period_volume, total_volume', client=client, interval_len=interval_len, interval_type=interval_type)
 
 
 def get_adjustments(client: DataFrameClient, symbol: typing.Union[list, str] = None, typ: str = None, provider: str = None):

@@ -15,7 +15,7 @@ from atpy.data.ts_util import slice_periods
 
 
 class BarsFilter(typing.NamedTuple):
-    ticker: typing.Union[list, str]
+    ticker: str
     interval_len: int
     interval_type: str
     bgn_prd: datetime.datetime
@@ -35,9 +35,7 @@ create_bars = \
         high real NOT NULL,
         low real NOT NULL,
         close real NOT NULL,
-        total_volume integer NOT NULL,
         period_volume integer NOT NULL,
-        number_of_trades integer NOT NULL,
         "interval" character varying COLLATE pg_catalog."default" NOT NULL
     )
     WITH (
@@ -149,6 +147,9 @@ def update_to_latest(url: str, bars_table: str, noncache_provider: typing.Callab
     if not exists:
         cur.execute(create_bars.format(bars_table))
 
+    if exists:
+        cur.execute("delete from bars_test where (symbol, timestamp, interval) in (select symbol, max(timestamp) as timestamp, interval from bars_test group by symbol, interval)")
+
     ranges = pd.read_sql("select symbol, max(timestamp) as timestamp, interval from {0} group by symbol, interval".format(bars_table), con=con, index_col=['symbol'])
     if not ranges.empty:
         ranges['timestamp'] = ranges['timestamp'].dt.tz_localize('UTC')
@@ -158,7 +159,7 @@ def update_to_latest(url: str, bars_table: str, noncache_provider: typing.Callab
     if skip_if_older_than is not None:
         skip_if_older_than = datetime.datetime.utcnow().replace(tzinfo=tz.gettz('UTC')) - skip_if_older_than
 
-    filters = list()
+    filters = dict()
     for row in ranges.iterrows():
         interval_len, interval_type = int(row[1][1].split('_')[0]), row[1][1].split('_')[1]
 
@@ -168,11 +169,11 @@ def update_to_latest(url: str, bars_table: str, noncache_provider: typing.Callab
         bgn_prd = row[1][0].to_pydatetime()
 
         if skip_if_older_than is None or bgn_prd > skip_if_older_than:
-            filters.append(BarsFilter(ticker=row[0], bgn_prd=bgn_prd, interval_len=interval_len, interval_type=interval_type))
+            filters[BarsFilter(ticker=row[0], bgn_prd=bgn_prd, interval_len=interval_len, interval_type=interval_type)] = None
 
     bgn_prd = datetime.datetime.combine(datetime.datetime.utcnow().date() - time_delta_back, datetime.datetime.min.time()).replace(tzinfo=tz.gettz('UTC'))
     for (symbol, interval_len, interval_type) in new_symbols:
-        filters.append(BarsFilter(ticker=symbol, bgn_prd=bgn_prd, interval_len=interval_len, interval_type=interval_type))
+        filters[BarsFilter(ticker=symbol, bgn_prd=bgn_prd, interval_len=interval_len, interval_type=interval_type)] = None
 
     logging.getLogger(__name__).info("Updating " + str(len(filters)) + " total symbols and intervals; New symbols and intervals: " + str(len(new_symbols)))
 
@@ -193,15 +194,21 @@ def update_to_latest(url: str, bars_table: str, noncache_provider: typing.Callab
                 q.put(None)
                 return
 
-            ft, df = tupl
-            try:
-                # Prepare data
-                del df['timestamp']
-                df['interval'] = str(ft.interval_len) + '_' + ft.interval_type
+            ft, df = filters[tupl[0]], tupl[1]
 
+            # Prepare data
+            for c in [c for c in df.columns if c not in ['symbol', 'open', 'high', 'low', 'close', 'period_volume']]:
+                del df[c]
+
+            df['interval'] = str(ft.interval_len) + '_' + ft.interval_type
+
+            if df.iloc[0].name == ft.bgn_prd:
+                df = df.iloc[1:]
+
+            try:
                 insert_df(con, bars_table, df)
             except Exception as err:
-                logging.getLogger(__name__).error("Error loading " + ft.ticker)
+                logging.getLogger(__name__).error("Error saving " + ft.ticker)
                 logging.getLogger(__name__).exception(err)
 
             global_counter['counter'] += 1
@@ -269,9 +276,8 @@ def request_bars(conn, bars_table: str, interval_len: int, interval_type: str, s
         if isinstance(symbol, str):
             df.reset_index(level=1, inplace=True, drop=True)
 
-        df['period_volume'] = df['period_volume'].astype('uint64')
-        df['total_volume'] = df['total_volume'].astype('uint64')
-        df['number_of_trades'] = df['number_of_trades'].astype('uint64')
+        for c in [c for c in ['period_volume', 'total_volume', 'number_of_trades'] if c in df.columns]:
+            df[c] = df[c].astype('uint64')
 
     return df
 

@@ -59,6 +59,11 @@ class TestInfluxDBCache(unittest.TestCase):
             data_no_limit = [history.request_data(f, sync_timestamps=False) for f in filters_no_limit]
             cache_data_no_limit = [cache_requests.request(symbol=f.ticker, bgn_prd=f.bgn_prd)[0] for f in filters_no_limit]
             for df1, df2 in zip(data_no_limit, cache_data_no_limit):
+                del df1['period_volume']
+                del df1['total_volume']
+                del df2['period_volume']
+                del df2['total_volume']
+
                 assert_frame_equal(df1, df2)
 
     def test_bars_in_period(self):

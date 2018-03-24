@@ -13,7 +13,7 @@ class TestInfluxDBCache(unittest.TestCase):
     Test InfluxDBCache
     """
 
-    def test_update_to_latest(self):
+    def test_update_to_latest_intraday(self):
         with IQFeedHistoryProvider(num_connections=2) as history:
             table_name = 'bars_test'
             try:
@@ -41,6 +41,9 @@ class TestInfluxDBCache(unittest.TestCase):
 
                 for datum, f in zip(data, filters):
                     del datum['timestamp']
+                    del datum['total_volume']
+                    del datum['number_of_trades']
+
                     datum['symbol'] = f.ticker
                     datum['interval'] = '3600_s'
                     datum = datum.tz_localize(None)
@@ -48,7 +51,7 @@ class TestInfluxDBCache(unittest.TestCase):
 
                 latest_old = pd.read_sql("select symbol, max(timestamp) as timestamp from {0} group by symbol".format(table_name), con=con, index_col=['symbol'])['timestamp']
 
-                update_to_latest(con, bars_table=table_name, symbols={('AAPL', 3600, 's'), ('AMZN', 3600, 's')}, noncache_provider=noncache_provider(history), time_delta_back=relativedelta(years=10))
+                update_to_latest(url=url, bars_table=table_name, symbols={('AAPL', 3600, 's'), ('AMZN', 3600, 's')}, noncache_provider=noncache_provider(history), time_delta_back=relativedelta(years=10))
 
                 latest_current = pd.read_sql("select symbol, max(timestamp) as timestamp from {0} group by symbol".format(table_name), con=con, index_col=['symbol'])['timestamp']
 
@@ -62,9 +65,74 @@ class TestInfluxDBCache(unittest.TestCase):
                                                     bgn_prd=f.bgn_prd.astimezone(tz.tzutc()) + relativedelta(microseconds=1)) for f in filters_no_limit]
                 for df1, df2 in zip(data_no_limit, cache_data_no_limit):
                     del df1['timestamp']
+                    del df1['total_volume']
+                    del df1['number_of_trades']
                     del df1['symbol']
-                    del df1['close']
-                    del df2['close']
+                    del df1['period_volume']
+                    del df2['period_volume']
+
+                    assert_frame_equal(df1, df2)
+            finally:
+                con.cursor().execute("DROP TABLE IF EXISTS {0};".format(table_name))
+
+    def test_update_to_latest_daily(self):
+        with IQFeedHistoryProvider(num_connections=2) as history:
+            table_name = 'bars_test'
+            try:
+                url = 'postgresql://postgres:postgres@localhost:5432/test'
+
+                engine = create_engine(url)
+                con = psycopg2.connect(url)
+                con.autocommit = True
+
+                cur = con.cursor()
+
+                cur.execute(create_bars.format(table_name))
+                cur.execute(bars_indices.format(table_name))
+
+                bgn_prd = datetime.datetime(2017, 3, 1).date()
+                end_prd = datetime.datetime(2017, 3, 2).date()
+                filters = (BarsDailyForDatesFilter(ticker="IBM", bgn_dt=bgn_prd, end_dt=end_prd, ascend=True),
+                           BarsDailyForDatesFilter(ticker="AAPL", bgn_dt=bgn_prd, end_dt=end_prd, ascend=True))
+
+                filters_no_limit = (BarsDailyForDatesFilter(ticker="IBM", bgn_dt=bgn_prd, end_dt=None, ascend=True),
+                                    BarsDailyForDatesFilter(ticker="AAPL", bgn_dt=bgn_prd, end_dt=None, ascend=True),
+                                    BarsDailyForDatesFilter(ticker="AMZN", bgn_dt=bgn_prd, end_dt=None, ascend=True))
+
+                data = [history.request_data(f, sync_timestamps=False) for f in filters]
+
+                for datum, f in zip(data, filters):
+                    del datum['timestamp']
+                    del datum['open_interest']
+
+                    datum['symbol'] = f.ticker
+                    datum['interval'] = '1_d'
+                    datum = datum.tz_localize(None)
+                    datum.to_sql(table_name, con=engine, if_exists='append')
+
+                latest_old = pd.read_sql("select symbol, max(timestamp) as timestamp from {0} group by symbol".format(table_name), con=con, index_col=['symbol'])['timestamp']
+
+                update_to_latest(url=url, bars_table=table_name, symbols={('AAPL', 1, 'd'), ('AMZN', 1, 'd')}, noncache_provider=noncache_provider(history), time_delta_back=relativedelta(years=10))
+
+                latest_current = pd.read_sql("select symbol, max(timestamp) as timestamp from {0} group by symbol".format(table_name), con=con, index_col=['symbol'])['timestamp']
+
+                self.assertEqual(len(latest_current), len(latest_old) + 1)
+                self.assertEqual(len([k for k in latest_current.keys() & latest_old.keys()]) + 1, len(latest_current))
+                for k in latest_current.keys() & latest_old.keys():
+                    self.assertGreater(latest_current[k], latest_old[k])
+
+                data_no_limit = [history.request_data(f, sync_timestamps=False) for f in filters_no_limit]
+
+                cache_data_no_limit = [request_bars(conn=engine,
+                                                    bars_table=table_name,
+                                                    interval_len=1, interval_type='d',
+                                                    symbol=f.ticker,
+                                                    bgn_prd=datetime.datetime.combine(f.bgn_dt, datetime.datetime.min.time()).astimezone(tz.tzutc()) + relativedelta(microseconds=1)) for f in filters_no_limit]
+
+                for df1, df2 in zip(data_no_limit, cache_data_no_limit):
+                    del df1['timestamp']
+                    del df1['open_interest']
+                    del df1['symbol']
 
                     assert_frame_equal(df1, df2)
             finally:
@@ -95,8 +163,11 @@ class TestInfluxDBCache(unittest.TestCase):
 
                 for datum, f in zip(data, filters):
                     del datum['timestamp']
+                    del datum['total_volume']
+                    del datum['number_of_trades']
                     datum['symbol'] = f.ticker
                     datum['interval'] = '3600_s'
+
                     datum = datum.tz_localize(None)
                     datum.to_sql(table_name, con=engine, if_exists='append')
 
