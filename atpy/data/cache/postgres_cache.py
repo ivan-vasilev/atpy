@@ -148,7 +148,7 @@ def update_to_latest(url: str, bars_table: str, noncache_provider: typing.Callab
         cur.execute(create_bars.format(bars_table))
 
     if exists:
-        cur.execute("delete from bars_test where (symbol, timestamp, interval) in (select symbol, max(timestamp) as timestamp, interval from bars_test group by symbol, interval)")
+        cur.execute("delete from {0} where (symbol, timestamp, interval) in (select symbol, max(timestamp) as timestamp, interval from {0} group by symbol, interval)".format(bars_table))
 
     ranges = pd.read_sql("select symbol, max(timestamp) as timestamp, interval from {0} group by symbol, interval".format(bars_table), con=con, index_col=['symbol'])
     if not ranges.empty:

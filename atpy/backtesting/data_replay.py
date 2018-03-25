@@ -24,6 +24,8 @@ class DataReplay(object):
 
         self._timeline = None
 
+        self._current_time = None
+
         sources = dict()
 
         for (iterator, name, historical_depth) in self._sources_defs:
@@ -36,21 +38,16 @@ class DataReplay(object):
     def __next__(self):
         # delete "expired" dataframes
         old_data = None
-        if self._timeline is not None:
+        if self._timeline is not None and self._current_time is not None:
             # check for timeline end reset if necessary
-            if self._current_time == len(self._timeline):
-                self._timeline = None
-                self._current_time = None
-                old_data = self._data
-                self._data = dict()
-            else:
-                for e in list(self._data.keys()):
-                    if self._get_datetime_level(self._data[e].index)[-1] < self._timeline.index[self._current_time]:
-                        if old_data is None:
-                            old_data = dict()
+            for e in list(self._data.keys()):
+                if self._get_datetime_level(self._data[e].index)[-1] <= self._current_time:
+                    if old_data is None:
+                        old_data = dict()
 
-                        old_data[e] = self._data[e]
-                        del self._data[e]
+                    old_data[e] = self._data[e]
+                    del self._data[e]
+                    self._timeline = None
 
         # request new dataframes if needed
         for e in self._sources.keys() - self._data.keys():
@@ -83,7 +80,6 @@ class DataReplay(object):
             ind = pd.DatetimeIndex(np.hstack(indices)).unique().tz_localize(next(iter(tzs))).sort_values()
 
             self._timeline = pd.DataFrame(index=ind)
-            self._current_time = 0
 
             for e, df in self._data.items():
                 ind = self._get_datetime_level(df.index)
@@ -105,17 +101,22 @@ class DataReplay(object):
         if self._timeline is not None:
             result = dict()
 
-            current_time = self._timeline.index[self._current_time]
+            if self._current_time is None or self._current_time < self._timeline.index[0]:
+                self._current_time, current_index = self._timeline.index[0], 0
+            elif self._current_time in self._timeline.index:
+                current_index = self._timeline.index.get_loc(self._current_time) + 1
+                self._current_time = self._timeline.index[current_index]
+            else:
+                self._current_time = self._timeline.loc[self._timeline.index > self._current_time].iloc[0].name
+                current_index = self._timeline.index.get_loc(self._current_time)
 
-            row = self._timeline.iloc[self._current_time]
+            row = self._timeline.iloc[current_index]
 
             for e in [e for e in row.index if row[e]]:
                 df = self._data[e]
                 _, historical_depth = self._sources[e]
                 ind = self._get_datetime_level(df)
-                result[e] = df.loc[ind[max(0, ind.get_loc(current_time) - historical_depth)]:current_time]
-
-            self._current_time += 1
+                result[e] = df.loc[ind[max(0, ind.get_loc(self._current_time) - historical_depth)]:self._current_time]
 
             return result
         else:

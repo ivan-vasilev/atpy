@@ -3,11 +3,11 @@ import typing
 
 import pandas as pd
 import psycopg2
+from dateutil.relativedelta import relativedelta
 
 from atpy.data.cache.postgres_cache import insert_df
 from atpy.data.quandl.api import bulkdownload_sf
 from atpy.data.ts_util import slice_periods
-from dateutil.relativedelta import relativedelta
 
 
 def bulkinsert(url: str, table_name: str, dataset: str):
@@ -98,7 +98,7 @@ def bulkinsert_SF0(url: str, table_name: str = 'quandl_sf0'):
     cur.execute(create_sf_indices.format(table_name))
 
 
-def request_sf(conn, symbol: typing.Union[list, str] = None, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None, table_name: str='quandl_SF0', selection='*'):
+def request_sf(conn, symbol: typing.Union[list, str] = None, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None, table_name: str = 'quandl_SF0', selection='*'):
     """
     Request bar data
     :param conn: connection
@@ -140,12 +140,13 @@ class SFInPeriodProvider(object):
     SF (0 or 1) dataset in period provider
     """
 
-    def __init__(self, conn, bgn_prd: datetime.datetime, delta: relativedelta, symbol: typing.Union[list, str] = None, ascend: bool = True, overlap: relativedelta = None):
+    def __init__(self, conn, bgn_prd: datetime.datetime, delta: relativedelta, symbol: typing.Union[list, str] = None, ascend: bool = True, table_name: str = 'quandl_SF0', overlap: relativedelta = None):
         self._periods = slice_periods(bgn_prd=bgn_prd, delta=delta, ascend=ascend, overlap=overlap)
 
         self.conn = conn
         self.symbol = symbol
         self.ascending = ascend
+        self.table_name = table_name
 
     def __iter__(self):
         self._deltas = -1
@@ -155,6 +156,6 @@ class SFInPeriodProvider(object):
         self._deltas += 1
 
         if self._deltas < len(self._periods):
-            return request_sf(conn=self.conn, symbol=self.symbol, bgn_prd=self._periods[self._deltas][0], end_prd=self._periods[self._deltas][1])
+            return request_sf(conn=self.conn, symbol=self.symbol, bgn_prd=self._periods[self._deltas][0], end_prd=self._periods[self._deltas][1], table_name=self.table_name)
         else:
             raise StopIteration
