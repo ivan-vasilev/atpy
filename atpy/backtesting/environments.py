@@ -9,26 +9,35 @@ import atpy.data.iqfeed.util as iqutil
 from atpy.backtesting.data_replay import DataReplayEvents, DataReplay
 from atpy.data.cache.postgres_cache import BarsInPeriodProvider
 from atpy.data.quandl.postgres_cache import SFInPeriodProvider
-from atpy.data.ts_util import current_period
+from atpy.data.ts_util import current_period, AsyncInPeriodProvider
 
 
-def postgres_ohlc(listeners, include_1m: bool, include_5m: bool, include_1d: bool, bgn_prd: datetime.datetime, url: str = None):
+def postgres_ohlc(listeners, include_1m: bool, include_5m: bool, include_1d: bool, bgn_prd: datetime.datetime, run_async=False, url: str = None):
     con = psycopg2.connect(url if url is not None else os.environ['POSTGRESQL_CACHE'])
 
     dr = DataReplay()
     dre = DataReplayEvents(listeners, dr, event_name='data')
 
     if include_1m:
-        bars_in_period = BarsInPeriodProvider(conn=con, interval_len=60, interval_type='s', bars_table='bars_1m', bgn_prd=bgn_prd, delta=relativedelta(days=10), overlap=relativedelta(microseconds=-1))
-        dr.add_source(iter(bars_in_period), 'bars_1m', historical_depth=300)
+        bars_in_period = BarsInPeriodProvider(conn=con, interval_len=60, interval_type='s', bars_table='bars_1m', bgn_prd=bgn_prd, delta=relativedelta(months=1), overlap=relativedelta(microseconds=-1))
+        if run_async:
+            bars_in_period = AsyncInPeriodProvider(bars_in_period)
+
+        dr.add_source(bars_in_period, 'bars_1m', historical_depth=300)
 
     if include_5m:
-        bars_in_period = BarsInPeriodProvider(conn=con, interval_len=300, interval_type='s', bars_table='bars_5m', bgn_prd=bgn_prd, delta=relativedelta(days=10), overlap=relativedelta(microseconds=-1))
-        dr.add_source(iter(bars_in_period), 'bars_5m', historical_depth=200)
+        bars_in_period = BarsInPeriodProvider(conn=con, interval_len=300, interval_type='s', bars_table='bars_5m', bgn_prd=bgn_prd, delta=relativedelta(months=1), overlap=relativedelta(microseconds=-1))
+        if run_async:
+            bars_in_period = AsyncInPeriodProvider(bars_in_period)
+
+        dr.add_source(bars_in_period, 'bars_5m', historical_depth=200)
 
     if include_1d:
         bars_in_period = BarsInPeriodProvider(conn=con, interval_len=1, interval_type='d', bars_table='bars_1d', bgn_prd=bgn_prd, delta=relativedelta(years=1), overlap=relativedelta(microseconds=-1))
-        dr.add_source(iter(bars_in_period), 'bars_1d', historical_depth=200)
+        if run_async:
+            bars_in_period = AsyncInPeriodProvider(bars_in_period)
+
+        dr.add_source(bars_in_period, 'bars_1d', historical_depth=200)
 
     return dre
 
@@ -60,4 +69,4 @@ def add_quandl_sf(dre: DataReplayEvents, bgn_prd: datetime.datetime, dataset_nam
 
     name = 'quandl_' + dataset_name
     sf_in_period = SFInPeriodProvider(conn=engine, bgn_prd=bgn_prd, delta=relativedelta(years=1), overlap=relativedelta(microseconds=-1), table_name=name)
-    dre.data_replay.add_source(iter(sf_in_period), name=name, historical_depth=200)
+    dre.data_replay.add_source(sf_in_period, name=name, historical_depth=200)

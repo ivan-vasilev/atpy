@@ -11,7 +11,7 @@ class TestEnvironments(unittest.TestCase):
         listeners = SyncListeners()
 
         now = datetime.datetime.now()
-        dre = postgres_ohlc(listeners, include_1d=True, include_5m=True, include_1m=False, bgn_prd=datetime.datetime(year=now.year - 2, month=1, day=1))
+        dre = postgres_ohlc(listeners, include_1d=True, include_5m=True, include_1m=False, bgn_prd=datetime.datetime(year=now.year - 2, month=1, day=1), run_async=True)
         add_current_period(listeners)
         add_iq_symbol_data(listeners, symbols_file='/home/hok/Downloads/mktsymbols_v2.zip')
 

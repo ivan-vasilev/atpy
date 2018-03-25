@@ -143,7 +143,7 @@ class TestQuandlAPI(unittest.TestCase):
             now = datetime.datetime.now()
             bars_in_period = SFInPeriodProvider(conn=engine, bgn_prd=datetime.datetime(year=now.year - 10, month=1, day=1), delta=relativedelta(years=1), overlap=relativedelta(microseconds=-1))
 
-            dr = DataReplay().add_source(iter(bars_in_period), 'e1', historical_depth=2)
+            dr = DataReplay().add_source(bars_in_period, 'e1', historical_depth=2)
 
             for i, r in enumerate(dr):
                 for e in r:

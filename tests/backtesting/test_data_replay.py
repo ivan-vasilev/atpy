@@ -4,7 +4,7 @@ import unittest
 from atpy.backtesting.data_replay import DataReplay, DataReplayEvents
 from atpy.data.iqfeed.iqfeed_history_provider import *
 from atpy.data.latest_data_snapshot import LatestDataSnapshot
-from atpy.data.ts_util import current_period
+from atpy.data.ts_util import current_period, AsyncInPeriodProvider
 from pyevents.events import SyncListeners
 
 
@@ -24,7 +24,7 @@ class TestDataReplay(unittest.TestCase):
 
             timestamps = set()
 
-            dr = DataReplay().add_source(iter([q.get()[1]]), 'e1').add_source(iter([q.get()[1]]), 'e2')
+            dr = DataReplay().add_source(AsyncInPeriodProvider([q.get()[1]]), 'e1').add_source([q.get()[1]], 'e2')
 
             for i, r in enumerate(dr):
                 for e in r:
@@ -69,7 +69,7 @@ class TestDataReplay(unittest.TestCase):
 
             listeners += check_df
 
-            data_replay = DataReplay().add_source(iter([q.get()[1]]), 'e1').add_source(iter([q.get()[1]]), 'e2')
+            data_replay = DataReplay().add_source([q.get()[1]], 'e1').add_source([q.get()[1]], 'e2')
             DataReplayEvents(listeners=listeners, data_replay=data_replay, event_name='data').start()
 
             self.assertGreaterEqual(len(timestamps), batch_len)
@@ -99,7 +99,7 @@ class TestDataReplay(unittest.TestCase):
             timestamps = set()
             counters = {'e1': 0, 'e2': 0}
 
-            dr = DataReplay().add_source(iter(l1), 'e1', historical_depth=historical_depth).add_source(iter(l2), 'e2', historical_depth=historical_depth)
+            dr = DataReplay().add_source(AsyncInPeriodProvider(l1), 'e1', historical_depth=historical_depth).add_source(l2, 'e2', historical_depth=historical_depth)
 
             for r in dr:
                 for e in r:
@@ -154,7 +154,7 @@ class TestDataReplay(unittest.TestCase):
 
             now = datetime.datetime.now()
 
-            dr = DataReplay().add_source(iter([dfs1]), 'e1', historical_depth=100)
+            dr = DataReplay().add_source([dfs1], 'e1', historical_depth=100)
 
             for i, r in enumerate(dr):
                 if i % 1000 == 0 and i > 0:
@@ -201,7 +201,7 @@ class TestDataReplay(unittest.TestCase):
 
             logging.getLogger(__name__).debug('Random data generated in ' + str(datetime.datetime.now() - now) + ' with shapes ' + str(dfs1.shape) + ', ' + str(dfs2.shape))
 
-            dr = DataReplay().add_source(iter([dfs1]), 'e1', historical_depth=100).add_source(iter([dfs2]), 'e2', historical_depth=100)
+            dr = DataReplay().add_source([dfs1], 'e1', historical_depth=100).add_source([dfs2], 'e2', historical_depth=100)
 
             now = datetime.datetime.now()
 
@@ -250,7 +250,7 @@ class TestDataReplay(unittest.TestCase):
 
             logging.getLogger(__name__).debug('Random data generated in ' + str(datetime.datetime.now() - now) + ' with shapes ' + str(dfs1.shape) + ', ' + str(dfs2.shape))
 
-            dr = DataReplay().add_source(iter([dfs1]), 'e1', historical_depth=100).add_source(iter([dfs2]), 'e2', historical_depth=100)
+            dr = DataReplay().add_source([dfs1], 'e1', historical_depth=100).add_source([dfs2], 'e2', historical_depth=100)
             prev_t = None
             now = datetime.datetime.now()
 
@@ -298,7 +298,7 @@ class TestDataReplay(unittest.TestCase):
 
             dfs1 = pd.concat(dfs1).swaplevel(0, 1).sort_index()
 
-            dr = DataReplay().add_source(iter([dfs1]), 'e1', historical_depth=0)
+            dr = DataReplay().add_source([dfs1], 'e1', historical_depth=0)
             logging.getLogger(__name__).debug('Random data generated in ' + str(datetime.datetime.now() - now) + ' with shape ' + str(dfs1.shape))
 
             prev_t = None

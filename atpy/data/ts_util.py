@@ -2,6 +2,9 @@
 Time series utils.
 """
 import datetime
+import queue
+import threading
+import typing
 
 import pandas as pd
 from dateutil.relativedelta import relativedelta
@@ -109,3 +112,38 @@ def slice_periods(bgn_prd: datetime.datetime, delta: relativedelta, ascend: bool
             end_prd = end_prd - delta
 
     return result
+
+
+class AsyncInPeriodProvider(object):
+    """
+    Run InPeriodProvider in async mode
+    """
+
+    def __init__(self, in_period_provider: typing.Iterable):
+        """
+        :param in_period_provider: provider
+        """
+
+        self.in_period_provider = in_period_provider
+
+    def __iter__(self):
+        self._q = queue.Queue()
+
+        self.in_period_provider.__iter__()
+
+        def it():
+            for i in self.in_period_provider:
+                self._q.put(i)
+
+            self._q.put(None)
+
+        threading.Thread(target=it, daemon=True).start()
+
+        return self
+
+    def __next__(self):
+        result = self._q.get()
+        if result is None:
+            raise StopIteration()
+
+        return result

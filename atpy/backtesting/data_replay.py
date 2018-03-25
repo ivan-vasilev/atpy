@@ -29,7 +29,7 @@ class DataReplay(object):
         sources = dict()
 
         for (iterator, name, historical_depth) in self._sources_defs:
-            sources[name] = (iterator, historical_depth)
+            sources[name] = (iter(iterator), historical_depth)
 
         self._sources = sources
 
@@ -96,6 +96,8 @@ class DataReplay(object):
                     ind = self._get_datetime_level(old_df)
                     old_df_slice = old_df.loc[slice(ind[max(-len(ind), -historical_depth)], ind[-1]), :]
                     self._data[e] = pd.concat((old_df_slice, self._data[e]))
+
+            del old_data
 
         # produce results
         if self._timeline is not None:

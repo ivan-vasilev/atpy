@@ -96,7 +96,7 @@ class TestTSUtils(unittest.TestCase):
         batch_width = 2000
 
         l1, l2 = list(), list()
-        with IQFeedHistoryProvider() as provider, DataReplay().add_source(iter(l1), 'e1', historical_depth=1000) as dr:
+        with IQFeedHistoryProvider() as provider, DataReplay().add_source(l1, 'e1', historical_depth=1000) as dr:
             now = datetime.datetime.now()
             df = provider.request_data(BarsFilter(ticker="AAPL", interval_len=60, interval_type='s', max_bars=batch_len), sync_timestamps=False)
 
@@ -137,7 +137,7 @@ class TestTSUtils(unittest.TestCase):
         batch_width = 5000
 
         l1, l2 = list(), list()
-        with IQFeedHistoryProvider() as provider, DataReplay().add_source(iter(l1), 'e1', historical_depth=100) as dr:
+        with IQFeedHistoryProvider() as provider, DataReplay().add_source(l1, 'e1', historical_depth=100) as dr:
             now = datetime.datetime.now()
             df = provider.request_data(BarsFilter(ticker="AAPL", interval_len=3600, interval_type='s', max_bars=batch_len), sync_timestamps=False)
 
