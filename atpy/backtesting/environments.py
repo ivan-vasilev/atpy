@@ -3,7 +3,6 @@ import os
 
 import psycopg2
 from dateutil.relativedelta import relativedelta
-from sqlalchemy import create_engine
 
 import atpy.data.iqfeed.util as iqutil
 from atpy.backtesting.data_replay import DataReplayEvents, DataReplay
@@ -33,7 +32,7 @@ def postgres_ohlc(listeners, include_1m: bool, include_5m: bool, include_1d: boo
         dr.add_source(bars_in_period, 'bars_5m', historical_depth=200)
 
     if include_1d:
-        bars_in_period = BarsInPeriodProvider(conn=con, interval_len=1, interval_type='d', bars_table='bars_1d', bgn_prd=bgn_prd, delta=relativedelta(years=1), overlap=relativedelta(microseconds=-1))
+        bars_in_period = BarsInPeriodProvider(conn=con, interval_len=1, interval_type='d', bars_table='bars_1d', bgn_prd=bgn_prd, delta=relativedelta(months=1), overlap=relativedelta(microseconds=-1))
         if run_async:
             bars_in_period = AsyncInPeriodProvider(bars_in_period)
 
@@ -65,8 +64,8 @@ def add_iq_symbol_data(listeners, symbols_file: str = None):
 
 
 def add_quandl_sf(dre: DataReplayEvents, bgn_prd: datetime.datetime, dataset_name: str = 'SF0', url: str = None):
-    engine = create_engine(url if url is not None else os.environ['POSTGRESQL_CACHE'])
+    con = psycopg2.connect(url if url is not None else os.environ['POSTGRESQL_CACHE'])
 
-    name = 'quandl_' + dataset_name
-    sf_in_period = SFInPeriodProvider(conn=engine, bgn_prd=bgn_prd, delta=relativedelta(years=1), overlap=relativedelta(microseconds=-1), table_name=name)
+    name = 'quandl_' + dataset_name.lower()
+    sf_in_period = SFInPeriodProvider(conn=con, bgn_prd=bgn_prd, delta=relativedelta(years=1), overlap=relativedelta(microseconds=-1), table_name=name)
     dre.data_replay.add_source(sf_in_period, name=name, historical_depth=200)
