@@ -1,9 +1,7 @@
 import datetime
 import logging
-import queue
 import typing
 
-import numpy as np
 import pandas as pd
 
 
@@ -55,7 +53,9 @@ class DataReplay(object):
 
             dp, _ = self._sources[e]
             try:
-                df = dp.get() if isinstance(dp, queue.Queue) else next(dp)
+                df = next(dp)
+                while df is not None and df.empty:
+                    df = next(dp)
             except StopIteration:
                 df = None
 
@@ -77,7 +77,7 @@ class DataReplay(object):
             if len(tzs) > 1:
                 raise Exception("Multiple timezones detected")
 
-            ind = pd.DatetimeIndex(np.hstack(indices)).unique().tz_localize(next(iter(tzs))).sort_values()
+            ind = indices[0].union_many(indices[1:]).unique().sort_values()
 
             self._timeline = pd.DataFrame(index=ind)
 
@@ -96,8 +96,6 @@ class DataReplay(object):
                     ind = self._get_datetime_level(old_df)
                     old_df_slice = old_df.loc[slice(ind[max(-len(ind), -historical_depth)], ind[-1]), :]
                     self._data[e] = pd.concat((old_df_slice, self._data[e]))
-
-            del old_data
 
         # produce results
         if self._timeline is not None:
