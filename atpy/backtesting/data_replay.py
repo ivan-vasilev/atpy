@@ -110,6 +110,8 @@ class DataReplay(object):
                 self._current_time = self._timeline.loc[self._timeline.index > self._current_time].iloc[0].name
                 current_index = self._timeline.index.get_loc(self._current_time)
 
+            result['timestamp'] = self._current_time
+
             row = self._timeline.iloc[current_index]
 
             for e in [e for e in row.index if row[e]]:

@@ -26,6 +26,7 @@ if __name__ == "__main__":
     parser.add_argument('-url', type=str, default=None, help="PostgreSQL connection string")
     parser.add_argument('-drop', action='store_true', help="Drop the table")
     parser.add_argument('-table_name', type=str, default=None, required=True, help="PostgreSQL database name")
+    parser.add_argument('-cluster', action='store_true', help="Cluster the table after the opertion")
 
     group = parser.add_mutually_exclusive_group()
 
@@ -57,7 +58,7 @@ if __name__ == "__main__":
         with IQFeedHistoryProvider(num_connections=args.iqfeed_conn) as history:
             all_symbols = set((s, args.interval_len, args.interval_type) for s in set(iqutil.get_symbols(symbols_file=args.symbols_file).keys()))
             update_to_latest(url=args.url, bars_table=args.table_name, noncache_provider=noncache_provider(history), symbols=all_symbols, time_delta_back=relativedelta(years=args.delta_back),
-                             skip_if_older_than=relativedelta(days=args.skip_if_older) if args.skip_if_older is not None else None)
+                             skip_if_older_than=relativedelta(days=args.skip_if_older) if args.skip_if_older is not None else None, cluster=args.cluster)
 
     if args.update_fundamentals or args.update_splits_dividends:
         all_symbols = set(iqutil.get_symbols(symbols_file=args.symbols_file).keys())

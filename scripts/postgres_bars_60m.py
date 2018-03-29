@@ -15,9 +15,8 @@ if __name__ == "__main__":
             (" -cluster" if args.cluster else "") + \
             " -url='" + os.environ['POSTGRESQL_CACHE'] + "'" + \
             " -update_bars" + \
-            " -table_name='bars_1m'" + \
-            " -interval_len=60" + \
-            " -interval_type='s'" + \
-            " -skip_if_older=30"
+            " -table_name='bars_60m'" + \
+            " -interval_len=3600" + \
+            " -interval_type='s'"
 
     os.system(query)

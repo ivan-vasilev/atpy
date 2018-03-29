@@ -10,10 +10,12 @@ class TestEnvironments(unittest.TestCase):
     def test_postgre_ohlc(self):
         listeners = SyncListeners()
 
-        dre = postgres_ohlc(listeners, include_1d=True, include_5m=True, include_1m=False, bgn_prd=datetime.datetime.now() - relativedelta(months=2), run_async=False)
-        add_current_period(listeners)
+        dre = postgres_ohlc(listeners, include_1d=True, include_60m=False, include_5m=True, include_1m=False, bgn_prd=datetime.datetime.now() - relativedelta(months=2), run_async=False)
+        add_current_period(listeners, 'bars_5m')
+        add_current_phase(listeners)
+        add_gaps(listeners, 'bars_1d')
 
-        dct = {'bars_5m': 0, 'bars_1d': 0, 'latest_5m': None, 'latest_1d': None}
+        dct = {'bars_5m': 0, 'bars_1d': 0, 'latest_5m': None, 'latest_1d': None, 'phases': set(), 'phase_start': False}
 
         def asserts(e):
             if e['type'] == 'data':
@@ -28,6 +30,9 @@ class TestEnvironments(unittest.TestCase):
                         self.assertGreater(e['bars_5m'].iloc[-1].name[0], dct['latest_5m'])
 
                     dct['latest_5m'] = e['bars_5m'].iloc[-1].name[0]
+                    self.assertTrue('bars_5m_current_phase' in e)
+                    self.assertTrue('current_phase' in e)
+                    dct['phases'].add(e['current_phase'])
 
                 if 'bars_1d' in e:
                     self.assertTrue(isinstance(e['bars_1d'], pd.DataFrame))
@@ -39,6 +44,14 @@ class TestEnvironments(unittest.TestCase):
 
                     dct['latest_1d'] = e['bars_1d'].iloc[-1].name[0]
 
+                    self.assertTrue('bars_1d_gaps' in e)
+                    self.assertTrue('current_phase' in e)
+
+                    dct['phases'].add(e['current_phase'])
+
+                if e['phase_start'] is True:
+                    dct['phase_start'] = True
+
         listeners += asserts
         dre.start()
 
@@ -46,6 +59,8 @@ class TestEnvironments(unittest.TestCase):
         self.assertGreater(dct['bars_1d'], 0)
         self.assertIsNotNone(dct['latest_5m'])
         self.assertIsNotNone(dct['latest_1d'])
+        self.assertEqual(dct['phases'], {'trading-hours', 'after-hours'})
+        self.assertTrue(dct['phase_start'])
 
     def test_postgre_ohlc_quandl_sf0(self):
         listeners = SyncListeners()

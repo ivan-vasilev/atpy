@@ -68,6 +68,20 @@ def current_period(df: pd.DataFrame):
     return result, period
 
 
+def current_phase(dttme):
+    """
+    Get current phase (trading/after-hours)
+    :param dttme: datetime
+    :return phase
+    """
+
+    if dttme.date() in tcal.trading_days:
+        current_hours = tcal.open_and_closes.loc[dttme.date()]
+        return 'trading-hours' if current_hours['market_open'] <= dttme <= current_hours['market_close'] else 'after-hours'
+    else:
+        return 'after-hours'
+
+
 def current_day(df: pd.DataFrame, tz=None):
     """
     Slice only the current day data
@@ -110,6 +124,21 @@ def slice_periods(bgn_prd: datetime.datetime, delta: relativedelta, ascend: bool
         while end_prd > bgn_prd:
             result.append((max(end_prd - delta - overlap, bgn_prd), end_prd))
             end_prd = end_prd - delta
+
+    return result
+
+
+def gaps(df: pd.DataFrame):
+    """
+    Compute percent changes in the price
+    :param df: pandas OHLC DataFrame
+    :return DataFrame with changes
+    """
+
+    result = df.groupby('symbol', level=1).agg({'low': 'min', 'high': 'max'})
+
+    low = result['low']
+    result = (result['high'] - low) / low
 
     return result
 

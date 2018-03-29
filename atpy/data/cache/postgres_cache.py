@@ -135,7 +135,7 @@ adjustments_indices = \
     """
 
 
-def update_to_latest(url: str, bars_table: str, noncache_provider: typing.Callable, symbols: set = None, time_delta_back: relativedelta = relativedelta(years=5), skip_if_older_than: relativedelta = None):
+def update_to_latest(url: str, bars_table: str, noncache_provider: typing.Callable, symbols: set = None, time_delta_back: relativedelta = relativedelta(years=5), skip_if_older_than: relativedelta = None, cluster: bool=False):
     con = psycopg2.connect(url)
     con.autocommit = True
     cur = con.cursor()
@@ -148,8 +148,10 @@ def update_to_latest(url: str, bars_table: str, noncache_provider: typing.Callab
         cur.execute(create_bars.format(bars_table))
 
     if exists:
+        logging.getLogger(__name__).info("Skim off the top...")
         cur.execute("delete from {0} where (symbol, timestamp, interval) in (select symbol, max(timestamp) as timestamp, interval from {0} group by symbol, interval)".format(bars_table))
 
+    logging.getLogger(__name__).info("Ranges...")
     ranges = pd.read_sql("select symbol, max(timestamp) as timestamp, interval from {0} group by symbol, interval".format(bars_table), con=con, index_col=['symbol'])
     if not ranges.empty:
         ranges['timestamp'] = ranges['timestamp'].dt.tz_localize('UTC')
@@ -224,8 +226,14 @@ def update_to_latest(url: str, bars_table: str, noncache_provider: typing.Callab
     for t in threads:
         t.join()
 
+    logging.getLogger(__name__).info("Done inserting data")
+
     if not exists:
+        logging.getLogger(__name__).info("Creating indices...")
         cur.execute(bars_indices.format(bars_table))
+    elif cluster:
+        logging.getLogger(__name__).info("Cluster...")
+        cur.execute("CLUSTER {0}".format(bars_table))
 
 
 def request_bars(conn, bars_table: str, interval_len: int, interval_type: str, symbol: typing.Union[list, str] = None, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None, ascending=True, selection='*'):
