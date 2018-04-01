@@ -1,5 +1,6 @@
 import datetime
 import logging
+import os
 import queue
 import threading
 import typing
@@ -11,6 +12,7 @@ import psycopg2
 from dateutil import tz
 from dateutil.relativedelta import relativedelta
 
+from atpy.data.cache.lmdb_cache import write
 from atpy.data.ts_util import slice_periods
 
 
@@ -135,7 +137,7 @@ adjustments_indices = \
     """
 
 
-def update_to_latest(url: str, bars_table: str, noncache_provider: typing.Callable, symbols: set = None, time_delta_back: relativedelta = relativedelta(years=5), skip_if_older_than: relativedelta = None, cluster: bool=False):
+def update_to_latest(url: str, bars_table: str, noncache_provider: typing.Callable, symbols: set = None, time_delta_back: relativedelta = relativedelta(years=5), skip_if_older_than: relativedelta = None, cluster: bool = False):
     con = psycopg2.connect(url)
     con.autocommit = True
     cur = con.cursor()
@@ -361,7 +363,8 @@ class BarsInPeriodProvider(object):
     OHLCV Bars in period provider
     """
 
-    def __init__(self, conn, bars_table: str, bgn_prd: datetime.datetime, delta: relativedelta, interval_len: int, interval_type: str, symbol: typing.Union[list, str] = None, ascend: bool = True, overlap: relativedelta = None):
+    def __init__(self, conn, bars_table: str, bgn_prd: datetime.datetime, delta: relativedelta, interval_len: int, interval_type: str, symbol: typing.Union[list, str] = None, ascend: bool = True, overlap: relativedelta = None,
+                 cache: typing.Callable = None):
         self._periods = slice_periods(bgn_prd=bgn_prd, delta=delta, ascend=ascend, overlap=overlap)
 
         self.conn = conn
@@ -370,6 +373,7 @@ class BarsInPeriodProvider(object):
         self.interval_type = interval_type
         self.symbol = symbol
         self.ascending = ascend
+        self.cache = cache
 
     def __iter__(self):
         self._deltas = -1
@@ -379,6 +383,23 @@ class BarsInPeriodProvider(object):
         self._deltas += 1
 
         if self._deltas < len(self._periods):
-            return request_bars(conn=self.conn, bars_table=self.bars_table, symbol=self.symbol, interval_len=self.interval_len, interval_type=self.interval_type, bgn_prd=self._periods[self._deltas][0], end_prd=self._periods[self._deltas][1], ascending=self.ascending)
+            if self.cache is not None:
+                result = self.cache(self.current_cache_key())
+                if result is not None:
+                    return result
+
+            return request_bars(conn=self.conn, bars_table=self.bars_table, symbol=self.symbol, interval_len=self.interval_len, interval_type=self.interval_type, bgn_prd=self._periods[self._deltas][0],
+                                end_prd=self._periods[self._deltas][1], ascending=self.ascending)
         else:
             raise StopIteration
+
+    def current_cache_key(self):
+        return str(self._periods[self._deltas][0]) + '__' + str(self._periods[self._deltas][1]) + '__' + str(self.interval_len) + str(self.interval_type)
+
+
+def bars_to_lmdb(provider: BarsInPeriodProvider, lmdb_path: str = None):
+    if lmdb_path is None:
+        lmdb_path = os.environ['ATPY_LMDB_PATH']
+
+    for df in provider:
+        write(provider.current_cache_key(), df, lmdb_path)

@@ -80,6 +80,7 @@ setup(
         'influxdb': ['influxdb'],
         'TA-Lib': ['TA-Lib'],
         'quandl': ['quandl'],
+        'postgres': ['psycopg2', 'lmdb'],
     },
 
     dependency_links=[

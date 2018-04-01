@@ -6,6 +6,10 @@ from sqlalchemy import create_engine
 from atpy.data.cache.postgres_cache import *
 from atpy.data.iqfeed.iqfeed_level_1_provider import get_fundamentals, get_splits_dividends
 from atpy.data.iqfeed.iqfeed_postgres_cache import *
+import tempfile
+import atpy.data.cache.lmdb_cache as lmdb_cache
+import shutil
+import functools
 
 
 class TestInfluxDBCache(unittest.TestCase):
@@ -140,15 +144,16 @@ class TestInfluxDBCache(unittest.TestCase):
 
     def test_bars_in_period(self):
         with IQFeedHistoryProvider(num_connections=2) as history:
+            tmpdir = tempfile.mkdtemp()
+            table_name = 'bars_test'
+
+            url = 'postgresql://postgres:postgres@localhost:5432/test'
+
+            engine = create_engine(url)
+            con = psycopg2.connect(url)
+            con.autocommit = True
+
             try:
-                table_name = 'bars_test'
-
-                url = 'postgresql://postgres:postgres@localhost:5432/test'
-
-                engine = create_engine(url)
-                con = psycopg2.connect(url)
-                con.autocommit = True
-
                 cur = con.cursor()
 
                 cur.execute(create_bars.format(table_name))
@@ -173,9 +178,26 @@ class TestInfluxDBCache(unittest.TestCase):
 
                 now = datetime.datetime.now()
 
-                # test all symbols
+                # test all symbols no cache
                 bgn_prd = datetime.datetime(now.year - 1, 3, 1, tzinfo=tz.gettz('UTC'))
                 bars_in_period = BarsInPeriodProvider(conn=con, interval_len=3600, interval_type='s', bars_table=table_name, bgn_prd=bgn_prd, delta=relativedelta(days=30), overlap=relativedelta(microseconds=-1))
+
+                for i, df in enumerate(bars_in_period):
+                    self.assertFalse(df.empty)
+
+                    lmdb_cache.write(bars_in_period.current_cache_key(), df, tmpdir)
+
+                    start, end = bars_in_period._periods[bars_in_period._deltas]
+                    self.assertGreaterEqual(df.index[0][0], start)
+                    self.assertGreater(end, df.index[-1][0])
+                    self.assertGreater(end, df.index[0][0])
+
+                self.assertEqual(i, len(bars_in_period._periods) - 1)
+                self.assertGreater(i, 0)
+
+                # test all symbols cache
+                bgn_prd = datetime.datetime(now.year - 1, 3, 1, tzinfo=tz.gettz('UTC'))
+                bars_in_period = BarsInPeriodProvider(conn=con, interval_len=3600, interval_type='s', bars_table=table_name, bgn_prd=bgn_prd, delta=relativedelta(days=30), overlap=relativedelta(microseconds=-1), cache=functools.partial(lmdb_cache.read_pickle, lmdb_path=tmpdir))
 
                 for i, df in enumerate(bars_in_period):
                     self.assertFalse(df.empty)
@@ -203,6 +225,7 @@ class TestInfluxDBCache(unittest.TestCase):
                 self.assertEqual(i, len(bars_in_period._periods) - 1)
                 self.assertGreater(i, 0)
             finally:
+                shutil.rmtree(tmpdir)
                 con.cursor().execute("DROP TABLE IF EXISTS bars_test;")
 
     def test_update_adjustments(self):

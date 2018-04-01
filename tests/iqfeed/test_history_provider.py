@@ -355,6 +355,17 @@ class TestIQFeedHistory(unittest.TestCase):
 
             self.assertLess(datetime.datetime.now() - now, datetime.timedelta(seconds=40))
 
+    def test_synchronize_timestamps(self):
+        with IQFeedHistoryProvider(num_connections=2) as history:
+            end_prd = datetime.datetime(2017, 5, 1)
+
+            # test multisymbol request
+            requested_data = history.request_data(BarsInPeriodFilter(ticker=["AAPL", "IBM"], bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, interval_len=3600, ascend=True, interval_type='s'), sync_timestamps=False)
+            self.assertNotEqual(requested_data.loc['AAPL'].shape, requested_data.loc['IBM'].shape)
+
+            requested_data = history.request_data(BarsInPeriodFilter(ticker=["AAPL", "IBM"], bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, interval_len=3600, ascend=True, interval_type='s'), sync_timestamps=True)
+            self.assertEqual(requested_data.loc['AAPL'].shape, requested_data.loc['IBM'].shape)
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -48,7 +48,7 @@ class TestInfluxDBCache(unittest.TestCase):
                 self._client.write_points(datum, 'bars', protocol='line', tag_columns=['symbol', 'interval'], time_precision='s')
 
             latest_old = ranges(self._client)
-            update_to_latest(self._client, noncache_provider=noncache_provider(history), new_symbols={('AAPL', 3600, 's'), ('MSFT', 3600, 's'), ('MSFT', 600, 's')}, time_delta_back=relativedelta(days=30))
+            update_to_latest(self._client, noncache_provider=noncache_provider(history), new_symbols={('AAPL', 3600, 's'), ('MSFT', 3600, 's'), ('MSFT', 600, 's')}, time_delta_back=relativedelta(years=10))
 
             latest_current = ranges(self._client)
             self.assertEqual(len(latest_current), len(latest_old) + 2)
@@ -66,7 +66,7 @@ class TestInfluxDBCache(unittest.TestCase):
 
     def test_update_to_latest_daily(self):
         with IQFeedHistoryProvider(num_connections=2) as history:
-            cache_requests = inf_cache.InfluxDBOHLCRequest(client=self._client, interval_len=3600, interval_type='s')
+            cache_requests = inf_cache.InfluxDBOHLCRequest(client=self._client, interval_len=1, interval_type='d')
 
             bgn_prd = datetime.datetime(2017, 3, 1).date()
             end_prd = datetime.datetime(2017, 3, 2).date()
@@ -85,7 +85,7 @@ class TestInfluxDBCache(unittest.TestCase):
                 self._client.write_points(datum, 'bars', protocol='line', tag_columns=['symbol', 'interval'], time_precision='s')
 
             latest_old = ranges(self._client)
-            update_to_latest(self._client, noncache_provider=noncache_provider(history), new_symbols={('AAPL', 1, 'd'), ('AMZN', 1, 'd')}, time_delta_back=relativedelta(days=30))
+            update_to_latest(self._client, noncache_provider=noncache_provider(history), new_symbols={('AAPL', 1, 'd'), ('AMZN', 1, 'd')}, time_delta_back=relativedelta(years=10))
 
             latest_current = ranges(self._client)
             self.assertEqual(len(latest_current), len(latest_old) + 1)
@@ -95,10 +95,9 @@ class TestInfluxDBCache(unittest.TestCase):
 
             data_no_limit = [history.request_data(f, sync_timestamps=False) for f in filters_no_limit]
             cache_data_no_limit = [cache_requests.request(symbol=f.ticker, bgn_prd=datetime.datetime.combine(f.bgn_dt, datetime.datetime.min.time()).astimezone(tz.tzutc()) + relativedelta(microseconds=1)) for f in filters_no_limit]
-            for df1, df2 in zip(data_no_limit, cache_data_no_limit):
-                del df1['period_volume']
-                del df2['period_volume']
-
+            for df1, (_, df2) in zip(data_no_limit, cache_data_no_limit):
+                del df1['open_interest']
+                df1 = df1[['open', 'high', 'low', 'close', 'period_volume', 'timestamp', 'symbol']]
                 assert_frame_equal(df1, df2)
 
     def test_bars_in_period(self):

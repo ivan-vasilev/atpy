@@ -58,7 +58,8 @@ class TestInfluxDBCacheRequests(unittest.TestCase):
                 cache_requests = InfluxDBOHLCRequest(client=self._client, interval_len=f.interval_len, interval_type=f.interval_type)
                 _, test_data = cache_requests.request(symbol=f.ticker)
                 datautil.adjust_df(test_data, get_adjustments(client=self._client, symbol=f.ticker))
-
+                del datum['total_volume']
+                del datum['number_of_trades']
                 assert_frame_equal(datum, test_data)
 
             for datum, f in zip(adjusted, filters):
@@ -71,12 +72,20 @@ class TestInfluxDBCacheRequests(unittest.TestCase):
 
             # test multisymbol request
             requested_data = history.request_data(BarsInPeriodFilter(ticker=["AAPL", "IBM"], bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, interval_len=3600, ascend=True, interval_type='s'), sync_timestamps=False)
+            requested_data = requested_data.swaplevel(0, 1).sort_index()
+            del requested_data['total_volume']
+            del requested_data['number_of_trades']
+
             cache_requests = InfluxDBOHLCRequest(client=self._client, interval_len=3600, listeners=listeners)
             _, test_data = cache_requests.request(symbol=['IBM', 'AAPL', 'TSG'], bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd)
             assert_frame_equal(requested_data, test_data)
 
             # test any symbol request
             requested_data = history.request_data(BarsInPeriodFilter(ticker=["AAPL", "IBM"], bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, interval_len=3600, ascend=True, interval_type='s'), sync_timestamps=False)
+            requested_data = requested_data.swaplevel(0, 1).sort_index()
+
+            del requested_data['total_volume']
+            del requested_data['number_of_trades']
 
             e = threading.Event()
 
@@ -92,28 +101,6 @@ class TestInfluxDBCacheRequests(unittest.TestCase):
             e.wait()
 
             streaming_conn.disconnect()
-
-    def test_synchronize_timestamps(self):
-        with IQFeedHistoryProvider(num_connections=2) as history:
-            end_prd = datetime.datetime(2017, 5, 1)
-
-            # test single symbol request
-            filters = (BarsInPeriodFilter(ticker="IBM", bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, interval_len=3600, ascend=True, interval_type='s'),
-                       BarsInPeriodFilter(ticker="AAPL", bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, interval_len=3600, ascend=True, interval_type='s'),
-                       BarsInPeriodFilter(ticker="AAPL", bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, interval_len=600, ascend=True, interval_type='s'))
-
-            for f in filters:
-                data = history.request_data(f, sync_timestamps=False)
-                data.drop('timestamp', axis=1, inplace=True)
-                data['interval'] = str(f.interval_len) + '_' + f.interval_type
-                self._client.write_points(data, 'bars', protocol='line', tag_columns=['symbol', 'interval'], time_precision='s')
-
-            # test multisymbol request
-            requested_data = history.request_data(BarsInPeriodFilter(ticker=["AAPL", "IBM"], bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, interval_len=3600, ascend=True, interval_type='s'), sync_timestamps=False)
-            self.assertNotEqual(requested_data.loc['AAPL'].shape, requested_data.loc['IBM'].shape)
-
-            requested_data = history.request_data(BarsInPeriodFilter(ticker=["AAPL", "IBM"], bgn_prd=datetime.datetime(2017, 4, 1), end_prd=end_prd, interval_len=3600, ascend=True, interval_type='s'), sync_timestamps=True)
-            self.assertEqual(requested_data.loc['AAPL'].shape, requested_data.loc['IBM'].shape)
 
 
 if __name__ == '__main__':
