@@ -80,14 +80,14 @@ class TestInfluxDBCache(unittest.TestCase):
                 con.cursor().execute("DROP TABLE IF EXISTS {0};".format(table_name))
 
     def test_update_to_latest_daily(self):
+        url = 'postgresql://postgres:postgres@localhost:5432/test'
+        con = psycopg2.connect(url)
+        con.autocommit = True
+
         with IQFeedHistoryProvider(num_connections=2) as history:
             table_name = 'bars_test'
             try:
-                url = 'postgresql://postgres:postgres@localhost:5432/test'
-
                 engine = create_engine(url)
-                con = psycopg2.connect(url)
-                con.autocommit = True
 
                 cur = con.cursor()
 
@@ -230,15 +230,13 @@ class TestInfluxDBCache(unittest.TestCase):
 
     def test_update_adjustments(self):
         table_name = 'adjustments_test'
+        url = 'postgresql://postgres:postgres@localhost:5432/test'
+
+        con = psycopg2.connect(url)
+        con.autocommit = True
 
         try:
             adjustments = get_splits_dividends({'IBM', 'AAPL', 'GOOG', 'MSFT'})
-            adjustments.tz_localize('UTC', level=0, copy=False)
-
-            url = 'postgresql://postgres:postgres@localhost:5432/test'
-
-            con = psycopg2.connect(url)
-            con.autocommit = True
 
             cur = con.cursor()
 
@@ -249,7 +247,7 @@ class TestInfluxDBCache(unittest.TestCase):
 
             now = datetime.datetime.now()
 
-            df = request_adjustments(con, table_name, symbol=['IBM', 'AAPL', 'MSFT', 'GOOG'], bgn_prd=datetime.datetime(year=now.year - 30, month=now.month, day=now.day), end_prd=now, provider='iqfeed')
+            df = request_adjustments(con, table_name, symbol=['IBM', 'AAPL', 'MSFT', 'GOOG'], bgn_prd=datetime.datetime(year=now.year - 30, month=now.month, day=now.day), end_prd=datetime.datetime(year=now.year + 2, month=now.month, day=now.day), provider='iqfeed')
 
             self.assertFalse(df.empty)
             assert_frame_equal(adjustments, df)
@@ -259,13 +257,12 @@ class TestInfluxDBCache(unittest.TestCase):
     def test_update_fundamentals(self):
         table_name = 'iqfeed_fundamentals'
 
+        url = 'postgresql://postgres:postgres@localhost:5432/test'
+        con = psycopg2.connect(url)
+        con.autocommit = True
+
         try:
             fundamentals = get_fundamentals({'IBM', 'AAPL', 'GOOG', 'MSFT'})
-
-            url = 'postgresql://postgres:postgres@localhost:5432/test'
-
-            con = psycopg2.connect(url)
-            con.autocommit = True
 
             engine = create_engine(url)
 

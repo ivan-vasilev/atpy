@@ -43,8 +43,8 @@ class TestIQFeedLevel1(unittest.TestCase):
         listeners = AsyncListeners()
 
         with IQFeedLevel1Listener(fire_ticks=False, listeners=listeners) as listener, listener.fundamentals_provider():
-            funds = listener.get_fundamentals({'IBM', 'AAPL', 'GOOG', 'MSFT'})
-            self.assertTrue('AAPL' in funds and 'IBM' in funds and 'GOOG' in funds and 'MSFT' in funds)
+            funds = listener.get_fundamentals({'TRC', 'IBM', 'AAPL', 'GOOG', 'MSFT'})
+            self.assertTrue('AAPL' in funds and 'IBM' in funds and 'GOOG' in funds and 'MSFT' in funds and 'TRC' in funds)
             for _, v in funds.items():
                 self.assertGreater(len(v), 0)
 

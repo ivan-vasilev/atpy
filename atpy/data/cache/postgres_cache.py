@@ -317,7 +317,7 @@ def insert_df(conn, table_name: str, df: pd.DataFrame):
     cursor.close()
 
 
-def request_adjustments(conn, table_name: str, symbol: typing.Union[list, str] = None, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None, provider: str = None):
+def request_adjustments(conn, table_name: str, symbol: typing.Union[list, str] = None, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None, adj_type: str = None, provider: str = None):
     """
     add a list of splits/dividends to the database
     :param conn: db connection
@@ -326,6 +326,7 @@ def request_adjustments(conn, table_name: str, symbol: typing.Union[list, str] =
     :param bgn_prd: begin period
     :param end_prd: end period
     :param provider: data provider
+    :param adj_type: adjustment type (split/dividend)
     """
     where = " WHERE 1=1"
     params = list()
@@ -348,6 +349,10 @@ def request_adjustments(conn, table_name: str, symbol: typing.Union[list, str] =
     if provider is not None:
         where += " AND provider = %s"
         params.append(provider)
+
+    if adj_type is not None:
+        where += " AND type = %s"
+        params.append(adj_type)
 
     df = pd.read_sql("SELECT * FROM " + table_name + where + " ORDER BY timestamp ASC, symbol", con=conn, index_col=['timestamp', 'symbol', 'type', 'provider'], params=params)
 

@@ -1,3 +1,5 @@
+#!/bin/python3
+
 """
 Script that updates the splits/dividends/fundamentals cache
 """

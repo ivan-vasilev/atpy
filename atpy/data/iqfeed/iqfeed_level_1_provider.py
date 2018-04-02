@@ -225,7 +225,11 @@ def get_splits_dividends(symbol: typing.Union[set, str], conn: iq.QuoteConn = No
 
     result = pd.DataFrame(points)
     result['provider'] = 'iqfeed'
+
+    result['timestamp'] = pd.to_datetime(result['timestamp'])
     result = result.set_index(['timestamp', 'symbol', 'type', 'provider'])
+    result = result.tz_localize('US/Eastern', level=0).tz_convert('UTC', level=0)
+    result = result[~result.index.duplicated(keep='last')]
     result.sort_index(inplace=True)
 
     return result

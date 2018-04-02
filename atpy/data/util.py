@@ -179,23 +179,23 @@ def adjust_split(data, split_factor: float, split_date: datetime.date, idx: pd.I
 
 
 def adjust_dividend_multiindex(data: pd.DataFrame, symbol: str, dividend_amount: float, dividend_date: datetime.date):
-    if len(data) > 0:
-        dividend_date = datetime.datetime.combine(dividend_date, datetime.datetime.min.time()).replace(tzinfo=data.iloc[0]['timestamp'].tz)
+    if len(data) > 0 and symbol in data.index.levels[1]:
+        dividend_date = datetime.datetime.combine(dividend_date, datetime.datetime.min.time()).replace(tzinfo=data.iloc[0].name[0].tz)
 
         idx = pd.IndexSlice
 
-        if dividend_date > data.iloc[0]['timestamp'] <= dividend_date <= data.iloc[-1]['timestamp']:
+        if data.loc[idx[:, symbol], :].iloc[0].name[0] <= dividend_date <= data.loc[idx[:, symbol], :].iloc[-1].name[0]:
             for c in [c for c in ['close', 'high', 'open', 'low', 'ask', 'bid', 'last'] if c in data.columns]:
                 data.loc[idx[:dividend_date, symbol], c] -= dividend_amount
 
 
 def adjust_split_multiindex(data: pd.DataFrame, symbol: str, split_factor: float, split_date: datetime.date):
-    if split_factor > 0 and len(data) > 0:
-        split_date = datetime.datetime.combine(split_date, datetime.datetime.min.time()).replace(tzinfo=data.iloc[0]['timestamp'].tz)
+    if split_factor > 0 and len(data) > 0 and symbol in data.index.levels[1]:
+        split_date = datetime.datetime.combine(split_date, datetime.datetime.min.time()).replace(tzinfo=data.iloc[0].name[0].tz)
 
         idx = pd.IndexSlice
 
-        if data.loc[idx[:, symbol], 'timestamp'].iloc[0] <= split_date <= data.loc[idx[:, symbol], 'timestamp'].iloc[-1]:
+        if data.loc[idx[:, symbol], :].iloc[0].name[0] <= split_date <= data.loc[idx[:, symbol], :].iloc[-1].name[0]:
             for c in [c for c in ['period_volume', 'total_volume', 'last_size'] if c in data.columns]:
                 data.loc[idx[:split_date, symbol], c] *= (1 / split_factor)
                 data.loc[idx[:split_date, symbol], c] = data[c].astype(np.uint64)
