@@ -394,7 +394,7 @@ class BarsInPeriodProvider(object):
             raise StopIteration
 
     def current_cache_key(self):
-        return str(self._periods[self._deltas][0]) + '__' + str(self._periods[self._deltas][1]) + '__' + str(self.interval_len) + str(self.interval_type)
+        return str(self._periods[self._deltas][0]) + ' - ' + str(self._periods[self._deltas][1]) + ' - ' + str(self.interval_len) + str(self.interval_type)
 
 
 def bars_to_lmdb(provider: BarsInPeriodProvider, lmdb_path: str = None):

@@ -1,4 +1,5 @@
 import datetime
+import functools
 import os
 
 import psycopg2
@@ -6,12 +7,13 @@ from dateutil.relativedelta import relativedelta
 
 import atpy.data.iqfeed.util as iqutil
 from atpy.backtesting.data_replay import DataReplayEvents, DataReplay
+from atpy.data.cache.lmdb_cache import read_pickle
 from atpy.data.cache.postgres_cache import BarsInPeriodProvider
 from atpy.data.quandl.postgres_cache import SFInPeriodProvider
 from atpy.data.ts_util import current_period, current_phase, gaps, AsyncInPeriodProvider
 
 
-def postgres_ohlc(listeners, include_1m: bool, include_5m: bool, include_60m: bool, include_1d: bool, bgn_prd: datetime.datetime, run_async=False, url: str = None):
+def postgres_ohlc(listeners, include_1m: bool, include_5m: bool, include_60m: bool, include_1d: bool, bgn_prd: datetime.datetime, run_async=False, url: str = None, lmdb_path: str = None):
     """
     Create DataReplay environment for bar data using PostgreSQL
     :param listeners: listeners environment
@@ -19,39 +21,44 @@ def postgres_ohlc(listeners, include_1m: bool, include_5m: bool, include_60m: bo
     :param include_5m: include 5 minute data
     :param include_60m: include 60 minute data
     :param include_1d: include daily data
+    :param bgn_prd: begin period
     :param run_async: generate data asynchronously
     :param url: postgre url (can be obtained via env variable)
+    :param lmdb_path: path to lmdb cache file
     :return: dataframe
     """
 
     con = psycopg2.connect(url if url is not None else os.environ['POSTGRESQL_CACHE'])
 
+    lmdb_path = os.environ['ATPY_LMDB_PATH'] if lmdb_path is None and 'ATPY_LMDB_PATH' in os.environ else lmdb_path
+    cache = functools.partial(read_pickle, lmdb_path=lmdb_path) if lmdb_path is not None else None
+
     dr = DataReplay()
     dre = DataReplayEvents(listeners, dr, event_name='data')
 
     if include_1m:
-        bars_in_period = BarsInPeriodProvider(conn=con, interval_len=60, interval_type='s', bars_table='bars_1m', bgn_prd=bgn_prd, delta=relativedelta(months=1), overlap=relativedelta(microseconds=-1))
+        bars_in_period = BarsInPeriodProvider(conn=con, interval_len=60, interval_type='s', bars_table='bars_1m', bgn_prd=bgn_prd, delta=relativedelta(weeks=1), overlap=relativedelta(microseconds=-1), cache=cache)
         if run_async:
             bars_in_period = AsyncInPeriodProvider(bars_in_period)
 
         dr.add_source(bars_in_period, 'bars_1m', historical_depth=300)
 
     if include_5m:
-        bars_in_period = BarsInPeriodProvider(conn=con, interval_len=300, interval_type='s', bars_table='bars_5m', bgn_prd=bgn_prd, delta=relativedelta(months=1), overlap=relativedelta(microseconds=-1))
+        bars_in_period = BarsInPeriodProvider(conn=con, interval_len=300, interval_type='s', bars_table='bars_5m', bgn_prd=bgn_prd, delta=relativedelta(weeks=1), overlap=relativedelta(microseconds=-1), cache=cache)
         if run_async:
             bars_in_period = AsyncInPeriodProvider(bars_in_period)
 
         dr.add_source(bars_in_period, 'bars_5m', historical_depth=200)
 
     if include_60m:
-        bars_in_period = BarsInPeriodProvider(conn=con, interval_len=3600, interval_type='s', bars_table='bars_60m', bgn_prd=bgn_prd, delta=relativedelta(months=1), overlap=relativedelta(microseconds=-1))
+        bars_in_period = BarsInPeriodProvider(conn=con, interval_len=3600, interval_type='s', bars_table='bars_60m', bgn_prd=bgn_prd, delta=relativedelta(months=1), overlap=relativedelta(microseconds=-1), cache=cache)
         if run_async:
             bars_in_period = AsyncInPeriodProvider(bars_in_period)
 
         dr.add_source(bars_in_period, 'bars_60m', historical_depth=300)
 
     if include_1d:
-        bars_in_period = BarsInPeriodProvider(conn=con, interval_len=1, interval_type='d', bars_table='bars_1d', bgn_prd=bgn_prd, delta=relativedelta(months=1), overlap=relativedelta(microseconds=-1))
+        bars_in_period = BarsInPeriodProvider(conn=con, interval_len=1, interval_type='d', bars_table='bars_1d', bgn_prd=bgn_prd, delta=relativedelta(months=1), overlap=relativedelta(microseconds=-1), cache=cache)
         if run_async:
             bars_in_period = AsyncInPeriodProvider(bars_in_period)
 
