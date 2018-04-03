@@ -2,6 +2,7 @@
 
 import argparse
 import datetime
+import functools
 import logging
 import os
 
@@ -38,13 +39,18 @@ if __name__ == "__main__":
 
     now = datetime.datetime.now()
     bgn_prd = datetime.datetime(now.year - args.delta_back, 1, 1)
+    bgn_prd = bgn_prd + relativedelta(days=7 - bgn_prd.weekday())
 
-    bars_in_period = BarsInPeriodProvider(conn=con, interval_len=3600, interval_type='s', bars_table='bars_60m', bgn_prd=bgn_prd, delta=relativedelta(months=1),
-                                          overlap=relativedelta(microseconds=-1))
+    cache_read = functools.partial(read_pickle, lmdb_path=lmdb_path)
+    bars_in_period = BarsInPeriodProvider(conn=con, interval_len=3600, interval_type='s', bars_table='bars_60m', bgn_prd=bgn_prd, delta=relativedelta(days=7),
+                                          overlap=relativedelta(microseconds=-1), cache=cache_read)
 
     for i, df in enumerate(bars_in_period):
-        if adjustments is not None:
-            adjust_df(df, adjustments)
+        if cache_read(bars_in_period.current_cache_key()) is None:
+            if adjustments is not None:
+                adjust_df(df, adjustments)
 
-        logging.info('Saving ' + bars_in_period.current_cache_key())
-        write(bars_in_period.current_cache_key(), df, lmdb_path)
+            write(bars_in_period.current_cache_key(), df, lmdb_path)
+            logging.info('Saving ' + bars_in_period.current_cache_key())
+        else:
+            logging.info('Cache hit on ' + bars_in_period.current_cache_key())
