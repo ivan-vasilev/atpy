@@ -1,5 +1,7 @@
 import threading
 
+import pandas as pd
+
 import atpy.portfolio.order as orders
 
 
@@ -47,12 +49,11 @@ class MockOrders(object):
 
     def process_bar_data(self, data):
         with self._lock:
-            matching_orders = [o for o in self._pending_orders if o.symbol == data['symbol']]
+            symbols = [o.symbol for o in self._pending_orders]
+            for o in [o for o, isin in zip(self._pending_orders, data.index.isin(symbols, level=1)) if isin]:
+                datum = data.loc[pd.IndexSlice[:, o.symbol], :].iloc[-1]
+                o.add_position(datum['period_volume'], datum['close'])
 
-            for order in matching_orders:
-                order.add_position(data['period_volume'], data['close'])
-
-                if order.fulfill_time is not None:
-                    self._pending_orders.remove(order)
-                    self.listeners({'type': 'order_fulfilled', 'data': order})
-
+                if o.fulfill_time is not None:
+                    self._pending_orders.remove(o)
+                    self.listeners({'type': 'order_fulfilled', 'data': o})
