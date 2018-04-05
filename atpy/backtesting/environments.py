@@ -1,5 +1,6 @@
 import datetime
 import functools
+import logging
 import os
 import typing
 
@@ -12,7 +13,6 @@ from atpy.data.cache.lmdb_cache import read_pickle
 from atpy.data.cache.postgres_cache import BarsInPeriodProvider
 from atpy.data.quandl.postgres_cache import SFInPeriodProvider
 from atpy.data.ts_util import current_period, current_phase, gaps, rolling_mean, AsyncInPeriodProvider
-import logging
 
 
 def data_replay_events(listeners):
@@ -162,6 +162,7 @@ def add_rolling_mean(listeners, datum_name: str, window: int, column: typing.Uni
     :param column: a column (or list of columns, where to apply the rolling mean)
     :return DataFrame with changes
     """
+
     def rm(e):
         if datum_name in e:
             e[datum_name][column + '_rm_' + str(window)] = rolling_mean(df=e[datum_name], window=window, column=column)
@@ -200,18 +201,35 @@ def add_daily_log(listeners):
     """
 
     prev_timestamp = None
+    current_time = datetime.datetime.now()
 
     def daily_log(e):
         if 'timestamp' in e:
             nonlocal prev_timestamp
+            nonlocal current_time
 
             current_ts = e['timestamp']
             if prev_timestamp is not None and current_ts.day != prev_timestamp.day:
-                logging.getLogger(__name__).info("Starting " + str(current_ts))
+                now = datetime.datetime.now()
+                logging.getLogger(__name__).info("Timestamp " + str(current_ts) + "; Time elapsed for the period: " + str(now - current_time))
+                current_time = now
 
             prev_timestamp = current_ts
 
     listeners += daily_log
+
+
+def add_timestamp_log(listeners):
+    """
+    Add log message on new timestamp
+    :param listeners: listeners environment
+    """
+
+    def timestamp_log(e):
+        if 'timestamp' in e:
+            logging.getLogger(__name__).info("Current timestamp: " + str(e['timestamp']))
+
+    listeners += timestamp_log
 
 
 def add_current_phase(listeners):

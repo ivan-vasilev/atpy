@@ -44,24 +44,26 @@ def current_period(df: pd.DataFrame):
 
     most_recent = df.iloc[-1].name[0]
 
-    xs = pd.IndexSlice
-
-    if most_recent.date() in tcal.trading_days:
+    try:
         current_hours = __open_and_closes_series.loc[most_recent.date()]
+    except KeyError:
+        current_hours = None
+
+    if current_hours is not None:
         if most_recent > current_hours[1]:
-            result, period = df.loc[xs[current_hours[1]:, :] if isinstance(df.index, pd.MultiIndex) else xs[current_hours[1]:]], 'after-hours'
+            result, period = df.loc[current_hours[1]:], 'after-hours'
         elif most_recent < current_hours[0]:
             lc = __closes_series.loc[df.iloc[0].name[0].date(): most_recent.date()]
             if len(lc) > 1:
-                result, period = df.loc[xs[lc[-2]:, :] if isinstance(df.index, pd.MultiIndex) else xs[lc[-2]:]], 'after-hours'
+                result, period = df.loc[lc[-2]:], 'after-hours'
             else:
                 result, period = df, 'after-hours'
         else:
-            result, period = df.loc[xs[current_hours[0]:, :] if isinstance(df.index, pd.MultiIndex) else xs[current_hours[0]:]], 'trading-hours'
+            result, period = df.loc[current_hours[0]:], 'trading-hours'
     else:
         lc = __closes_series.loc[df.iloc[0].name[0].date(): most_recent.date()]
         if len(lc) > 0:
-            result, period = df.loc[xs[lc.iloc[-1]:, :] if isinstance(df.index, pd.MultiIndex) else xs[lc.iloc[-1]:]], 'after-hours'
+            result, period = df.loc[lc.iloc[-1]:], 'after-hours'
         else:
             result, period = df, 'after-hours'
 
