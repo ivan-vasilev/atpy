@@ -143,6 +143,26 @@ def gaps(df: pd.DataFrame):
     return result
 
 
+def rolling_mean(df: pd.DataFrame, window: int, column: typing.Union[typing.List, str]='close'):
+    """
+    Compute the rolling mean over a column
+    :param df: pandas OHLC DataFrame
+    :param window: window size OHLC DataFrame
+    :param column: a column (or list of columns, where to apply the rolling mean)
+    :return DataFrame with changes
+    """
+    return df[column].groupby(level='symbol', group_keys=False).rolling(window).mean()
+
+
+def ohlc_mean(df: pd.DataFrame):
+    """
+    Compute the mean value of o/h/l/c
+    :param df: pandas OHLC DataFrame
+    :return DataFrame with changes
+    """
+    df[['open', 'open', 'high', 'low']].mean(axis=1)
+
+
 class AsyncInPeriodProvider(object):
     """
     Run InPeriodProvider in async mode

@@ -27,7 +27,7 @@ class TestDataReplay(unittest.TestCase):
             dr = DataReplay().add_source(AsyncInPeriodProvider([q.get()[1]]), 'e1').add_source([q.get()[1]], 'e2')
 
             for i, r in enumerate(dr):
-                for e in r:
+                for e in [e for e in r if isinstance(r[e], pd.DataFrame)]:
                     t = r[e].iloc[0]['timestamp']
 
                 if len(timestamps) > 0:
@@ -102,13 +102,14 @@ class TestDataReplay(unittest.TestCase):
             dr = DataReplay().add_source(AsyncInPeriodProvider(l1), 'e1', historical_depth=historical_depth).add_source(l2, 'e2', historical_depth=historical_depth)
 
             for r in dr:
-                for e in r:
+                for e in [e for e in r if isinstance(r[e], pd.DataFrame)]:
                     t = r[e].iloc[-1]['timestamp']
 
                 if len(timestamps) > 0:
                     self.assertGreater(t, max(timestamps))
 
-                for e, df in r.items():
+                for e in [e for e in r if isinstance(r[e], pd.DataFrame)]:
+                    df = r[e]
                     self.assertTrue(df.index.is_monotonic)
 
                     counters[e] = 1 if e not in counters else counters[e] + 1
@@ -163,7 +164,7 @@ class TestDataReplay(unittest.TestCase):
                     logging.getLogger(__name__).debug('Time elapsed ' + str(elapsed) + ' for ' + str(i) + ' iterations; ' + str(elapsed / 1000) + ' per iteration')
                     now = new_now
 
-                for e in r:
+                for e in [e for e in r if isinstance(r[e], pd.DataFrame)]:
                     current_period(r[e])
 
             elapsed = datetime.datetime.now() - now
@@ -212,7 +213,7 @@ class TestDataReplay(unittest.TestCase):
                     logging.getLogger(__name__).debug('Time elapsed ' + str(elapsed) + ' for ' + str(i) + ' iterations; ' + str(elapsed / 1000) + ' per iteration')
                     now = new_now
 
-                for e in r:
+                for e in [e for e in r if isinstance(r[e], pd.DataFrame)]:
                     current_period(r[e])
 
             elapsed = datetime.datetime.now() - now
@@ -261,7 +262,7 @@ class TestDataReplay(unittest.TestCase):
                     logging.getLogger(__name__).debug('Time elapsed ' + str(elapsed) + ' for ' + str(i) + ' iterations; ' + str(elapsed / 1000) + ' per iteration')
                     now = new_now
 
-                for e in r:
+                for e in [e for e in r if isinstance(r[e], pd.DataFrame)]:
                     x, a = current_period(r[e])
                     self.assertFalse(x.empty)
                     t = r[e].iloc[-1]['timestamp']
@@ -319,7 +320,7 @@ class TestDataReplay(unittest.TestCase):
             listeners += snapshot_listener
             for i, r in enumerate(dr):
                 j = i
-                for a in r:
+                for a in [e for e in r if isinstance(r[e], pd.DataFrame)]:
                     lb.on_event({'type': 'event', 'data': r[a]})
 
                 if i % 100 == 0 and i > 0:
@@ -328,7 +329,7 @@ class TestDataReplay(unittest.TestCase):
                     logging.getLogger(__name__).debug('Time elapsed ' + str(elapsed) + ' for ' + str(i) + ' iterations; ' + str(elapsed / 100) + ' per iteration')
                     now = new_now
 
-                for e in r:
+                for e in [e for e in r if isinstance(r[e], pd.DataFrame)]:
                     t = r[e].iloc[-1]['timestamp']
 
                 if prev_t is not None:

@@ -8,11 +8,17 @@ from pyevents.events import SyncListeners
 class TestEnvironments(unittest.TestCase):
 
     def test_postgre_ohlc(self):
+        logging.basicConfig(level=logging.INFO)
+
         listeners = SyncListeners()
 
-        dre = postgres_ohlc(listeners, include_1d=True, include_60m=False, include_5m=True, include_1m=False, bgn_prd=datetime.datetime.now() - relativedelta(months=2), run_async=False)
+        dre = data_replay_events(listeners)
+        add_postgres_ohlc_1d(dre, bgn_prd=datetime.datetime.now() - relativedelta(months=2))
+        add_postgres_ohlc_5m(dre, bgn_prd=datetime.datetime.now() - relativedelta(months=2))
         add_current_period(listeners, 'bars_5m')
         add_current_phase(listeners)
+        add_daily_log(listeners)
+        add_rolling_mean(listeners, datum_name='bars_1d_full', window=5)
         add_gaps(listeners, 'bars_1d')
 
         dct = {'bars_5m': 0, 'bars_1d': 0, 'latest_5m': None, 'latest_1d': None, 'phases': set(), 'phase_start': False}
@@ -37,6 +43,7 @@ class TestEnvironments(unittest.TestCase):
                 if 'bars_1d' in e:
                     self.assertTrue(isinstance(e['bars_1d'], pd.DataFrame))
                     self.assertFalse(e['bars_1d'].empty)
+                    self.assertTrue('close_rm_5' in e['bars_1d'].columns)
                     dct['bars_1d'] += 1
 
                     if dct['latest_1d'] is not None:
@@ -65,8 +72,9 @@ class TestEnvironments(unittest.TestCase):
     def test_postgre_ohlc_quandl_sf0(self):
         listeners = SyncListeners()
 
-        dre = postgres_ohlc(listeners, include_1d=True, include_5m=False, include_1m=False, bgn_prd=datetime.datetime.now() - relativedelta(years=1), run_async=False)
-        add_current_period(listeners)
+        dre = data_replay_events(listeners)
+        add_postgres_ohlc_1d(dre, bgn_prd=datetime.datetime.now() - relativedelta(months=2))
+        add_current_period(listeners, datum_name='bars_1d')
         add_quandl_sf(dre, bgn_prd=datetime.datetime.now() - relativedelta(years=1))
 
         dct = {'bars_1d': 0, 'quandl_sf0': 0, 'latest_1d': None, 'latest_quandl_sf0': None}
