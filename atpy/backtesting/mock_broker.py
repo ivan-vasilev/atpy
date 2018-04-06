@@ -4,6 +4,7 @@ import typing
 import pandas as pd
 
 import atpy.portfolio.order as orders
+import logging
 
 
 class MockBroker(object):
@@ -50,21 +51,24 @@ class MockBroker(object):
     def process_tick_data(self, data):
         with self._lock:
             matching_orders = [o for o in self._pending_orders if o.symbol == data['symbol']]
-            for order in matching_orders:
-                if order.order_type == orders.Type.BUY:
+            for o in matching_orders:
+                if o.order_type == orders.Type.BUY:
                     if 'tick_id' in data:
-                        order.add_position(data['last_size'], data['ask'])
+                        o.add_position(data['last_size'], data['ask'])
                     else:
-                        order.add_position(data['ask_size'] if data['ask_size'] > 0 else data['most_recent_trade_size'], data['ask'] if data['ask_size'] > 0 else data['most_recent_trade'])
-                elif order.order_type == orders.Type.SELL:
+                        o.add_position(data['ask_size'] if data['ask_size'] > 0 else data['most_recent_trade_size'], data['ask'] if data['ask_size'] > 0 else data['most_recent_trade'])
+                elif o.order_type == orders.Type.SELL:
                     if 'tick_id' in data:
-                        order.add_position(data['last_size'], data['bid'])
+                        o.add_position(data['last_size'], data['bid'])
                     else:
-                        order.add_position(data['bid_size'] if data['bid_size'] > 0 else data['most_recent_trade_size'], data['bid'] if data['bid_size'] > 0 else data['most_recent_trade'])
+                        o.add_position(data['bid_size'] if data['bid_size'] > 0 else data['most_recent_trade_size'], data['bid'] if data['bid_size'] > 0 else data['most_recent_trade'])
 
-                if order.fulfill_time is not None:
-                    self._pending_orders.remove(order)
-                    self.listeners({'type': 'order_fulfilled', 'data': order})
+                if o.fulfill_time is not None:
+                    self._pending_orders.remove(o)
+
+                    logging.getLogger(__name__).info("Order fulfilled: " + str(o))
+
+                    self.listeners({'type': 'order_fulfilled', 'data': o})
 
     def process_bar_data(self, data):
         with self._lock:
@@ -75,4 +79,7 @@ class MockBroker(object):
 
                 if o.fulfill_time is not None:
                     self._pending_orders.remove(o)
+
+                    logging.getLogger(__name__).info("Order fulfilled: " + str(o))
+
                     self.listeners({'type': 'order_fulfilled', 'data': o})

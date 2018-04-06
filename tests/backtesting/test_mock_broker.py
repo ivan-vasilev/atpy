@@ -7,12 +7,16 @@ from atpy.data.iqfeed.iqfeed_history_provider import *
 from atpy.data.iqfeed.iqfeed_level_1_provider import *
 from atpy.portfolio.order import *
 from pyevents.events import *
+import logging
 
 
 class TestMockOrders(unittest.TestCase):
     """
     Test Mock Orders
     """
+
+    def setUp(self):
+        logging.basicConfig(level=logging.INFO)
 
     def test_market_order(self):
         listeners = AsyncListeners()

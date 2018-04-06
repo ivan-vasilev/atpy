@@ -21,7 +21,6 @@ class BaseOrder(object, metaclass=ABCMeta):
         self.__obtained_positions = list()
         self.request_time = datetime.datetime.utcnow().replace(tzinfo=tz.gettz('UTC'))
         self.__fulfill_time = None
-        self.__cached_cost = None
 
     @property
     def fulfill_time(self):
@@ -47,20 +46,24 @@ class BaseOrder(object, metaclass=ABCMeta):
         if self.obtained_quantity >= self.quantity:
             self.__fulfill_time = datetime.datetime.utcnow().replace(tzinfo=tz.gettz('UTC'))
 
-        self.__cached_cost = None
-
         return True
 
     @property
     def cost(self):
-        if self.__cached_cost is None:
-            self.__cached_cost = sum([p[0] * p[1] for p in self.__obtained_positions])
-
-        return self.__cached_cost
+        return sum([p[0] * p[1] for p in self.__obtained_positions])
 
     @property
     def last_cost_per_share(self):
         return self.__obtained_positions[-1][1]
+
+    def __str__(self):
+        result = str(self.order_type).split('.')[1] + " " + self.symbol + " " + str(self.quantity)
+        if self.obtained_quantity > 0:
+            result += "; fulfilled: " + str(self.obtained_quantity) + " for " + str(self.cost)
+            if self.__fulfill_time is not None:
+                result += " in " + str(self.__fulfill_time - self.request_time)
+
+        return result
 
 
 class MarketOrder(BaseOrder):
