@@ -1,32 +1,51 @@
 import threading
+import typing
 
 import pandas as pd
 
 import atpy.portfolio.order as orders
 
 
-class MockOrders(object):
+class MockBroker(object):
+    """
+    Mock broker for executing trades based on the current streaming prices. Works with realtime and historical data.
+    """
 
-    def __init__(self, listeners, watch_event='watch_ticks'):
+    def __init__(self, listeners, accept_bars: typing.Callable = None, accept_ticks: typing.Callable = None):
+        """
+        Add source for data generation
+        :param listeners: listeners
+        :param accept_bars: treat event like bar data. Has to return the bar dataframe. If None, then the event is not accepted
+        :param accept_ticks: treat event like tick data. Has to return the tick dataframe. If None, then the event is not accepted
+        """
+
+        if accept_bars is not None:
+            self.accept_bars = accept_bars
+        else:
+            self.accept_bars = lambda e: e['data'] if e['type'] == 'bar' else None
+
+        if accept_ticks is not None:
+            self.accept_ticks = accept_ticks
+        else:
+            self.accept_ticks = lambda e: e['data'] if e['type'] == 'level_1_tick' else None
+
         self.listeners = listeners
         self.listeners += self.on_event
 
         self._pending_orders = list()
         self._lock = threading.RLock()
-        self._watch_event = watch_event
 
     def process_order_request(self, order):
         with self._lock:
             self._pending_orders.append(order)
-            self.listeners({'type': self._watch_event, 'data': order.symbol})
 
     def on_event(self, event):
         if event['type'] == 'order_request':
             self.process_order_request(event['data'])
-        elif event['type'] == 'level_1_tick':
-            self.process_tick_data(event['data'])
-        elif event['type'] == 'bar':
-            self.process_bar_data(event['data'])
+        elif self.accept_ticks(event) is not None:
+            self.process_tick_data(self.accept_ticks(event))
+        elif self.accept_bars(event) is not None:
+            self.process_bar_data(self.accept_bars(event))
 
     def process_tick_data(self, data):
         with self._lock:

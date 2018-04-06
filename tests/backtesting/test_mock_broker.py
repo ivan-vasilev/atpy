@@ -1,7 +1,7 @@
 import unittest
 
 from atpy.backtesting.data_replay import DataReplay, DataReplayEvents
-from atpy.backtesting.mock_broker import MockOrders
+from atpy.backtesting.mock_broker import MockBroker
 from atpy.data.iqfeed.iqfeed_bar_data_provider import *
 from atpy.data.iqfeed.iqfeed_history_provider import *
 from atpy.data.iqfeed.iqfeed_level_1_provider import *
@@ -16,15 +16,21 @@ class TestMockOrders(unittest.TestCase):
 
     def test_market_order(self):
         listeners = AsyncListeners()
+        e1 = threading.Event()
+        listeners += lambda x: e1.set() if x['type'] == 'order_fulfilled' and x['data'].symbol == 'GOOG' else None
 
-        with IQFeedLevel1Listener(listeners=listeners):
-            MockOrders(listeners=listeners)
+        e2 = threading.Event()
+        listeners += lambda x: e2.set() if x['type'] == 'order_fulfilled' and x['data'].symbol == 'AAPL' else None
 
-            e1 = threading.Event()
-            listeners += lambda x: e1.set() if x['type'] == 'order_fulfilled' and x['data'].symbol == 'GOOG' else None
+        e3 = threading.Event()
+        listeners += lambda x: e3.set() if x['type'] == 'order_fulfilled' and x['data'].symbol == 'IBM' else None
 
-            e2 = threading.Event()
-            listeners += lambda x: e2.set() if x['type'] == 'order_fulfilled' and x['data'].symbol == 'AAPL' else None
+        MockBroker(listeners=listeners)
+
+        with IQFeedLevel1Listener(listeners=listeners) as level_1:
+            level_1.watch('GOOG')
+            level_1.watch('AAPL')
+            level_1.watch('IBM')
 
             o1 = MarketOrder(Type.BUY, 'GOOG', 1)
             listeners({'type': 'order_request', 'data': o1})
@@ -32,15 +38,12 @@ class TestMockOrders(unittest.TestCase):
             o2 = MarketOrder(Type.BUY, 'AAPL', 3)
             listeners({'type': 'order_request', 'data': o2})
 
-            e3 = threading.Event()
-            listeners += lambda x: e3.set() if x['type'] == 'order_fulfilled' and x['data'].symbol == 'IBM' else None
-
             o3 = MarketOrder(Type.SELL, 'IBM', 1)
             listeners({'type': 'order_request', 'data': o3})
-            e3.wait()
 
             e1.wait()
             e2.wait()
+            e3.wait()
 
         self.assertEqual(o1.obtained_quantity, 1)
         self.assertGreater(o1.cost, 0)
@@ -57,14 +60,21 @@ class TestMockOrders(unittest.TestCase):
     def test_bar_market_order(self):
         listeners = AsyncListeners()
 
-        with IQFeedBarDataListener(interval_len=300, mkt_snapshot_depth=10, listeners=listeners):
-            MockOrders(listeners=listeners, watch_event='watch_bars')
+        e1 = threading.Event()
+        listeners += lambda x: e1.set() if x['type'] == 'order_fulfilled' and x['data'].symbol == 'GOOG' else None
 
-            e1 = threading.Event()
-            listeners += lambda x: e1.set() if x['type'] == 'order_fulfilled' and x['data'].symbol == 'GOOG' else None
+        e2 = threading.Event()
+        listeners += lambda x: e2.set() if x['type'] == 'order_fulfilled' and x['data'].symbol == 'AAPL' else None
 
-            e2 = threading.Event()
-            listeners += lambda x: e2.set() if x['type'] == 'order_fulfilled' and x['data'].symbol == 'AAPL' else None
+        e3 = threading.Event()
+        listeners += lambda x: e3.set() if x['type'] == 'order_fulfilled' and x['data'].symbol == 'IBM' else None
+
+        MockBroker(listeners=listeners)
+
+        with IQFeedBarDataListener(interval_len=300, mkt_snapshot_depth=10, listeners=listeners) as bars:
+            bars.watch_bars('GOOG')
+            bars.watch_bars('AAPL')
+            bars.watch_bars('IBM')
 
             o1 = MarketOrder(Type.BUY, 'GOOG', 1)
             listeners({'type': 'order_request', 'data': o1})
@@ -72,14 +82,12 @@ class TestMockOrders(unittest.TestCase):
             o2 = MarketOrder(Type.BUY, 'AAPL', 3)
             listeners({'type': 'order_request', 'data': o2})
 
-            e3 = threading.Event()
-            listeners += lambda x: e3.set() if x['type'] == 'order_fulfilled' and x['data'].symbol == 'IBM' else None
             o3 = MarketOrder(Type.SELL, 'IBM', 1)
             listeners({'type': 'order_request', 'data': o3})
 
-            e3.wait()
             e1.wait()
             e2.wait()
+            e3.wait()
 
         self.assertEqual(o1.obtained_quantity, 1)
         self.assertGreater(o1.cost, 0)
@@ -96,7 +104,7 @@ class TestMockOrders(unittest.TestCase):
     def test_historical_bar_market_order(self):
         listeners = AsyncListeners()
 
-        MockOrders(listeners=listeners)
+        MockBroker(listeners=listeners)
 
         e1 = threading.Event()
         listeners += lambda x: e1.set() if x['type'] == 'order_fulfilled' and x['data'].symbol == 'GOOG' else None
@@ -139,17 +147,21 @@ class TestMockOrders(unittest.TestCase):
     def test_limit_order(self):
         listeners = AsyncListeners()
 
-        with IQFeedLevel1Listener(listeners=listeners):
-            MockOrders(listeners=listeners)
+        MockBroker(listeners=listeners)
 
-            e1 = threading.Event()
-            listeners += lambda x: e1.set() if x['type'] == 'order_fulfilled' and x['data'].symbol == 'GOOG' else None
+        e1 = threading.Event()
+        listeners += lambda x: e1.set() if x['type'] == 'order_fulfilled' and x['data'].symbol == 'GOOG' else None
 
-            e2 = threading.Event()
-            listeners += lambda x: e2.set() if x['type'] == 'order_fulfilled' and x['data'].symbol == 'AAPL' else None
+        e2 = threading.Event()
+        listeners += lambda x: e2.set() if x['type'] == 'order_fulfilled' and x['data'].symbol == 'AAPL' else None
 
-            e3 = threading.Event()
-            listeners += lambda x: e3.set() if x['type'] == 'order_fulfilled' and x['data'].symbol == 'IBM' else None
+        e3 = threading.Event()
+        listeners += lambda x: e3.set() if x['type'] == 'order_fulfilled' and x['data'].symbol == 'IBM' else None
+
+        with IQFeedLevel1Listener(listeners=listeners) as level_1:
+            level_1.watch('GOOG')
+            level_1.watch('AAPL')
+            level_1.watch('IBM')
 
             o1 = LimitOrder(Type.BUY, 'GOOG', 1, 99999)
             listeners({'type': 'order_request', 'data': o1})
@@ -179,17 +191,21 @@ class TestMockOrders(unittest.TestCase):
     def test_stop_market_order(self):
         listeners = AsyncListeners()
 
-        with IQFeedLevel1Listener(listeners=listeners):
-            MockOrders(listeners=listeners)
+        MockBroker(listeners=listeners)
 
-            e1 = threading.Event()
-            listeners += lambda x: e1.set() if x['type'] == 'order_fulfilled' and x['data'].symbol == 'GOOG' else None
+        e1 = threading.Event()
+        listeners += lambda x: e1.set() if x['type'] == 'order_fulfilled' and x['data'].symbol == 'GOOG' else None
 
-            e2 = threading.Event()
-            listeners += lambda x: e2.set() if x['type'] == 'order_fulfilled' and x['data'].symbol == 'AAPL' else None
+        e2 = threading.Event()
+        listeners += lambda x: e2.set() if x['type'] == 'order_fulfilled' and x['data'].symbol == 'AAPL' else None
 
-            e3 = threading.Event()
-            listeners += lambda x: e3.set() if x['type'] == 'order_fulfilled' and x['data'].symbol == 'IBM' else None
+        e3 = threading.Event()
+        listeners += lambda x: e3.set() if x['type'] == 'order_fulfilled' and x['data'].symbol == 'IBM' else None
+
+        with IQFeedLevel1Listener(listeners=listeners) as level_1:
+            level_1.watch('GOOG')
+            level_1.watch('AAPL')
+            level_1.watch('IBM')
 
             o1 = StopMarketOrder(Type.BUY, 'GOOG', 1, 99999)
             listeners({'type': 'order_request', 'data': o1})
@@ -219,17 +235,21 @@ class TestMockOrders(unittest.TestCase):
     def test_stop_limit_order(self):
         listeners = AsyncListeners()
 
-        with IQFeedLevel1Listener(listeners=listeners):
-            MockOrders(listeners=listeners)
+        MockBroker(listeners=listeners)
 
-            e1 = threading.Event()
-            listeners += lambda x: e1.set() if x['type'] == 'order_fulfilled' and x['data'].symbol == 'GOOG' else None
+        e1 = threading.Event()
+        listeners += lambda x: e1.set() if x['type'] == 'order_fulfilled' and x['data'].symbol == 'GOOG' else None
 
-            e2 = threading.Event()
-            listeners += lambda x: e2.set() if x['type'] == 'order_fulfilled' and x['data'].symbol == 'AAPL' else None
+        e2 = threading.Event()
+        listeners += lambda x: e2.set() if x['type'] == 'order_fulfilled' and x['data'].symbol == 'AAPL' else None
 
-            e3 = threading.Event()
-            listeners += lambda x: e3.set() if x['type'] == 'order_fulfilled' and x['data'].symbol == 'IBM' else None
+        e3 = threading.Event()
+        listeners += lambda x: e3.set() if x['type'] == 'order_fulfilled' and x['data'].symbol == 'IBM' else None
+
+        with IQFeedLevel1Listener(listeners=listeners) as level_1:
+            level_1.watch('GOOG')
+            level_1.watch('AAPL')
+            level_1.watch('IBM')
 
             o1 = StopLimitOrder(Type.BUY, 'GOOG', 1, 99999, 1)
             listeners({'type': 'order_request', 'data': o1})

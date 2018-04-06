@@ -127,6 +127,7 @@ class DataReplay(object):
 
     def add_source(self, data_provider: typing.Union[typing.Iterator, typing.Callable], name: str, historical_depth: int = 0, listeners: typing.Callable = None):
         """
+        Add source for data generation
         :param data_provider: return pd.DataFrame with either DateTimeIndex or MultiIndex, where one of the levels is of datetime type
         :param name: data set name for each of the data sources
         :param historical_depth: whether to return only the current element or with historical depth
