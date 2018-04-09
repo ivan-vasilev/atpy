@@ -3,6 +3,7 @@ import logging
 import typing
 
 import pandas as pd
+from atpy.data.ts_util import overlap_by_symbol
 
 
 class DataReplay(object):
@@ -52,15 +53,10 @@ class DataReplay(object):
                     logging.getLogger(__name__).debug('Obtained data ' + str(e) + ' in ' + str(datetime.datetime.now() - now))
 
                     # prepend old data if exists
-                    if e in self._data and historical_depth > 0:
-                        ind = self._get_datetime_level(self._data[e])
-                        old_df_slice = self._data[e].loc[slice(ind[max(-len(ind), -historical_depth)], ind[-1]), :]
-                        df = pd.concat((old_df_slice, df))
-
-                    self._data[e] = df
+                    self._data[e] = overlap_by_symbol(self._data[e], df, historical_depth) if e in self._data and historical_depth > 0 else df
 
                     if listeners is not None:
-                        listeners({'type': 'pre_data', e + '_full': df})
+                        listeners({'type': 'pre_data', e + '_full': self._data[e]})
                 else:
                     if e in self._data:
                         del self._data[e]

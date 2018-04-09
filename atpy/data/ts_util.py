@@ -145,7 +145,7 @@ def gaps(df: pd.DataFrame):
     return result
 
 
-def rolling_mean(df: pd.DataFrame, window: int, column: typing.Union[typing.List, str]='close'):
+def rolling_mean(df: pd.DataFrame, window: int, column: typing.Union[typing.List, str] = 'close'):
     """
     Compute the rolling mean over a column
     :param df: pandas OHLC DataFrame
@@ -163,6 +163,25 @@ def ohlc_mean(df: pd.DataFrame):
     :return DataFrame with changes
     """
     df[['open', 'open', 'high', 'low']].mean(axis=1)
+
+
+def overlap_by_symbol(old_df: pd.DataFrame, new_df: pd.DataFrame, overlap: int):
+    """
+    Overlap dataframes for timestamp continuity. Prepend the end of old_df to the beginning of new_df, grouped by symbol.
+    If no symbol exists, just overlap the dataframes
+    :param old_df: old dataframe
+    :param new_df: new dataframe
+    :param overlap: number of time steps to overlap
+    :return DataFrame with changes
+    """
+    if isinstance(old_df.index, pd.MultiIndex) and isinstance(new_df.index, pd.MultiIndex):
+        old_df_tail = old_df.groupby(level=1).tail(overlap)
+
+        old_df_tail = old_df_tail.drop(set(old_df_tail.index.levels[1]) - set(new_df.index.levels[1]), level='symbol')
+
+        return pd.concat([old_df_tail, new_df])
+    else:
+        return pd.concat([old_df.tail(overlap), new_df])
 
 
 class AsyncInPeriodProvider(object):

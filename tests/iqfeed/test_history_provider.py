@@ -97,6 +97,62 @@ class TestIQFeedHistory(unittest.TestCase):
                 if i == 1:
                     break
 
+    def test_tick_bar(self):
+        filter_provider = DefaultFilterProvider()
+        filter_provider += BarsFilter(ticker="IBM", interval_len=60, interval_type='t', max_bars=20)
+
+        listeners = AsyncListeners()
+
+        with IQFeedHistoryEvents(listeners=listeners, fire_batches=True, filter_provider=filter_provider, num_connections=2) as listener, listener.batch_provider() as provider:
+            e1 = threading.Event()
+
+            def process_batch_listener_column(event):
+                if event['type'] == 'bar_batch':
+                    batch = event['data']
+                    self.assertEqual(batch.shape, (20, 9))
+                    e1.set()
+
+            listeners += process_batch_listener_column
+
+            listener.start()
+
+            e1.wait()
+
+            for i, d in enumerate(provider):
+                self.assertEqual(d.shape, (20, 9))
+                self.assertNotEqual(d['timestamp'].iloc[0], d['timestamp'].iloc[1])
+
+                if i == 1:
+                    break
+
+    def test_volume_bar(self):
+        filter_provider = DefaultFilterProvider()
+        filter_provider += BarsFilter(ticker="IBM", interval_len=100000, interval_type='v', max_bars=20)
+
+        listeners = AsyncListeners()
+
+        with IQFeedHistoryEvents(listeners=listeners, fire_batches=True, filter_provider=filter_provider, num_connections=2) as listener, listener.batch_provider() as provider:
+            e1 = threading.Event()
+
+            def process_batch_listener_column(event):
+                if event['type'] == 'bar_batch':
+                    batch = event['data']
+                    self.assertEqual(batch.shape, (20, 9))
+                    e1.set()
+
+            listeners += process_batch_listener_column
+
+            listener.start()
+
+            e1.wait()
+
+            for i, d in enumerate(provider):
+                self.assertEqual(d.shape, (20, 9))
+                self.assertNotEqual(d['timestamp'].iloc[0], d['timestamp'].iloc[1])
+
+                if i == 1:
+                    break
+
     def test_bars(self):
         batch_len = 20
         filter_provider = DefaultFilterProvider()

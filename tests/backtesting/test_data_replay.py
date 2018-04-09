@@ -79,12 +79,10 @@ class TestDataReplay(unittest.TestCase):
         with IQFeedHistoryProvider(num_connections=1) as provider:
             year = datetime.datetime.now().year - 1
 
-            q1 = queue.Queue()
-            provider.request_data_by_filters([BarsInPeriodFilter(ticker="AAPL", bgn_prd=datetime.datetime(year, 3, 1), end_prd=datetime.datetime(year, 4, 1), interval_len=3600, ascend=True, interval_type='s'),
-                                              BarsInPeriodFilter(ticker="AAPL", bgn_prd=datetime.datetime(year, 4, 2), end_prd=datetime.datetime(year, 5, 1), interval_len=3600, ascend=True, interval_type='s'),
-                                              BarsInPeriodFilter(ticker="AAPL", bgn_prd=datetime.datetime(year, 5, 2), end_prd=datetime.datetime(year, 6, 1), interval_len=3600, ascend=True, interval_type='s'),
-                                              BarsInPeriodFilter(ticker="AAPL", bgn_prd=datetime.datetime(year, 8, 2), end_prd=datetime.datetime(year, 9, 1), interval_len=3600, ascend=True, interval_type='s')],
-                                             q1)
+            l1 = [provider.request_data(BarsInPeriodFilter(ticker=["MSFT", "AAPL"], bgn_prd=datetime.datetime(year, 3, 1), end_prd=datetime.datetime(year, 4, 1), interval_len=3600, ascend=True, interval_type='s'), sync_timestamps=False).swaplevel(0, 1).sort_index(),
+                  provider.request_data(BarsInPeriodFilter(ticker=["MSFT", "AAPL"], bgn_prd=datetime.datetime(year, 4, 2), end_prd=datetime.datetime(year, 5, 1), interval_len=3600, ascend=True, interval_type='s'), sync_timestamps=False).swaplevel(0, 1).sort_index(),
+                  provider.request_data(BarsInPeriodFilter(ticker=["MSFT", "AAPL"], bgn_prd=datetime.datetime(year, 5, 2), end_prd=datetime.datetime(year, 6, 1), interval_len=3600, ascend=True, interval_type='s'), sync_timestamps=False).swaplevel(0, 1).sort_index(),
+                  provider.request_data(BarsInPeriodFilter(ticker=["MSFT", "AAPL"], bgn_prd=datetime.datetime(year, 8, 2), end_prd=datetime.datetime(year, 9, 1), interval_len=3600, ascend=True, interval_type='s'), sync_timestamps=False).swaplevel(0, 1).sort_index()]
 
             q2 = queue.Queue()
             provider.request_data_by_filters([BarsInPeriodFilter(ticker="IBM", bgn_prd=datetime.datetime(year, 4, 1), end_prd=datetime.datetime(year, 5, 1), interval_len=3600, ascend=True, interval_type='s'),
@@ -92,7 +90,6 @@ class TestDataReplay(unittest.TestCase):
                                               BarsInPeriodFilter(ticker="IBM", bgn_prd=datetime.datetime(year, 6, 2), end_prd=datetime.datetime(year, 7, 1), interval_len=3600, ascend=True, interval_type='s')],
                                              q2)
 
-            l1 = [q1.get()[1], q1.get()[1], q1.get()[1], q1.get()[1]]
             l2 = [q2.get()[1], q2.get()[1], q2.get()[1]]
 
             maxl = max(max([len(l) for l in l1]), max([len(l) for l in l2]))
@@ -108,7 +105,7 @@ class TestDataReplay(unittest.TestCase):
                 if len(timestamps) > 0:
                     self.assertGreater(t, max(timestamps))
 
-                for e in [e for e in r if isinstance(r[e], pd.DataFrame)]:
+                for e in [e for e in r if isinstance(r[e], pd.DataFrame) and e != 'e1']:
                     df = r[e]
                     self.assertTrue(df.index.is_monotonic)
 
