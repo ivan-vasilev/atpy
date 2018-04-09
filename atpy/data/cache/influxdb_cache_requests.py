@@ -143,10 +143,10 @@ class InfluxDBValueRequest(object):
 
         if len(data['symbol'].unique()) > 1:
             if self.means is not None:
-                data['delta'] = data['delta'].groupby(level=0).apply(lambda x: x - self.means[x.name])
+                data['delta'] = data['delta'].groupby(level='timestamp').apply(lambda x: x - self.means[x.name])
 
             if self.stddev is not None:
-                data['delta'] = data['delta'].groupby(level=0).apply(lambda x: x / self.stddev[x.name])
+                data['delta'] = data['delta'].groupby(level='timestamp').apply(lambda x: x / self.stddev[x.name])
         else:
             if self.means is not None:
                 data['delta'] = data['delta'] - self.means[data['symbol'][0]]

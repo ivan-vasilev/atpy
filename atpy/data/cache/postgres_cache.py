@@ -281,10 +281,10 @@ def request_bars(conn, bars_table: str, interval_len: int, interval_type: str, s
     if not df.empty:
         del df['interval']
 
-        df.tz_localize('UTC', level=0, copy=False)
+        df.tz_localize('UTC', level='timestamp', copy=False)
 
         if isinstance(symbol, str):
-            df.reset_index(level=1, inplace=True, drop=True)
+            df.reset_index(level='symbol', inplace=True, drop=True)
 
         for c in [c for c in ['period_volume', 'total_volume', 'number_of_trades'] if c in df.columns]:
             df[c] = df[c].astype('uint64')
@@ -357,7 +357,7 @@ def request_adjustments(conn, table_name: str, symbol: typing.Union[list, str] =
     df = pd.read_sql("SELECT * FROM " + table_name + where + " ORDER BY timestamp ASC, symbol", con=conn, index_col=['timestamp', 'symbol', 'type', 'provider'], params=params)
 
     if not df.empty:
-        df.tz_localize('UTC', level=0, copy=False)
+        df.tz_localize('UTC', level='timestamp', copy=False)
         df.sort_index(inplace=True)
 
     return df

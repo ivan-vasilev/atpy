@@ -137,7 +137,7 @@ def gaps(df: pd.DataFrame):
     :return DataFrame with changes
     """
 
-    result = df.groupby('symbol', level=1).agg({'low': 'min', 'high': 'max'})
+    result = df.groupby('symbol', level='symbol').agg({'low': 'min', 'high': 'max'})
 
     low = result['low']
     result = (result['high'] - low) / low
@@ -175,9 +175,9 @@ def overlap_by_symbol(old_df: pd.DataFrame, new_df: pd.DataFrame, overlap: int):
     :return DataFrame with changes
     """
     if isinstance(old_df.index, pd.MultiIndex) and isinstance(new_df.index, pd.MultiIndex):
-        old_df_tail = old_df.groupby(level=1).tail(overlap)
+        old_df_tail = old_df.groupby(level='symbol').tail(overlap)
 
-        old_df_tail = old_df_tail.drop(set(old_df_tail.index.levels[1]) - set(new_df.index.levels[1]), level='symbol')
+        old_df_tail = old_df_tail.drop(set(old_df_tail.index.get_level_values('symbol')) - set(new_df.index.get_level_values('symbol')), level='symbol')
 
         return pd.concat([old_df_tail, new_df])
     else:

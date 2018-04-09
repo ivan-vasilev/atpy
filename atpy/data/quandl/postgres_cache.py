@@ -130,7 +130,7 @@ def request_sf(conn, symbol: typing.Union[list, str] = None, bgn_prd: datetime.d
     df = pd.read_sql("SELECT " + selection + " FROM " + table_name + where + " ORDER BY date, symbol", con=conn, index_col=['date', 'symbol', 'indicator', 'dimension'], params=params)
 
     if not df.empty:
-        df.tz_localize('UTC', level=0, copy=False)
+        df.tz_localize('UTC', level='timestamp', copy=False)
 
     return df
 

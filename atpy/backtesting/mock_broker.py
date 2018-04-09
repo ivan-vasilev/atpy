@@ -1,10 +1,10 @@
+import logging
 import threading
 import typing
 
 import pandas as pd
 
 import atpy.portfolio.order as orders
-import logging
 
 
 class MockBroker(object):
@@ -72,14 +72,13 @@ class MockBroker(object):
 
     def process_bar_data(self, data):
         with self._lock:
-            symbols = [o.symbol for o in self._pending_orders]
-            for o in [o for o, isin in zip(self._pending_orders, data.index.isin(symbols, level=1)) if isin]:
-                datum = data.loc[pd.IndexSlice[:, o.symbol], :].iloc[-1]
-                o.add_position(datum['period_volume'], datum['close'])
+            for o, slc in [(o, data.loc[pd.IndexSlice[:, o.symbol], :]) for o in self._pending_orders]:
+                if not slc.empty:
+                    o.add_position(slc.iloc[-1]['period_volume'], slc.iloc[-1]['close'])
 
-                if o.fulfill_time is not None:
-                    self._pending_orders.remove(o)
+                    if o.fulfill_time is not None:
+                        self._pending_orders.remove(o)
 
-                    logging.getLogger(__name__).info("Order fulfilled: " + str(o))
+                        logging.getLogger(__name__).info("Order fulfilled: " + str(o))
 
-                    self.listeners({'type': 'order_fulfilled', 'data': o})
+                        self.listeners({'type': 'order_fulfilled', 'data': o})

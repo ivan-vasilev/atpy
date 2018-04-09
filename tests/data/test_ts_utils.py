@@ -95,8 +95,11 @@ class TestTSUtils(unittest.TestCase):
         batch_len = 10000
         batch_width = 2000
 
-        l1, l2 = list(), list()
-        with IQFeedHistoryProvider() as provider, DataReplay().add_source(l1, 'e1', historical_depth=1000) as dr:
+        with IQFeedHistoryProvider() as provider:
+            l1, l2 = list(), list()
+
+            dr = DataReplay().add_source(l1, 'e1', historical_depth=1000)
+
             now = datetime.datetime.now()
             df = provider.request_data(BarsFilter(ticker="AAPL", interval_len=60, interval_type='s', max_bars=batch_len), sync_timestamps=False)
 
@@ -105,7 +108,7 @@ class TestTSUtils(unittest.TestCase):
                 dfs1['AAPL_' + str(i)] = df.sample(random.randint(int(len(df) / 3), len(df) - 1))
 
             df = pd.concat(dfs1).swaplevel(0, 1)
-            df.reset_index(level=1, inplace=True)
+            df.reset_index(level='symbol', inplace=True)
             df.sort_index(inplace=True)
             df.set_index('level_1', drop=False, append=True, inplace=True)
             l1.append(df)
@@ -136,8 +139,11 @@ class TestTSUtils(unittest.TestCase):
         batch_len = 10000
         batch_width = 5000
 
-        l1, l2 = list(), list()
-        with IQFeedHistoryProvider() as provider, DataReplay().add_source(l1, 'e1', historical_depth=100) as dr:
+        with IQFeedHistoryProvider() as provider:
+            l1, l2 = list(), list()
+
+            dr = DataReplay().add_source(l1, 'e1', historical_depth=100)
+
             now = datetime.datetime.now()
             df = provider.request_data(BarsFilter(ticker="AAPL", interval_len=3600, interval_type='s', max_bars=batch_len), sync_timestamps=False)
 
@@ -146,7 +152,7 @@ class TestTSUtils(unittest.TestCase):
                 dfs1['AAPL_' + str(i)] = df.sample(random.randint(int(len(df) / 3), len(df) - 1))
 
             df = pd.concat(dfs1).swaplevel(0, 1)
-            df.reset_index(level=1, inplace=True)
+            df.reset_index(level='symbol', inplace=True)
             df.sort_index(inplace=True)
             df.set_index('level_1', drop=False, append=True, inplace=True)
             l1.append(df)
