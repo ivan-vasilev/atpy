@@ -1,13 +1,13 @@
 import threading
 import unittest
 
-from atpy.data.iqfeed.iqfeed_level_1_provider import get_fundamentals
 from pandas.util.testing import assert_frame_equal
 
 from atpy.data.cache.influxdb_cache_requests import *
 from atpy.data.iqfeed.iqfeed_bar_data_provider import *
 from atpy.data.iqfeed.iqfeed_influxdb_cache import *
-from pyevents.events import AsyncListeners, SyncListeners
+from atpy.data.iqfeed.iqfeed_level_1_provider import get_fundamentals
+from pyevents.events import AsyncListeners
 
 
 class TestInfluxDBCacheRequests(unittest.TestCase):
