@@ -73,7 +73,7 @@ setup(
     # your project is installed. For an analysis of "install_requires" vs pip's
     # requirements files see:
     # https://packaging.python.org/en/latest/requirements.html
-    install_requires=['pyiqfeed', 'pandas', 'numpy', 'pyevents==0.0.1'],
+    install_requires=['pyiqfeed', 'pandas', 'numpy', 'pyevents==0.0.1', 'numba'],
 
     extras_require={
         'pyevents_util': ['pyevents_util'],
