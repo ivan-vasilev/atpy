@@ -2,25 +2,9 @@ import functools
 import typing
 from multiprocessing import Pool, cpu_count
 
+import numpy as np
 import pandas as pd
-from pandas.core.groupby import GroupBy
-
-
-def pd_apply_parallel(df_groupby: GroupBy, func: typing.Callable, *func_args):
-    """
-    Pandas parallel apply
-    :param df_groupby: GroupBy - the result from DataFrame.groupby() call)
-    :param func: apply function
-    :param func_args: list of arguments to be passed to the func call
-    :return processed dataframe (or series)
-    """
-    with Pool(cpu_count()) as p:
-        if len(func_args) == 0:
-            ret_list = p.map(func, [group for name, group in df_groupby])
-        else:
-            ret_list = p.starmap(func, [(group,) + func_args for name, group in df_groupby])
-
-    return pd.concat(ret_list)
+from numba import jit
 
 
 def _cumsum_filter(df: pd.DataFrame):
@@ -183,3 +167,123 @@ def vertical_barrier(timestamps: typing.Union[pd.DatetimeIndex, pd.MultiIndex], 
         return pd.DataFrame(index=timestamps).groupby(level='symbol', group_keys=False, sort=False).apply(vertical_barrier_tmp).index
     else:
         return _vertical_barrier(timestamps=timestamps, t_events=t_events, delta=delta)
+
+
+def _triple_barriers(data: pd.Series, pt: pd.Series, sl: pd.Series, vb: pd.Timedelta):
+    """
+    Triple barrier labeling for single index series
+    :param data: data to be labeled
+    :param vb: vertical barrier delta
+    :param pt: profit taking barrier
+    :param sl: stop loss barrier
+    :return dataframe with first threshold crossings
+    """
+    values = data.values
+    data = data.to_frame()
+
+    if pt is not None:
+        if values.dtype != np.float32 or pt.dtype != np.float32:
+            data['tmp'] = np.array((values, pt.values)).T.flatten().astype(np.float32).view(np.float64)
+        else:
+            data['tmp'] = np.array((values, pt.values)).T.flatten().view(np.float64)
+
+        data['pt'] = data['tmp'].rolling(vb).apply(__profit_take, raw=True)
+        data.drop('tmp', axis=1, inplace=True)
+
+    if sl is not None:
+        if values.dtype != np.float32 or sl.dtype != np.float32:
+            data['tmp'] = np.array((values, sl.values)).T.flatten().astype(np.float32).view(np.float64)
+        else:
+            data['tmp'] = np.array((values, sl.values)).T.flatten().view(np.float64)
+
+        data['sl'] = data['tmp'].rolling(vb).apply(__stop_loss, raw=True)
+        data.drop('tmp', axis=1, inplace=True)
+
+    return data
+
+
+@jit
+def __profit_take(x):
+    """Helper jit-compiled method for performance"""
+
+    x = x.view(np.float32)
+
+    delta = x[1]
+    x = x[::2]
+
+    x = x / x[0] - 1
+    for i in range(len(x)):
+        if x[i] > delta:
+            return i
+
+    return 0
+
+
+@jit
+def __stop_loss(x):
+    """Helper jit-compiled method for performance"""
+
+    x = x.view(np.float32)
+
+    delta = -x[1]
+    x = x[::2]
+
+    x = x / x[0] - 1
+    for i in range(len(x)):
+        if x[i] < delta:
+            return i
+
+    return 0
+
+
+def __triple_barriers(data: pd.DataFrame, vb: pd.Timedelta):
+    """
+    Triple barrier labeling for single index series, specific for groupby
+    :param data: dataframe with 3 columns - the data itself, pt (profit take) and sl (stop loss) to be labeled
+    :param vb: vertical barrier delta
+    :return dataframe with first threshold crossings
+    """
+    if isinstance(data.index, pd.MultiIndex):
+        symbol_ind = data.index.names.index('symbol')
+        symbol = data.index[0][symbol_ind]
+        data = data.loc[pd.IndexSlice[:, symbol]] if symbol_ind == 1 else data.loc[symbol]
+    else:
+        symbol_ind, symbol = -1, None
+
+    result = _triple_barriers(data['data'], pt=data['pt'] if 'pt' in data else None, sl=data['sl'] if 'sl' in data else None, vb=vb)
+
+    if symbol_ind > -1:
+        result['symbol'] = symbol
+        result.set_index('symbol', append=True, inplace=True, drop=True)
+        if symbol_ind == 0:
+            result = result.reorder_levels(['symbol', 'timestamp'])
+
+    return result
+
+
+def triple_barriers(data: pd.Series, pt: pd.Series, sl: pd.Series, vb: pd.Timedelta, parallel=True):
+    """
+    Triple barrier labeling for single multiindex series
+    :param data: data to be labeled
+    :param vb: vertical barrier delta
+    :param pt: profit taking barrier
+    :param sl: stop loss barrier
+    :param parallel: run in parallel
+    :return dataframe with first threshold crossings
+    """
+    if isinstance(data.index, pd.DatetimeIndex):
+        return _triple_barriers(data=data, pt=pt, sl=sl, vb=vb)
+    else:
+        data = data.astype(np.float32).to_frame().rename(columns={data.name: 'data'}) if data.dtype != np.float32 else data.to_frame().rename(columns={data.name: 'data'})
+
+        if pt is not None:
+            data['pt'] = pt.astype(np.float32) if pt.dtype != np.float32 else pt
+        if sl is not None:
+            data['sl'] = sl.astype(np.float32) if sl.dtype != np.float32 else sl
+
+        if parallel:
+            with Pool(cpu_count()) as p:
+                ret_list = p.starmap(__triple_barriers, [(group, vb) for name, group in data.groupby(level='symbol', group_keys=False, sort=False)])
+                return pd.concat(ret_list)
+        else:
+            return data.groupby(level='symbol', group_keys=False, sort=False).apply(__triple_barriers, vb=vb)
