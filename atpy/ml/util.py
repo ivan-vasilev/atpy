@@ -178,87 +178,49 @@ def _triple_barriers(data: pd.Series, pt: pd.Series, sl: pd.Series, vb: pd.Timed
     :param sl: stop loss barrier
     :return dataframe with first threshold crossings
     """
-    values = data.values
-    data = data.to_frame()
+    intervals = data.rolling(vb, closed="both").count().astype(np.int)
+    result = data.to_frame()
+    result['pt'] = data.index.copy()
+    result['sl'] = data.index.copy()
+    result['vb'] = data.index.copy()
+    result.drop(data.name, axis=1, inplace=True)
 
-    if pt is not None:
-        if values.dtype != np.float32 or pt.dtype != np.float32:
-            data['tmp'] = np.array((values, pt.values)).T.flatten().astype(np.float32).view(np.float64)
-        else:
-            data['tmp'] = np.array((values, pt.values)).T.flatten().view(np.float64)
-
-        data['pt'] = data['tmp'].rolling(vb).apply(__profit_take, raw=True)
-        data.drop('tmp', axis=1, inplace=True)
-
-    if sl is not None:
-        if values.dtype != np.float32 or sl.dtype != np.float32:
-            data['tmp'] = np.array((values, sl.values)).T.flatten().astype(np.float32).view(np.float64)
-        else:
-            data['tmp'] = np.array((values, sl.values)).T.flatten().view(np.float64)
-
-        data['sl'] = data['tmp'].rolling(vb).apply(__stop_loss, raw=True)
-        data.drop('tmp', axis=1, inplace=True)
-
-    return data
-
-
-@jit
-def __profit_take(x):
-    """Helper jit-compiled method for performance"""
-
-    x = x.view(np.float32)
-
-    delta = x[1]
-    x = x[::2]
-
-    x = x / x[0] - 1
-    for i in range(len(x)):
-        if x[i] > delta:
-            return i
-
-    return 0
-
-
-@jit
-def __stop_loss(x):
-    """Helper jit-compiled method for performance"""
-
-    x = x.view(np.float32)
-
-    delta = -x[1]
-    x = x[::2]
-
-    x = x / x[0] - 1
-    for i in range(len(x)):
-        if x[i] < delta:
-            return i
-
-    return 0
-
-
-def __triple_barriers(data: pd.DataFrame, vb: pd.Timedelta):
-    """
-    Triple barrier labeling for single index series, specific for groupby
-    :param data: dataframe with 3 columns - the data itself, pt (profit take) and sl (stop loss) to be labeled
-    :param vb: vertical barrier delta
-    :return dataframe with first threshold crossings
-    """
-    if isinstance(data.index, pd.MultiIndex):
-        symbol_ind = data.index.names.index('symbol')
-        symbol = data.index[0][symbol_ind]
-        data = data.loc[pd.IndexSlice[:, symbol]] if symbol_ind == 1 else data.loc[symbol]
-    else:
-        symbol_ind, symbol = -1, None
-
-    result = _triple_barriers(data['data'], pt=data['pt'] if 'pt' in data else None, sl=data['sl'] if 'sl' in data else None, vb=vb)
-
-    if symbol_ind > -1:
-        result['symbol'] = symbol
-        result.set_index('symbol', append=True, inplace=True, drop=True)
-        if symbol_ind == 0:
-            result = result.reorder_levels(['symbol', 'timestamp'])
+    __pt_sl(data=data.values, timestamps=data.index.values, pt=pt.values, sl=sl.values, intervals=intervals.values, pt_result=result['pt'].values, sl_result=result['sl'].values, vb_result=result['vb'].values)
+    result.loc[result['pt'] == data.index, 'pt'] = pd.NaT
+    result.loc[result['sl'] == data.index, 'sl'] = pd.NaT
+    result.loc[result['vb'] == data.index, 'vb'] = pd.NaT
 
     return result
+
+
+#@jit(nopython=True)
+def __pt_sl(data: np.array, timestamps: np.array, pt: np.array, sl: np.array, intervals: np.array, pt_result: np.array, sl_result=np.array, vb_result=np.array):
+    """This function cannot be local to _triple_barriers, because it will be compiled on every groupby"""
+
+    for i in range(data.size, 0, -1):
+        length = intervals[i - 1]
+        current = i - length
+        if current > 0:
+            vb_result[current] = timestamps[i - 1]
+
+            interval = data[current: i]
+            returns = interval / interval[0] - 1
+
+            # profit take
+            delta = pt[current]
+            for j in range(1, length):
+                if returns[j] > delta:
+                    pt_result[current] = timestamps[current + j]
+                    break
+
+            # stop loss
+            delta = -sl[current]
+            for j in range(1, length):
+                if returns[j] < delta:
+                    sl_result[current] = timestamps[current + j]
+                    break
+        else:
+            return
 
 
 def triple_barriers(data: pd.Series, pt: pd.Series, sl: pd.Series, vb: pd.Timedelta, parallel=True):
@@ -283,7 +245,32 @@ def triple_barriers(data: pd.Series, pt: pd.Series, sl: pd.Series, vb: pd.Timede
 
         if parallel:
             with Pool(cpu_count()) as p:
-                ret_list = p.starmap(__triple_barriers, [(group, vb) for name, group in data.groupby(level='symbol', group_keys=False, sort=False)])
+                ret_list = p.starmap(__triple_barriers_groupby, [(group, vb) for name, group in data.groupby(level='symbol', group_keys=False, sort=False)])
                 return pd.concat(ret_list)
         else:
-            return data.groupby(level='symbol', group_keys=False, sort=False).apply(__triple_barriers, vb=vb)
+            return data.groupby(level='symbol', group_keys=False, sort=False).apply(__triple_barriers_groupby, vb=vb)
+
+
+def __triple_barriers_groupby(data: pd.DataFrame, vb: pd.Timedelta):
+    """
+    Triple barrier labeling for single index series, specific for groupby
+    :param data: dataframe with 3 columns - the data itself, pt (profit take) and sl (stop loss) to be labeled
+    :param vb: vertical barrier delta
+    :return dataframe with first threshold crossings
+    """
+    if isinstance(data.index, pd.MultiIndex):
+        symbol_ind = data.index.names.index('symbol')
+        symbol = data.index[0][symbol_ind]
+        data = data.loc[pd.IndexSlice[:, symbol]] if symbol_ind == 1 else data.loc[symbol]
+    else:
+        symbol_ind, symbol = -1, None
+
+    result = _triple_barriers(data['data'], pt=data['pt'] if 'pt' in data else None, sl=data['sl'] if 'sl' in data else None, vb=vb)
+
+    if symbol_ind > -1:
+        result['symbol'] = symbol
+        result.set_index('symbol', append=True, inplace=True, drop=True)
+        if symbol_ind == 0:
+            result = result.reorder_levels(['symbol', 'timestamp'])
+
+    return result
