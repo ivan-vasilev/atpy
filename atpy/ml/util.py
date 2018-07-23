@@ -193,7 +193,7 @@ def _triple_barriers(data: pd.Series, pt: pd.Series, sl: pd.Series, vb: pd.Timed
     return result
 
 
-#@jit(nopython=True)
+@jit(nopython=True)
 def __pt_sl(data: np.array, timestamps: np.array, pt: np.array, sl: np.array, intervals: np.array, pt_result: np.array, sl_result=np.array, vb_result=np.array):
     """This function cannot be local to _triple_barriers, because it will be compiled on every groupby"""
 
