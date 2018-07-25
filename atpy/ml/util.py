@@ -176,24 +176,25 @@ def _triple_barriers(data: pd.Series, pt: pd.Series, sl: pd.Series, vb: pd.Timed
     :param vb: vertical barrier delta
     :param pt: profit taking barrier
     :param sl: stop loss barrier
-    :return dataframe with first threshold crossings
+    :return dataframe with first timestamp of threshold crossing, type of threshold crossing and return
     """
     result = data.to_frame()
     result['barrier_hit'] = data.index.copy()
     result['barrier_hit'].values.fill(np.timedelta64('NaT'))
-
     result['side'] = data.copy()
     result['side'].values.fill(np.nan)
+    result['returns'] = data.copy()
+    result['returns'].values.fill(np.nan)
 
     result.drop(data.name, axis=1, inplace=True)
 
-    __triple_barriers_jit(data=data.values, timestamps=data.index.values, delta=vb.to_timedelta64(), pt=pt.values, sl=sl.values, barrier_hit=result['barrier_hit'].values, side=result['side'].values)
+    __triple_barriers_jit(data=data.values, timestamps=data.index.values, delta=vb.to_timedelta64(), pt=pt.values, sl=sl.values, barrier_hit=result['barrier_hit'].values, side=result['side'].values, returns=result['returns'].values)
 
     return result
 
 
 @numba.jit(nopython=True)
-def __triple_barriers_jit(data: np.array, timestamps: np.array, delta: np.timedelta64, pt: np.array, sl: np.array, barrier_hit: np.array, side: np.array):
+def __triple_barriers_jit(data: np.array, timestamps: np.array, delta: np.timedelta64, pt: np.array, sl: np.array, barrier_hit: np.array, side: np.array, returns: np.array):
     """This function cannot be local to _triple_barriers, because it will be compiled on every groupby"""
     for i in range(data.size):
         end = timestamps[i] + delta
@@ -204,20 +205,15 @@ def __triple_barriers_jit(data: np.array, timestamps: np.array, delta: np.timede
         sl_delta = -sl[i]
 
         for i_end in range(i + 1, data.size):
-            if timestamps[i_end] > end:
-                if i < i_end - 1:
-                    barrier_hit[i], side[i], = timestamps[i_end - 1], 0
+            ret = current / data[i_end] - 1
 
+            if ret > pt_delta or ret < sl_delta:
+                barrier_hit[i], side[i], returns[i] = timestamps[i_end], np.sign(ret), ret
                 break
 
-            returns = current / data[i_end] - 1
-
-            if returns > pt_delta or returns < sl_delta:
-                barrier_hit[i], side[i] = timestamps[i_end], np.sign(returns)
+            if timestamps[i_end] == end or (i_end < data.size - 1 and timestamps[i_end + 1] > end):
+                barrier_hit[i], side[i], returns[i] = timestamps[i_end], 0, ret
                 break
-
-            if timestamps[i_end] == end:
-                barrier_hit[i], side[i] = timestamps[i_end], 0
 
 
 def triple_barriers(data: pd.Series, pt: pd.Series, sl: pd.Series, vb: pd.Timedelta, parallel=True):
@@ -228,7 +224,7 @@ def triple_barriers(data: pd.Series, pt: pd.Series, sl: pd.Series, vb: pd.Timede
     :param pt: profit taking barrier
     :param sl: stop loss barrier
     :param parallel: run in parallel
-    :return dataframe with first threshold crossings
+    :return dataframe with first timestamp of threshold crossing, type of threshold crossing and return
     """
     if isinstance(data.index, pd.DatetimeIndex):
         return _triple_barriers(data=data, pt=pt, sl=sl, vb=vb)
@@ -253,7 +249,7 @@ def __triple_barriers_groupby(data: pd.DataFrame, vb: pd.Timedelta):
     Triple barrier labeling for single index series, specific for groupby
     :param data: dataframe with 3 columns - the data itself, pt (profit take) and sl (stop loss) to be labeled
     :param vb: vertical barrier delta
-    :return dataframe with first threshold crossings
+    :return dataframe with first timestamp of threshold crossing, type of threshold crossing and return
     """
     if isinstance(data.index, pd.MultiIndex):
         symbol_ind = data.index.names.index('symbol')
