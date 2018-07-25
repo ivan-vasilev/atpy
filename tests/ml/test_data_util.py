@@ -107,17 +107,14 @@ class TestDataUtil(unittest.TestCase):
             df['sl'] = 0.001
 
             result = triple_barriers(df['close'], df['pt'], sl=df['sl'], vb=pd.Timedelta('36000s'), parallel=False)
-            self.assertTrue(result['pt'].isnull().any())
-            self.assertTrue(result['pt'].notnull().any())
-            self.assertFalse((result['pt'][result['pt'].notnull()] == result.index[result['pt'].notnull()]).any())
+            self.assertTrue(result['barrier_hit'].isnull().any())
+            self.assertTrue(result['barrier_hit'].notnull().any())
+            self.assertFalse((result['barrier_hit'][result['barrier_hit'].notnull()] == result.index[result['barrier_hit'].notnull()]).any())
 
-            self.assertTrue(result['sl'].isnull().any())
-            self.assertTrue(result['sl'].notnull().any())
-            self.assertFalse((result['sl'][result['sl'].notnull()] == result.index[result['sl'].notnull()]).any())
-
-            self.assertTrue(result['vb'].isnull().any())
-            self.assertTrue(result['vb'].notnull().any())
-            self.assertTrue((result['vb'][result['vb'].notnull()] > result.index[result['vb'].notnull()]).all())
+            self.assertTrue(result['side'].isnull().any())
+            self.assertTrue((result['side'] == 1).any())
+            self.assertTrue((result['side'] == -1).any())
+            self.assertTrue((result['side'] == 0).any())
 
             df = provider.request_data(BarsFilter(ticker=["IBM", "AAPL"], interval_len=3600, interval_type='s', max_bars=1000), sync_timestamps=False)
             df['pt'] = 0.001
@@ -127,13 +124,10 @@ class TestDataUtil(unittest.TestCase):
             self.assertTrue(isinstance(result_np.index, pd.MultiIndex))
 
             tmp = result_np.reset_index()['timestamp']
-            pt_tmp = result_np['pt'].reset_index(drop=True)
-            self.assertTrue(pt_tmp.isnull().any())
-            self.assertFalse((pt_tmp[pt_tmp.notnull()] == tmp[pt_tmp.notnull()]).any())
-
-            sl_tmp = result_np['sl'].reset_index(drop=True)
-            self.assertTrue(sl_tmp.isnull().any())
-            self.assertFalse((sl_tmp[sl_tmp.notnull()] == tmp[sl_tmp.notnull()]).any())
+            barrier_hit_tmp = result_np['barrier_hit'].reset_index(drop=True)
+            self.assertTrue(barrier_hit_tmp.isnull().any())
+            self.assertTrue(barrier_hit_tmp.notnull().any())
+            self.assertFalse((barrier_hit_tmp[barrier_hit_tmp.notnull()] == tmp[barrier_hit_tmp.notnull()]).any())
 
             result_p = triple_barriers(df['close'], df['pt'], sl=df['pt'], vb=pd.Timedelta('36000s'), parallel=True)
             assert_frame_equal(result_np, result_p.sort_index())
@@ -142,7 +136,7 @@ class TestDataUtil(unittest.TestCase):
         logging.basicConfig(level=logging.DEBUG)
 
         batch_len = 15000
-        batch_width = 2000
+        batch_width = 4000
 
         now = datetime.datetime.now()
         with IQFeedHistoryProvider() as provider:

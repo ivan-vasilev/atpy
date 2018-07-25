@@ -4,7 +4,7 @@ from multiprocessing import Pool, cpu_count
 
 import numpy as np
 import pandas as pd
-from numba import jit
+import numba
 
 
 def _cumsum_filter(df: pd.DataFrame):
@@ -178,49 +178,46 @@ def _triple_barriers(data: pd.Series, pt: pd.Series, sl: pd.Series, vb: pd.Timed
     :param sl: stop loss barrier
     :return dataframe with first threshold crossings
     """
-    intervals = data.rolling(vb, closed="both").count().astype(np.int)
     result = data.to_frame()
-    result['pt'] = data.index.copy()
-    result['sl'] = data.index.copy()
-    result['vb'] = data.index.copy()
+    result['barrier_hit'] = data.index.copy()
+    result['barrier_hit'].values.fill(np.timedelta64('NaT'))
+
+    result['side'] = data.copy()
+    result['side'].values.fill(np.nan)
+
     result.drop(data.name, axis=1, inplace=True)
 
-    __pt_sl(data=data.values, timestamps=data.index.values, pt=pt.values, sl=sl.values, intervals=intervals.values, pt_result=result['pt'].values, sl_result=result['sl'].values, vb_result=result['vb'].values)
-    result.loc[result['pt'] == data.index, 'pt'] = pd.NaT
-    result.loc[result['sl'] == data.index, 'sl'] = pd.NaT
-    result.loc[result['vb'] == data.index, 'vb'] = pd.NaT
+    __triple_barriers_jit(data=data.values, timestamps=data.index.values, delta=vb.to_timedelta64(), pt=pt.values, sl=sl.values, barrier_hit=result['barrier_hit'].values, side=result['side'].values)
 
     return result
 
 
-@jit(nopython=True)
-def __pt_sl(data: np.array, timestamps: np.array, pt: np.array, sl: np.array, intervals: np.array, pt_result: np.array, sl_result=np.array, vb_result=np.array):
+@numba.jit(nopython=True)
+def __triple_barriers_jit(data: np.array, timestamps: np.array, delta: np.timedelta64, pt: np.array, sl: np.array, barrier_hit: np.array, side: np.array):
     """This function cannot be local to _triple_barriers, because it will be compiled on every groupby"""
+    for i in range(data.size):
+        end = timestamps[i] + delta
 
-    for i in range(data.size, 0, -1):
-        length = intervals[i - 1]
-        current = i - length
-        if current > 0:
-            vb_result[current] = timestamps[i - 1]
+        current = data[i]
 
-            interval = data[current: i]
-            returns = interval / interval[0] - 1
+        pt_delta = pt[i]
+        sl_delta = -sl[i]
 
-            # profit take
-            delta = pt[current]
-            for j in range(1, length):
-                if returns[j] > delta:
-                    pt_result[current] = timestamps[current + j]
-                    break
+        for i_end in range(i + 1, data.size):
+            if timestamps[i_end] > end:
+                if i < i_end - 1:
+                    barrier_hit[i], side[i], = timestamps[i_end - 1], 0
 
-            # stop loss
-            delta = -sl[current]
-            for j in range(1, length):
-                if returns[j] < delta:
-                    sl_result[current] = timestamps[current + j]
-                    break
-        else:
-            return
+                break
+
+            returns = current / data[i_end] - 1
+
+            if returns > pt_delta or returns < sl_delta:
+                barrier_hit[i], side[i] = timestamps[i_end], np.sign(returns)
+                break
+
+            if timestamps[i_end] == end:
+                barrier_hit[i], side[i] = timestamps[i_end], 0
 
 
 def triple_barriers(data: pd.Series, pt: pd.Series, sl: pd.Series, vb: pd.Timedelta, parallel=True):
