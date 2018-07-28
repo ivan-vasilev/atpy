@@ -11,11 +11,10 @@ if __name__ == "__main__":
     parser.add_argument('-cluster', action='store_true', help="Cluster the table after inserts")
     args = parser.parse_args()
 
-    query = "python3 ../atpy/data/iqfeed/update_postgres_cache.py " + \
+    query = "python3 update_postgres_cache.py " + \
             ("-drop" if args.drop else "") + \
             (" -cluster" if args.cluster else "") + \
             " -url='" + os.environ['POSTGRESQL_CACHE'] + "'" + \
-            " -update_bars" + \
             " -table_name='bars_1d'" + \
             " -interval_len=1" + \
             " -interval_type='d'" + \

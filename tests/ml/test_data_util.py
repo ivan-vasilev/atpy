@@ -116,6 +116,9 @@ class TestDataUtil(unittest.TestCase):
             self.assertTrue((result['side'] == -1).any())
             self.assertTrue((result['side'] == 0).any())
 
+            self.assertTrue(result['returns'].isnull().any())
+            self.assertTrue(result['returns'].notnull().any())
+
             df = provider.request_data(BarsFilter(ticker=["IBM", "AAPL"], interval_len=3600, interval_type='s', max_bars=1000), sync_timestamps=False)
             df['pt'] = 0.001
             df['sl'] = 0.001
