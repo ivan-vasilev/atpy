@@ -59,7 +59,7 @@ class TestIntrinioAPI(unittest.TestCase):
         IntrinioEvents(listeners)
 
         client_factory = ClientFactory(host='localhost', port=8086, username='root', password='root', database='test_cache')
-        client = client_factory.new_df_client()
+        client = client_factory.new_client()
 
         try:
             client.create_database('test_cache')

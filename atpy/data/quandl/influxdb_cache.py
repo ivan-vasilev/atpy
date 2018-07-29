@@ -4,7 +4,7 @@ import logging
 import numpy as np
 from influxdb import DataFrameClient
 
-from atpy.data.quandl.api import bulkdownload_sf
+from atpy.data.quandl.api import bulkdownload
 
 
 class InfluxDBCache(object):
@@ -23,11 +23,11 @@ class InfluxDBCache(object):
     def __exit__(self, exception_type, exception_value, traceback):
         self.client.close()
 
-    def add_sf_to_cache(self, dataset='SF0'):
+    def add_dataset_to_cache(self, dataset: str):
         chunksize = 100000
-        for i, df in enumerate(bulkdownload_sf(dataset=dataset, chunksize=chunksize)):
+        for i, df in enumerate(bulkdownload(dataset=dataset, chunksize=chunksize)):
             df.reset_index(level=['symbol', 'indicator', 'dimension'], inplace=True)
-            self.client.write_points(df, 'quandl_' + dataset, protocol='line', tag_columns=['symbol', 'indicator', 'dimension'], time_precision='s')
+            self.client.write_points(df, 'quandl_' + dataset, protocol='line', time_precision='s')
 
             if i > 0 and (i % 5 == 0 or len(df) < chunksize):
                 logging.getLogger(__name__).info("Cached " + str(i) + " queries")
@@ -59,7 +59,7 @@ class InfluxDBCache(object):
         if len(result) > 0:
             result = result["quandl_" + dataset]
 
-            cols = ['symbol', 'indicator', 'dimension'] if dataset in ('SF0', 'SF1') else [c for c in result.columns if c != 'value']
+            cols = [c for c in result.columns if c != 'value']
 
             result.set_index(cols, drop=True, inplace=True, append=True)
             result.index.rename('date', level=0, inplace=True)

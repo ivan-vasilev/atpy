@@ -6,12 +6,12 @@ import psycopg2
 from dateutil.relativedelta import relativedelta
 
 from atpy.data.cache.postgres_cache import insert_df
-from atpy.data.quandl.api import bulkdownload_sf
+from atpy.data.quandl.api import bulkdownload_sf1
 from atpy.data.ts_util import slice_periods
 
 
-def bulkinsert(url: str, table_name: str, dataset: str):
-    for data in bulkdownload_sf(dataset=dataset):
+def bulkinsert_sf1(url: str, table_name: str):
+    for data in bulkdownload_sf1():
         con = psycopg2.connect(url)
         con.autocommit = True
         insert_df(con, table_name, data)
@@ -83,19 +83,19 @@ create_sf_indices = \
             TABLESPACE pg_default;
     """
 
-
-def bulkinsert_SF0(url: str, table_name: str = 'quandl_sf0'):
-    con = psycopg2.connect(url)
-    con.autocommit = True
-    cur = con.cursor()
-
-    cur.execute("DROP TABLE IF EXISTS {0};".format(table_name))
-
-    cur.execute(create_sf.format(table_name))
-
-    bulkinsert(url, table_name=table_name, dataset='SF0')
-
-    cur.execute(create_sf_indices.format(table_name))
+# TODO
+# def bulkinsert_SF0(url: str, table_name: str = 'quandl_sf0'):
+#     con = psycopg2.connect(url)
+#     con.autocommit = True
+#     cur = con.cursor()
+#
+#     cur.execute("DROP TABLE IF EXISTS {0};".format(table_name))
+#
+#     cur.execute(create_sf.format(table_name))
+#
+#     bulkinsert(url, table_name=table_name, dataset='SF0')
+#
+#     cur.execute(create_sf_indices.format(table_name))
 
 
 def request_sf(conn, symbol: typing.Union[list, str] = None, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None, table_name: str = 'quandl_SF0', selection='*'):

@@ -6,6 +6,7 @@ import tempfile
 import threading
 import typing
 import zipfile
+from enum import Enum
 from multiprocessing.pool import ThreadPool
 
 import pandas as pd
@@ -21,6 +22,38 @@ def get_time_series(filters: typing.List[dict], threads=1, async=False, processo
     :param processor: process each result
     :return Queue or pd.DataFrame with identifier, date set as multi index
     """
+
+    return __get_data(filters=filters, api_type=__APIType.TIME_SERIES, threads=threads, async=async, processor=processor)
+
+
+def get_table(filters: typing.List[dict], threads=1, async=False, processor: typing.Callable = None):
+    """
+    Get async data for a list of filters. Works only for the historical API
+    :param filters: a list of filters
+    :param threads: number of threads for data retrieval
+    :param async: if True, return queue. Otherwise, wait for the results
+    :param processor: process each result
+    :return Queue or pd.DataFrame with identifier, date set as multi index
+    """
+
+    return __get_data(filters=filters, api_type=__APIType.TABLES, threads=threads, async=async, processor=processor)
+
+
+class __APIType(Enum):
+    TIME_SERIES = 1
+    TABLES = 2
+
+
+def __get_data(filters: typing.List[dict], api_type: __APIType, threads=1, async=False, processor: typing.Callable = None):
+    """
+    Get async data for a list of filters using the tables or time series api
+    :param filters: a list of filters
+    :param api_type: whether to use time series or tables
+    :param threads: number of threads for data retrieval
+    :param async: if True, return queue. Otherwise, wait for the results
+    :param processor: process each result
+    :return Queue or pd.DataFrame with identifier, date set as multi index
+    """
     api_k = os.environ['QUANDL_API_KEY'] if 'QUANDL_API_KEY' in os.environ else None
     q = queue.Queue(100)
     global_counter = {'c': 0}
@@ -29,14 +62,22 @@ def get_time_series(filters: typing.List[dict], threads=1, async=False, processo
 
     def mp_worker(f):
         try:
-            data = quandl.get(**f, paginate=True, api_key=api_k)
+            data = None
+            if api_type == __APIType.TIME_SERIES:
+                data = quandl.get(**f, paginate=True, api_key=api_k)
+                if data is not None:
+                    data.tz_localize('UTC', copy=False)
+                    q.put((f['dataset'], processor(data, **f) if processor is not None else data))
+            elif api_type == __APIType.TABLES:
+                data = quandl.get_table(**f, paginate=True, api_key=api_k)
+                if data is not None:
+                    q.put((f['datatable_code'], processor(data, **f) if processor is not None else data))
+
         except Exception as err:
             data = None
             logging.getLogger(__name__).exception(err)
 
-        if data is not None:
-            q.put(processor(data, **f) if processor is not None else data)
-        else:
+        if data is None:
             no_data.add(f)
 
         with lock:
@@ -62,17 +103,21 @@ def get_time_series(filters: typing.List[dict], threads=1, async=False, processo
             mp_worker(f)
 
     if not async:
-        result = list()
+        result = dict()
         while True:
             job = q.get()
             if job is None:
                 break
 
-            result.append(job)
+            result[job[0]] = job[1]
 
         return result
     else:
         return q
+
+
+def default_ts_processor(df: pd.DataFrame):
+    df.tz_localize('UTC', copy=False)
 
 
 def bulkdownload(dataset: str, chunksize=None):
@@ -88,7 +133,7 @@ def bulkdownload(dataset: str, chunksize=None):
             yield df
 
 
-def get_sf(filters: typing.List[dict], threads=1, async=False):
+def get_sf1(filters: typing.List[dict], threads=1, async=False):
     """
     return core us fundamental data
     :param filters: list of filters
@@ -97,7 +142,7 @@ def get_sf(filters: typing.List[dict], threads=1, async=False):
     :return:
     """
 
-    def _sf_processor(df, dataset):
+    def _sf1_processor(df, dataset):
         df.rename(columns={'Value': 'value'}, inplace=True)
         df.index.rename('date', inplace=True)
         df.tz_localize('UTC', copy=False)
@@ -109,7 +154,7 @@ def get_sf(filters: typing.List[dict], threads=1, async=False):
     result = get_time_series(filters,
                              threads=threads,
                              async=async,
-                             processor=_sf_processor)
+                             processor=_sf1_processor)
 
     if not async and isinstance(result, list):
         result = pd.concat(result)
@@ -118,8 +163,8 @@ def get_sf(filters: typing.List[dict], threads=1, async=False):
     return result
 
 
-def bulkdownload_sf(dataset: str = 'SF0', chunksize=100000):
-    for df in bulkdownload(dataset=dataset, chunksize=chunksize):
+def bulkdownload_sf1(chunksize=100000):
+    for df in bulkdownload(dataset='SF1', chunksize=chunksize):
         sid = df[0]
         df.drop(0, axis=1, inplace=True)
         df = pd.concat([df, sid.str.split('_', expand=True)], axis=1, copy=False)
@@ -145,9 +190,9 @@ class QuandlEvents(object):
                                      async=event['async'] if 'async' in event else False)
 
             self.listeners({'type': 'quandl_timeseries_result', 'data': result})
-        elif event['type'] == 'quandl_fundamentals_request':
-            result = get_sf(event['data'] if isinstance(event['data'], list) else event['data'],
-                            threads=event['threads'] if 'threads' in event else 1,
-                            async=event['async'] if 'async' in event else False)
+        elif event['type'] == 'quandl_table_request':
+            result = get_table(event['data'] if isinstance(event['data'], list) else event['data'],
+                               threads=event['threads'] if 'threads' in event else 1,
+                               async=event['async'] if 'async' in event else False)
 
-            self.listeners({'type': 'quandl_timeseries_result', 'data': result})
+            self.listeners({'type': 'quandl_table_result', 'data': result})
