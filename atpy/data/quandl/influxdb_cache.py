@@ -1,7 +1,8 @@
 import datetime
 import logging
+import typing
 
-import numpy as np
+import pandas as pd
 from influxdb import DataFrameClient
 
 from atpy.data.quandl.api import bulkdownload
@@ -24,13 +25,17 @@ class InfluxDBCache(object):
         self.client.close()
 
     def add_dataset_to_cache(self, dataset: str):
-        chunksize = 100000
-        for i, df in enumerate(bulkdownload(dataset=dataset, chunksize=chunksize)):
-            df.reset_index(level=['symbol', 'indicator', 'dimension'], inplace=True)
-            self.client.write_points(df, 'quandl_' + dataset, protocol='line', time_precision='s')
+        self.add_to_cache(measurement='quandl_' + dataset, dfs=bulkdownload(dataset=dataset, chunksize=100000))
 
-            if i > 0 and (i % 5 == 0 or len(df) < chunksize):
+    def add_to_cache(self, measurement: str, dfs: typing.Iterator[pd.DataFrame], tag_columns: list=None):
+        for i, df in enumerate(dfs):
+            self.client.write_points(df, 'quandl_' + measurement, tag_columns=tag_columns, protocol='line', time_precision='s')
+
+            if i > 0 and i % 5 == 0:
                 logging.getLogger(__name__).info("Cached " + str(i) + " queries")
+
+        if i > 0 and i % 5 != 0:
+            logging.getLogger(__name__).info("Cached " + str(i) + " queries")
 
     def request_data(self, dataset, tags: dict = None, start_date: datetime.date = None, end_date: datetime.date = None):
         query = "SELECT * FROM quandl_" + dataset
@@ -58,15 +63,7 @@ class InfluxDBCache(object):
 
         if len(result) > 0:
             result = result["quandl_" + dataset]
-
-            cols = [c for c in result.columns if c != 'value']
-
-            result.set_index(cols, drop=True, inplace=True, append=True)
-            result.index.rename('date', level=0, inplace=True)
-            result.sort_index(inplace=True)
-
-            if result['value'].dtype != np.float:
-                result['value'] = result['value'].astype(np.float)
+            result.index.rename('date', inplace=True)
         else:
             result = None
 

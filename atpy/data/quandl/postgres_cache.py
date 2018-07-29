@@ -98,7 +98,7 @@ create_sf_indices = \
 #     cur.execute(create_sf_indices.format(table_name))
 
 
-def request_sf(conn, symbol: typing.Union[list, str] = None, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None, table_name: str = 'quandl_SF0', selection='*'):
+def request_sf(conn, symbol: typing.Union[list, str] = None, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None, table_name: str = 'quandl_SF1', selection='*'):
     """
     Request bar data
     :param conn: connection
@@ -140,7 +140,7 @@ class SFInPeriodProvider(object):
     SF (0 or 1) dataset in period provider
     """
 
-    def __init__(self, conn, bgn_prd: datetime.datetime, delta: relativedelta, symbol: typing.Union[list, str] = None, ascend: bool = True, table_name: str = 'quandl_SF0', overlap: relativedelta = None):
+    def __init__(self, conn, bgn_prd: datetime.datetime, delta: relativedelta, symbol: typing.Union[list, str] = None, ascend: bool = True, table_name: str = 'quandl_SF1', overlap: relativedelta = None):
         self._periods = slice_periods(bgn_prd=bgn_prd, delta=delta, ascend=ascend, overlap=overlap)
 
         self.conn = conn

@@ -109,7 +109,14 @@ def __get_data(filters: typing.List[dict], api_type: __APIType, threads=1, async
             if job is None:
                 break
 
-            result[job[0]] = job[1]
+            if job[0] in result:
+                current = result[job[0]]
+                if isinstance(current, list):
+                    current.append(job[1])
+                else:
+                    result[job[0]] = [result[job[0]], job[1]]
+            else:
+                result[job[0]] = job[1]
 
         return result
     else:

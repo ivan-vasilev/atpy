@@ -4,12 +4,12 @@ import unittest
 import pandas as pd
 import psycopg2
 from dateutil.relativedelta import relativedelta
-from influxdb import DataFrameClient
+from influxdb import DataFrameClient, InfluxDBClient
 from pandas.util.testing import assert_frame_equal
 from sqlalchemy import create_engine
 
 from atpy.backtesting.data_replay import DataReplay
-from atpy.data.quandl.api import QuandlEvents, get_sf1, bulkdownload
+from atpy.data.quandl.api import QuandlEvents, get_sf1, bulkdownload, get_table
 from atpy.data.quandl.influxdb_cache import InfluxDBCache
 from atpy.data.quandl.postgres_cache import request_sf, SFInPeriodProvider
 from pyevents.events import SyncListeners
@@ -98,29 +98,39 @@ class TestQuandlAPI(unittest.TestCase):
 
         self.assertTrue(called)
 
-    # TODO
     def test_influxdb_cache(self):
-        client = DataFrameClient(host='localhost', port=8086, username='root', password='root', database='test_cache')
+        client = InfluxDBClient(host='localhost', port=8086, username='root', password='root', database='test_cache')
 
         try:
             client.drop_database('test_cache')
             client.create_database('test_cache')
             client.switch_database('test_cache')
 
-            with InfluxDBCache(client=client) as cache:
-                cache.add_dataset_to_cache()
-                data = cache.request_data('WGLF', tags={'symbol': {'AAPL', 'IBM'}})
+            with InfluxDBCache(client=DataFrameClient(host='localhost', port=8086, username='root', password='root', database='test_cache')) as cache:
+                listeners = SyncListeners()
+                QuandlEvents(listeners)
+
+                non_cache_data = get_table([{'datatable_code': 'SHARADAR/SF1', 'ticker': 'AAPL', 'dimension': 'MRY', 'qopts': {"columns": ['dimension', 'ticker', 'datekey', 'revenue']}},
+                                  {'datatable_code': 'SHARADAR/SF1', 'ticker': 'IBM', 'dimension': 'MRY', 'qopts': {"columns": ['dimension', 'ticker', 'datekey', 'revenue']}}])
+
+                items = list()
+                for df in non_cache_data['SHARADAR/SF1']:
+                    items.append(df.rename({'revenue': 'value', 'datekey': 'timestamp'}, axis=1).set_index('timestamp'))
+
+                cache.add_to_cache('sf1', iter(items), tag_columns=['dimension', 'ticker'])
+                cache_data = cache.request_data('sf1', tags={'ticker': {'AAPL', 'IBM'}})
 
                 listeners = SyncListeners()
                 QuandlEvents(listeners)
 
-                self.assertTrue(isinstance(data, pd.DataFrame))
-                self.assertGreater(len(data), 0)
-                self.assertEqual(len(data.index.levels), 4)
+                self.assertTrue(isinstance(cache_data, pd.DataFrame))
+                self.assertGreater(len(cache_data), 0)
 
-                non_cache_data = get_sf1([{'dataset': 'WGLF/TZA_WP11632_8'}, {'dataset': 'WGLF/PSE_WP11670_2'}])
-                cache_data = cache.request_data('WGLF', tags={'symbol': 'PSE', 'dimension': '2', 'indicator': 'WP11670'})
-                assert_frame_equal(non_cache_data, cache_data)
+                items = pd.concat(items).sort_index()
+                items.tz_localize('UTC', copy=False)
+                items.index.name = 'date'
+
+                assert_frame_equal(items, cache_data)
         finally:
             client.drop_database('test_cache')
             client.close()
