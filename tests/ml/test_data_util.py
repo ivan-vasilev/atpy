@@ -100,7 +100,7 @@ class TestDataUtil(unittest.TestCase):
             result_p = cumsum_filter(df, parallel=True)
             assert_frame_equal(pd.DataFrame(index=result_np), pd.DataFrame(index=result_p))
 
-    def test_triple_barriers_1(self):
+    def test_triple_barriers_side(self):
         with IQFeedHistoryProvider() as provider:
             df = provider.request_data(BarsFilter(ticker="AAPL", interval_len=3600, interval_type='s', max_bars=1000), sync_timestamps=False)
             df['pt'] = 0.001
@@ -111,7 +111,6 @@ class TestDataUtil(unittest.TestCase):
             self.assertTrue(result['barrier_hit'].notnull().any())
             self.assertFalse((result['barrier_hit'][result['barrier_hit'].notnull()] == result.index[result['barrier_hit'].notnull()]).any())
 
-            self.assertTrue(result['side'].isnull().any())
             self.assertTrue((result['side'] == 1).any())
             self.assertTrue((result['side'] == -1).any())
             self.assertTrue((result['side'] == 0).any())
@@ -132,14 +131,63 @@ class TestDataUtil(unittest.TestCase):
             self.assertTrue(barrier_hit_tmp.notnull().any())
             self.assertFalse((barrier_hit_tmp[barrier_hit_tmp.notnull()] == tmp[barrier_hit_tmp.notnull()]).any())
 
-            result_p = triple_barriers(df['close'], df['pt'], sl=df['pt'], vb=pd.Timedelta('36000s'), parallel=True)
+            result_p = triple_barriers(df['close'], pt=df['pt'], sl=df['pt'], vb=pd.Timedelta('36000s'), parallel=True)
             assert_frame_equal(result_np, result_p.sort_index())
 
-    def test_triple_barriers_performance(self):
+    def test_triple_barriers_size(self):
+        with IQFeedHistoryProvider() as provider:
+            df = provider.request_data(BarsFilter(ticker="AAPL", interval_len=3600, interval_type='s', max_bars=1000), sync_timestamps=False)
+            df['pt'] = 0.001
+            df['sl'] = 0.001
+            df['side'] = 1
+
+            result = triple_barriers(df['close'], df['pt'], sl=df['sl'], side=df['side'], vb=pd.Timedelta('36000s'), parallel=False)
+            self.assertTrue(result['barrier_hit'].isnull().any())
+            self.assertTrue(result['barrier_hit'].notnull().any())
+            self.assertFalse((result['barrier_hit'][result['barrier_hit'].notnull()] == result.index[result['barrier_hit'].notnull()]).any())
+
+            self.assertTrue(result['returns'].isnull().any())
+            self.assertTrue(result['returns'].notnull().any())
+
+            self.assertTrue((result['size'] == 1).any())
+            self.assertTrue((result['size'] == 0).any())
+            self.assertTrue(result.loc[result['returns'] <= 0.001, 'size'].max() == 0)
+            self.assertTrue(result.loc[result['returns'] > 0.001, 'size'].min() == 1)
+
+            df['side'] = -1
+
+            result = triple_barriers(df['close'], df['pt'], sl=df['sl'], side=df['side'], vb=pd.Timedelta('36000s'), parallel=False)
+
+            self.assertTrue((result['size'] == 1).any())
+            self.assertTrue((result['size'] == 0).any())
+            self.assertTrue(result.loc[result['returns'] > 0.001, 'size'].max() == 0)
+            self.assertTrue(result.loc[result['returns'] <= -0.001, 'size'].min() == 1)
+
+            df = provider.request_data(BarsFilter(ticker=["IBM", "AAPL"], interval_len=3600, interval_type='s', max_bars=1000), sync_timestamps=False)
+            df['pt'] = 0.001
+            df['sl'] = 0.001
+            df['side'] = 1
+
+            result_np = triple_barriers(df['close'], df['pt'], sl=df['sl'], side=df['side'], vb=pd.Timedelta('36000s'), parallel=True).sort_index()
+            self.assertTrue(isinstance(result_np.index, pd.MultiIndex))
+
+            tmp = result_np.reset_index()['timestamp']
+            barrier_hit_tmp = result_np['barrier_hit'].reset_index(drop=True)
+            self.assertTrue(barrier_hit_tmp.isnull().any())
+            self.assertTrue(barrier_hit_tmp.notnull().any())
+            self.assertFalse((barrier_hit_tmp[barrier_hit_tmp.notnull()] == tmp[barrier_hit_tmp.notnull()]).any())
+
+            self.assertTrue((result_np['size'] == 1).any())
+            self.assertTrue((result_np['size'] == 0).any())
+
+            result_p = triple_barriers(df['close'], df['pt'], sl=df['pt'], side=df['side'], vb=pd.Timedelta('36000s'), parallel=True)
+            assert_frame_equal(result_np, result_p.sort_index())
+
+    def test_triple_barriers_side_performance(self):
         logging.basicConfig(level=logging.DEBUG)
 
         batch_len = 15000
-        batch_width = 4000
+        batch_width = 2000
 
         now = datetime.datetime.now()
         with IQFeedHistoryProvider() as provider:
@@ -153,10 +201,42 @@ class TestDataUtil(unittest.TestCase):
             df.index.set_names(['symbol', 'timestamp'], inplace=True)
             df.sort_index(inplace=True)
             df['pt'] = 0.001
+            df['sl'] = 0.001
 
             logging.getLogger(__name__).debug('Random data generated in ' + str(datetime.datetime.now() - now) + ' with shapes ' + str(df.shape))
 
             now = datetime.datetime.now()
 
-            result = triple_barriers(df['close'], df['pt'], sl=df['pt'], vb=pd.Timedelta('6000s'), parallel=True)
+            result = triple_barriers(df['close'], pt=df['pt'], sl=df['sl'], vb=pd.Timedelta('6000s'), parallel=True)
             logging.getLogger(__name__).debug('Task done in ' + str(datetime.datetime.now() - now) + ' with shapes ' + str(result.shape))
+
+    def test_triple_barriers_size_performance(self):
+        logging.basicConfig(level=logging.DEBUG)
+
+        batch_len = 15000
+        batch_width = 2000
+
+        now = datetime.datetime.now()
+        with IQFeedHistoryProvider() as provider:
+            df1 = provider.request_data(BarsFilter(ticker="AAPL", interval_len=600, interval_type='s', max_bars=batch_len), sync_timestamps=False)
+
+            df = {'AAPL': df1}
+            for i in range(batch_width):
+                df['AAPL_' + str(i)] = df1.sample(random.randint(int(len(df1) / 3), len(df1) - 1))
+
+            df = pd.concat(df)
+            df.index.set_names(['symbol', 'timestamp'], inplace=True)
+            df.sort_index(inplace=True)
+            df['pt'] = 0.001
+            df['sl'] = 0.001
+            df['side'] = 1
+
+            logging.getLogger(__name__).debug('Random data generated in ' + str(datetime.datetime.now() - now) + ' with shapes ' + str(df.shape))
+
+            now = datetime.datetime.now()
+
+            result = triple_barriers(df['close'], pt=df['pt'], sl=df['pt'], side=df['side'], vb=pd.Timedelta('6000s'), parallel=True)
+            logging.getLogger(__name__).debug('Task done in ' + str(datetime.datetime.now() - now) + ' with shapes ' + str(result.shape))
+
+            self.assertTrue((result['size'] == 1).any())
+            self.assertTrue((result['size'] == 0).any())

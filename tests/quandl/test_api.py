@@ -9,7 +9,7 @@ from pandas.util.testing import assert_frame_equal
 from sqlalchemy import create_engine
 
 from atpy.backtesting.data_replay import DataReplay
-from atpy.data.quandl.api import QuandlEvents, get_sf1, bulkdownload, get_table
+from atpy.data.quandl.api import QuandlEvents, bulkdownload, get_table
 from atpy.data.quandl.influxdb_cache import InfluxDBCache
 from atpy.data.quandl.postgres_cache import request_sf, SFInPeriodProvider
 from pyevents.events import SyncListeners
@@ -88,16 +88,6 @@ class TestQuandlAPI(unittest.TestCase):
         self.assertTrue(isinstance(data, pd.DataFrame))
         self.assertGreater(len(data), 0)
 
-    # TODO
-    def test_bulkdownload(self):
-        called = False
-        for data in bulkdownload("ZEA"):
-            called = True
-            self.assertTrue(isinstance(data, pd.DataFrame))
-            self.assertGreater(len(data), 0)
-
-        self.assertTrue(called)
-
     def test_influxdb_cache(self):
         client = InfluxDBClient(host='localhost', port=8086, username='root', password='root', database='test_cache')
 
@@ -111,7 +101,7 @@ class TestQuandlAPI(unittest.TestCase):
                 QuandlEvents(listeners)
 
                 non_cache_data = get_table([{'datatable_code': 'SHARADAR/SF1', 'ticker': 'AAPL', 'dimension': 'MRY', 'qopts': {"columns": ['dimension', 'ticker', 'datekey', 'revenue']}},
-                                  {'datatable_code': 'SHARADAR/SF1', 'ticker': 'IBM', 'dimension': 'MRY', 'qopts': {"columns": ['dimension', 'ticker', 'datekey', 'revenue']}}])
+                                            {'datatable_code': 'SHARADAR/SF1', 'ticker': 'IBM', 'dimension': 'MRY', 'qopts': {"columns": ['dimension', 'ticker', 'datekey', 'revenue']}}])
 
                 items = list()
                 for df in non_cache_data['SHARADAR/SF1']:
@@ -159,6 +149,7 @@ class TestQuandlAPI(unittest.TestCase):
         finally:
             con.cursor().execute("DROP TABLE IF EXISTS {0};".format(table_name))
 
+    # TODO
     def test_in_period_provider(self):
         table_name = 'quandl_sf0'
         url = 'postgresql://postgres:postgres@localhost:5432/test'
@@ -210,6 +201,16 @@ class TestQuandlAPI(unittest.TestCase):
                 self.assertGreaterEqual(len(r), 1)
         finally:
             con.cursor().execute("DROP TABLE IF EXISTS {0};".format(table_name))
+
+    # TODO
+    def test_bulkdownload(self):
+        called = False
+        for data in bulkdownload("ZEA"):
+            called = True
+            self.assertTrue(isinstance(data, pd.DataFrame))
+            self.assertGreater(len(data), 0)
+
+        self.assertTrue(called)
 
 
 if __name__ == '__main__':

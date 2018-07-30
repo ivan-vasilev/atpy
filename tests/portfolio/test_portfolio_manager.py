@@ -1,8 +1,8 @@
 import unittest
 
+from atpy.backtesting.mock_broker import MockBroker
 from atpy.data.iqfeed.iqfeed_history_provider import *
 from atpy.data.iqfeed.iqfeed_level_1_provider import *
-from atpy.portfolio.backtesting.mock_orders import *
 from atpy.portfolio.portfolio_manager import *
 from pyevents.events import AsyncListeners
 from pyevents_util.mongodb.mongodb_store import *
@@ -231,7 +231,7 @@ class TestPortfolioManager(unittest.TestCase):
         with IQFeedLevel1Listener(listeners=listeners):
             pm = PortfolioManager(listeners=listeners, initial_capital=10000)
 
-            MockOrders(listeners=listeners)
+            MockBroker(listeners=listeners)
 
             e1 = threading.Event()
             listeners += lambda x: e1.set() if x['type'] == 'portfolio_update' and 'GOOG' in x['data'].symbols else None
@@ -276,7 +276,7 @@ class TestPortfolioManager(unittest.TestCase):
 
         pm = PortfolioManager(listeners=listeners, initial_capital=10000)
 
-        MockOrders(listeners=listeners)
+        MockBroker(listeners=listeners)
 
         e1 = threading.Event()
         listeners += lambda x: e1.set() if x['type'] == 'portfolio_update' and 'GOOG' in x['data'].symbols else None
@@ -327,7 +327,7 @@ class TestPortfolioManager(unittest.TestCase):
 
         pm = PortfolioManager(listeners=listeners, initial_capital=10000)
 
-        MockOrders(listeners=listeners)
+        MockBroker(listeners=listeners)
 
         e1 = threading.Event()
         listeners += lambda x: e1.set() if x['type'] == 'portfolio_update' and 'GOOG' in x['data'].symbols else None
