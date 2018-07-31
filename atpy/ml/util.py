@@ -6,6 +6,10 @@ import numba
 import numpy as np
 import pandas as pd
 
+"""
+Chapter 2 of Advances in Financial Machine Learning book by Marcos Lopez de Prado
+"""
+
 
 def _cumsum_filter(df: pd.DataFrame):
     """
@@ -49,6 +53,11 @@ def cumsum_filter(df: pd.DataFrame, parallel=True):
             return grpby.apply(lambda x: pd.Series(index=_cumsum_filter(x))).index
     else:
         return _cumsum_filter(df)
+
+
+"""
+Chapter 3 of Advances in Financial Machine Learning book by Marcos Lopez de Prado
+"""
 
 
 def _daily_volatility(price: pd.Series, span=100):
@@ -191,12 +200,14 @@ def _triple_barriers(data: pd.Series, pt: pd.Series, sl: pd.Series, vb: pd.Timed
         result['side'] = data.copy().astype(np.int8)
         result['side'].values.fill(np.nan)
 
-        __triple_barriers_side_jit(data=data.values, timestamps=data.index.values, delta=vb.to_timedelta64(), pt=pt.values, sl=sl.values, barrier_hit=result['barrier_hit'].values, side=result['side'].values, returns=result['returns'].values)
+        __triple_barriers_side_jit(data=data.values, timestamps=data.index.values, delta=vb.to_timedelta64(), pt=pt.values, sl=sl.values, barrier_hit=result['barrier_hit'].values, side=result['side'].values,
+                                   returns=result['returns'].values)
     else:
         result['size'] = data.copy().astype(np.int8)
         result['size'].values.fill(np.nan)
 
-        __triple_barriers_size_jit(data=data.values, timestamps=data.index.values, delta=vb.to_timedelta64(), pt=pt.values, sl=sl.values, barrier_hit=result['barrier_hit'].values, side=side.values, returns=result['returns'].values, size=result['size'].values)
+        __triple_barriers_size_jit(data=data.values, timestamps=data.index.values, delta=vb.to_timedelta64(), pt=pt.values, sl=sl.values, barrier_hit=result['barrier_hit'].values, side=side.values, returns=result['returns'].values,
+                                   size=result['size'].values)
 
     return result
 
@@ -307,3 +318,77 @@ def __triple_barriers_groupby(data: pd.DataFrame, vb: pd.Timedelta):
             result = result.reorder_levels(['symbol', 'timestamp'])
 
     return result
+
+
+"""
+Chapter 5 of Advances in Financial Machine Learning book by Marcos Lopez de Prado
+"""
+
+
+def get_weights_ffd(d, threshold=1e-5):
+    """
+    Obtain the weights for the binomial representation of time series
+    :param d: coefficient
+    :param threshold: threshold
+    """
+
+    w, k = [1.], 1
+    while abs(w[-1]) > threshold:
+        w_ = -w[-1] / k * (d - k + 1)
+        w.append(w_)
+        k += 1
+
+    w = np.array(w[::-1])
+
+    return w
+
+
+def plot_weights(d_range, n_plots):
+    import matplotlib.pyplot as plt
+
+    w = pd.DataFrame()
+    for d in np.linspace(d_range[0], d_range[1], n_plots):
+        w_ = get_weights_ffd(d)
+        w_ = pd.DataFrame(w_, index=range(w_.shape[0])[::-1], columns=[d])
+        w = w.join(w_, how='outer')
+    ax = w.plot()
+    ax.legend(loc='upper left');
+    plt.show()
+    return
+
+
+# if __name__ == '__main__':
+#     plot_weights(d_range=[0, 1], n_plots=11)
+#     plot_weights(d_range=[1, 2], n_plots=11)
+
+
+def _frac_diff_ffd(data: pd.Series, d: float, threshold=1e-5):
+    """
+    Fractionally Differentiated Features Fixed Window
+    :param data: data
+    :param d: difference coefficient
+    :param threshold: threshold
+    """
+    # 1) Compute weights for the longest series
+    w = get_weights_ffd(d, threshold)
+    # 2) Apply weights to values
+    return data.rolling(w.size, min_periods=w.size).apply(lambda x: np.dot(x, w), raw=True).dropna()
+
+
+def frac_diff_ffd(data: pd.Series, d: float, threshold=1e-5, parallel=False):
+    """
+    Fractionally Differentiated Features Fixed Window
+    :param data: data
+    :param d: difference coefficient
+    :param threshold: threshold
+    :param parallel: run in parallel
+    """
+    if isinstance(data.index, pd.MultiIndex):
+        if parallel:
+            with Pool(cpu_count()) as p:
+                ret_list = p.starmap(_frac_diff_ffd, [(group, d, threshold) for name, group in data.groupby(level='symbol', group_keys=False, sort=False)])
+                return pd.concat(ret_list)
+        else:
+            return data.groupby(level='symbol', group_keys=False, sort=False).apply(_frac_diff_ffd, d=d, threshold=threshold)
+    else:
+        return _frac_diff_ffd(data=data, d=d, threshold=threshold)
