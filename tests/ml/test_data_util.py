@@ -102,6 +102,7 @@ class TestDataUtil(unittest.TestCase):
 
     def test_triple_barriers_side(self):
         with IQFeedHistoryProvider() as provider:
+            # test single index
             df = provider.request_data(BarsFilter(ticker="AAPL", interval_len=3600, interval_type='s', max_bars=1000), sync_timestamps=False)
             df['pt'] = 0.001
             df['sl'] = 0.001
@@ -118,6 +119,13 @@ class TestDataUtil(unittest.TestCase):
             self.assertTrue(result['returns'].isnull().any())
             self.assertTrue(result['returns'].notnull().any())
 
+            # test seed values
+            df['seed'] = False
+            df.iloc[:10]['seed'] = True
+            result_seed = triple_barriers(df['close'], df['pt'], sl=df['sl'], vb=pd.Timedelta('36000s'), seed=df['seed'], parallel=False).dropna()
+            self.assertLessEqual(result_seed.shape[0], 10)
+
+            # test multiindex
             df = provider.request_data(BarsFilter(ticker=["IBM", "AAPL"], interval_len=3600, interval_type='s', max_bars=1000), sync_timestamps=False)
             df['pt'] = 0.001
             df['sl'] = 0.001
@@ -134,8 +142,20 @@ class TestDataUtil(unittest.TestCase):
             result_p = triple_barriers(df['close'], pt=df['pt'], sl=df['pt'], vb=pd.Timedelta('36000s'), parallel=True)
             assert_frame_equal(result_np, result_p.sort_index())
 
+            # test seed values
+            df['seed'] = False
+
+            def tmp(x):
+                x.iloc[:10]['seed'] = True
+                return x
+
+            df = df.groupby(level='symbol').apply(tmp)
+            result_seed = triple_barriers(df['close'], df['pt'], sl=df['sl'], vb=pd.Timedelta('36000s'), seed=df['seed'], parallel=False).dropna()
+            self.assertLessEqual(result_seed.shape[0], 20)
+
     def test_triple_barriers_size(self):
         with IQFeedHistoryProvider() as provider:
+            # test single symbol
             df = provider.request_data(BarsFilter(ticker="AAPL", interval_len=3600, interval_type='s', max_bars=1000), sync_timestamps=False)
             df['pt'] = 0.001
             df['sl'] = 0.001
@@ -163,6 +183,13 @@ class TestDataUtil(unittest.TestCase):
             self.assertTrue(result.loc[result['returns'] > 0.001, 'size'].max() == 0)
             self.assertTrue(result.loc[result['returns'] <= -0.001, 'size'].min() == 1)
 
+            # test seed values
+            df['seed'] = False
+            df.iloc[:10]['seed'] = True
+            result_seed = triple_barriers(df['close'], df['pt'], sl=df['sl'], side=df['side'], vb=pd.Timedelta('36000s'), seed=df['seed'], parallel=False).dropna()
+            self.assertLessEqual(result_seed.shape[0], 10)
+
+            # test multiindex
             df = provider.request_data(BarsFilter(ticker=["IBM", "AAPL"], interval_len=3600, interval_type='s', max_bars=1000), sync_timestamps=False)
             df['pt'] = 0.001
             df['sl'] = 0.001
@@ -182,6 +209,17 @@ class TestDataUtil(unittest.TestCase):
 
             result_p = triple_barriers(df['close'], df['pt'], sl=df['pt'], side=df['side'], vb=pd.Timedelta('36000s'), parallel=True)
             assert_frame_equal(result_np, result_p.sort_index())
+
+            # test seed values
+            df['seed'] = False
+
+            def tmp(x):
+                x.iloc[:10]['seed'] = True
+                return x
+
+            df = df.groupby(level='symbol').apply(tmp)
+            result_seed = triple_barriers(df['close'], df['pt'], sl=df['sl'], side=df['side'], vb=pd.Timedelta('36000s'), seed=df['seed'], parallel=False).dropna()
+            self.assertLessEqual(result_seed.shape[0], 20)
 
     def test_triple_barriers_side_performance(self):
         logging.basicConfig(level=logging.DEBUG)

@@ -178,13 +178,14 @@ def vertical_barrier(timestamps: typing.Union[pd.DatetimeIndex, pd.MultiIndex], 
         return _vertical_barrier(timestamps=timestamps, t_events=t_events, delta=delta)
 
 
-def _triple_barriers(data: pd.Series, pt: pd.Series, sl: pd.Series, vb: pd.Timedelta, side: pd.Series = None):
+def _triple_barriers(data: pd.Series, pt: pd.Series, sl: pd.Series, vb: pd.Timedelta, seed: pd.Series = None, side: pd.Series = None):
     """
     Triple barrier labeling for single index series
     :param data: data to be labeled
-    :param vb: vertical barrier delta
     :param pt: profit taking barrier
     :param sl: stop loss barrier
+    :param vb: vertical barrier delta
+    :param seed: True/False array. If True, the given moment will be used to seed one triple barrier. If false, the given moment will be omitted
     :param side: if side is specified, then meta-labeling is enabled
     :return dataframe with first timestamp of threshold crossing, type of threshold crossing and return
     """
@@ -196,84 +197,90 @@ def _triple_barriers(data: pd.Series, pt: pd.Series, sl: pd.Series, vb: pd.Timed
 
     result.drop(data.name, axis=1, inplace=True)
 
+    seed = seed.values if seed is not None else np.full(data.size, True)
+
     if side is None:
         result['side'] = data.copy().astype(np.int8)
         result['side'].values.fill(np.nan)
 
-        __triple_barriers_side_jit(data=data.values, timestamps=data.index.values, delta=vb.to_timedelta64(), pt=pt.values, sl=sl.values, barrier_hit=result['barrier_hit'].values, side=result['side'].values,
+        __triple_barriers_side_jit(data=data.values, timestamps=data.index.values, seed=seed, delta=vb.to_timedelta64(), pt=pt.values, sl=sl.values, barrier_hit=result['barrier_hit'].values, side=result['side'].values,
                                    returns=result['returns'].values)
     else:
         result['size'] = data.copy().astype(np.int8)
         result['size'].values.fill(np.nan)
 
-        __triple_barriers_size_jit(data=data.values, timestamps=data.index.values, delta=vb.to_timedelta64(), pt=pt.values, sl=sl.values, barrier_hit=result['barrier_hit'].values, side=side.values, returns=result['returns'].values,
+        __triple_barriers_size_jit(data=data.values, timestamps=data.index.values, seed=seed, delta=vb.to_timedelta64(), pt=pt.values, sl=sl.values, barrier_hit=result['barrier_hit'].values, side=side.values,
+                                   returns=result['returns'].values,
                                    size=result['size'].values)
 
     return result
 
 
 @numba.jit(nopython=True)
-def __triple_barriers_side_jit(data: np.array, timestamps: np.array, delta: np.timedelta64, pt: np.array, sl: np.array, barrier_hit: np.array, side: np.array, returns: np.array):
+def __triple_barriers_side_jit(data: np.array, timestamps: np.array, seed: np.array, delta: np.timedelta64, pt: np.array, sl: np.array, barrier_hit: np.array, side: np.array, returns: np.array):
     """This function cannot be local to _triple_barriers, because it will be compiled on every groupby"""
 
     for i in range(data.size):
-        end = timestamps[i] + delta
+        if seed[i] is True:
+            end = timestamps[i] + delta
 
-        current = data[i]
+            current = data[i]
 
-        pt_delta = pt[i]
-        sl_delta = -sl[i]
+            pt_delta = pt[i]
+            sl_delta = -sl[i]
 
-        for i_end in range(i + 1, data.size):
-            ret = current / data[i_end] - 1
+            for i_end in range(i + 1, data.size):
+                ret = current / data[i_end] - 1
 
-            if ret > pt_delta or ret < sl_delta:
-                barrier_hit[i], side[i], returns[i] = timestamps[i_end], np.sign(ret), ret
-                break
+                if ret > pt_delta or ret < sl_delta:
+                    barrier_hit[i], side[i], returns[i] = timestamps[i_end], np.sign(ret), ret
+                    break
 
-            if timestamps[i_end] == end or (i_end < data.size - 1 and timestamps[i_end + 1] > end):
-                barrier_hit[i], side[i], returns[i] = timestamps[i_end], 0, ret
-                break
+                if timestamps[i_end] == end or (i_end < data.size - 1 and timestamps[i_end + 1] > end):
+                    barrier_hit[i], side[i], returns[i] = timestamps[i_end], 0, ret
+                    break
 
 
 @numba.jit(nopython=True)
-def __triple_barriers_size_jit(data: np.array, timestamps: np.array, delta: np.timedelta64, pt: np.array, sl: np.array, barrier_hit: np.array, side: np.array, returns: np.array, size: np.array):
+def __triple_barriers_size_jit(data: np.array, timestamps: np.array, seed: np.array, delta: np.timedelta64, pt: np.array, sl: np.array, barrier_hit: np.array, side: np.array, returns: np.array, size: np.array):
     """This function cannot be local to _triple_barriers, because it will be compiled on every groupby"""
 
     for i in range(data.size):
-        end = timestamps[i] + delta
+        if seed[i] is True:
+            end = timestamps[i] + delta
 
-        current = data[i]
+            current = data[i]
 
-        pt_delta = pt[i]
-        sl_delta = -sl[i]
+            pt_delta = pt[i]
+            sl_delta = -sl[i]
 
-        for i_end in range(i + 1, data.size):
-            ret = current / data[i_end] - 1
+            for i_end in range(i + 1, data.size):
+                ret = current / data[i_end] - 1
 
-            if ret > pt_delta or ret < sl_delta:
-                barrier_hit[i], returns[i] = timestamps[i_end], ret
-                size[i] = 1 if np.sign(ret) == side[i] else 0
-                break
+                if ret > pt_delta or ret < sl_delta:
+                    barrier_hit[i], returns[i] = timestamps[i_end], ret
+                    size[i] = 1 if np.sign(ret) == side[i] else 0
+                    break
 
-            if timestamps[i_end] == end or (i_end < data.size - 1 and timestamps[i_end + 1] > end):
-                barrier_hit[i], size[i], returns[i] = timestamps[i_end], 0, ret
-                break
+                if timestamps[i_end] == end or (i_end < data.size - 1 and timestamps[i_end + 1] > end):
+                    barrier_hit[i], size[i], returns[i] = timestamps[i_end], 0, ret
+                    break
 
 
-def triple_barriers(data: pd.Series, pt: pd.Series, sl: pd.Series, vb: pd.Timedelta, side: pd.Series = None, parallel=True):
+def triple_barriers(data: pd.Series, pt: pd.Series, sl: pd.Series, vb: pd.Timedelta, seed: pd.Series = None, side: pd.Series = None, parallel=True):
     """
     Triple barrier labeling for single multiindex series
     :param data: data to be labeled
-    :param vb: vertical barrier delta
     :param pt: profit taking barrier
     :param sl: stop loss barrier
+    :param vb: vertical barrier delta
+    :param seed: True/False array. If True, the given moment will be used to seed one triple barrier. If false, the given moment will be omitted
     :param side: if side is specified, then meta-labeling is enabled
     :param parallel: run in parallel
     :return dataframe with first timestamp of threshold crossing, type of threshold crossing and return
     """
     if isinstance(data.index, pd.DatetimeIndex):
-        return _triple_barriers(data=data, pt=pt, sl=sl, side=side, vb=vb)
+        return _triple_barriers(data=data, pt=pt, sl=sl, side=side, seed=seed, vb=vb)
     else:
         data = data.astype(np.float32).to_frame().rename(columns={data.name: 'data'}) if data.dtype != np.float32 else data.to_frame().rename(columns={data.name: 'data'})
 
@@ -285,6 +292,9 @@ def triple_barriers(data: pd.Series, pt: pd.Series, sl: pd.Series, vb: pd.Timede
 
         if side is not None:
             data['side'] = side.astype(np.int8) if side.dtype != np.int8 else side
+
+        if seed is not None:
+            data['seed'] = seed
 
         if parallel:
             with Pool(cpu_count()) as p:
@@ -309,7 +319,12 @@ def __triple_barriers_groupby(data: pd.DataFrame, vb: pd.Timedelta):
     else:
         symbol_ind, symbol = -1, None
 
-    result = _triple_barriers(data['data'], pt=data['pt'] if 'pt' in data else None, sl=data['sl'] if 'sl' in data else None, vb=vb, side=data['side'] if 'side' in data else None)
+    result = _triple_barriers(data['data'],
+                              pt=data['pt'] if 'pt' in data else None,
+                              sl=data['sl'] if 'sl' in data else None,
+                              vb=vb,
+                              seed=data['seed'] if 'seed' in data else None,
+                              side=data['side'] if 'side' in data else None)
 
     if symbol_ind > -1:
         result['symbol'] = symbol
