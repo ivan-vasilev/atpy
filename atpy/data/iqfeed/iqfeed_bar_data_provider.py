@@ -2,7 +2,7 @@ from dateutil import tz
 
 from atpy.data.iqfeed.iqfeed_level_1_provider import get_splits_dividends
 from atpy.data.iqfeed.util import *
-import atpy.data.util as datautil
+from atpy.data.splits_dividends import adjust_df
 
 
 class IQFeedBarDataListener(iq.SilentBarListener):
@@ -77,7 +77,7 @@ class IQFeedBarDataListener(iq.SilentBarListener):
     def process_history_bar(self, bar_data: np.array) -> None:
         data = self._process_data(iqfeed_to_dict(np.copy(bar_data), key_suffix=self.key_suffix))
 
-        datautil.adjust_df(data, get_splits_dividends(data['symbol'], self.streaming_conn))
+        adjust_df(data, get_splits_dividends(data['symbol'], self.streaming_conn))
 
         self.listeners({'type': 'bar', 'data': data, 'interval_type': self.interval_type, 'interval_len': self.interval_len})
 

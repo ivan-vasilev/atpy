@@ -8,6 +8,7 @@ from atpy.data.iqfeed.iqfeed_bar_data_provider import *
 from atpy.data.iqfeed.iqfeed_influxdb_cache import *
 from atpy.data.iqfeed.iqfeed_level_1_provider import get_fundamentals
 from pyevents.events import AsyncListeners
+from atpy.data.splits_dividends import adjust_df
 
 
 class TestInfluxDBCacheRequests(unittest.TestCase):
@@ -52,12 +53,12 @@ class TestInfluxDBCacheRequests(unittest.TestCase):
 
                 datum = history.request_data(f, sync_timestamps=False)
 
-                datautil.adjust_df(datum, get_adjustments(client=self._client, symbol=f.ticker))
+                adjust_df(datum, get_adjustments(client=self._client, symbol=f.ticker))
                 adjusted.append(datum)
 
                 cache_requests = InfluxDBOHLCRequest(client=self._client, interval_len=f.interval_len, interval_type=f.interval_type)
                 _, test_data = cache_requests.request(symbol=f.ticker)
-                datautil.adjust_df(test_data, get_adjustments(client=self._client, symbol=f.ticker))
+                adjust_df(test_data, get_adjustments(client=self._client, symbol=f.ticker))
                 del datum['total_volume']
                 del datum['number_of_trades']
                 assert_frame_equal(datum, test_data)

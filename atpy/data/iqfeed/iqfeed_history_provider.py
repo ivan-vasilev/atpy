@@ -14,7 +14,7 @@ from atpy.data.iqfeed.filters import *
 from atpy.data.iqfeed.iqfeed_level_1_provider import get_splits_dividends
 from atpy.data.iqfeed.util import launch_service, IQFeedDataProvider
 from atpy.data.ts_util import slice_periods
-from atpy.data.util import adjust_df
+from atpy.data.splits_dividends import adjust_df
 
 
 class TicksFilter(NamedTuple):

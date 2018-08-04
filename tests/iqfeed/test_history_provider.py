@@ -235,56 +235,6 @@ class TestIQFeedHistory(unittest.TestCase):
                 if i == 1:
                     break
 
-    def test_bar_adjust_1(self):
-        filter_provider = DefaultFilterProvider()
-        filter_provider += BarsInPeriodFilter(ticker="PLUS", bgn_prd=datetime.datetime(2017, 3, 31), end_prd=datetime.datetime(2017, 4, 5), interval_len=3600, ascend=True, interval_type='s', max_ticks=100)
-
-        listeners = AsyncListeners()
-
-        with IQFeedHistoryEvents(listeners=listeners, fire_batches=True, filter_provider=filter_provider, timestamp_first=True, num_connections=2) as listener, listener.batch_provider() as provider:
-            e1 = threading.Event()
-
-            def process_bar(event):
-                if event['type'] == 'bar_batch':
-                    d = event['data']
-                    try:
-                        self.assertLess(d['open'].max(), 68)
-                        self.assertGreater(d['open'].min(), 65)
-                    finally:
-                        e1.set()
-
-            listeners += process_bar
-
-            listener.start()
-
-            e1.wait()
-
-            for i, d in enumerate(provider):
-                self.assertLess(d['open'].max(), 68)
-                self.assertGreater(d['open'].min(), 65)
-
-                if i == 1:
-                    break
-
-    def test_bar_adjust_2(self):
-        filter_provider = DefaultFilterProvider()
-        filter_provider += BarsInPeriodFilter(ticker=["PLUS", "AAPL"], bgn_prd=datetime.datetime(2017, 3, 31), end_prd=datetime.datetime(2017, 4, 5), interval_len=3600, ascend=True, interval_type='s')
-
-        listeners = AsyncListeners()
-
-        with IQFeedHistoryEvents(listeners=listeners, fire_batches=True, filter_provider=filter_provider, sync_timestamps=False, timestamp_first=True, num_connections=2) as listener, listener.batch_provider() as provider:
-            listener.start()
-
-            for i, d in enumerate(provider):
-                idx = pd.IndexSlice
-
-                self.assertLess(d.loc[idx[:, 'PLUS'], 'open'].max(), 68)
-                self.assertGreater(d.loc[idx[:, 'PLUS'], 'open'].min(), 65)
-                self.assertGreater(d.loc[idx[:, 'AAPL'], 'open'].min(), 142)
-
-                if i == 1:
-                    break
-
     def test_daily(self):
         filter_provider = DefaultFilterProvider()
         filter_provider += BarsDailyFilter(ticker="IBM", num_days=20)

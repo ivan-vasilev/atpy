@@ -11,7 +11,7 @@ from dateutil.relativedelta import relativedelta
 
 from atpy.data.cache.lmdb_cache import *
 from atpy.data.cache.postgres_cache import BarsInPeriodProvider, request_adjustments
-from atpy.data.util import adjust_df
+from atpy.data.splits_dividends import adjust_df
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
