@@ -108,9 +108,9 @@ class TestDataUtil(unittest.TestCase):
             df['sl'] = 0.001
 
             result = triple_barriers(df['close'], df['pt'], sl=df['sl'], vb=pd.Timedelta('36000s'), parallel=False)
-            self.assertTrue(result['barrier_hit'].isnull().any())
-            self.assertTrue(result['barrier_hit'].notnull().any())
-            self.assertFalse((result['barrier_hit'][result['barrier_hit'].notnull()] == result.index[result['barrier_hit'].notnull()]).any())
+            self.assertTrue(result['interval_end'].isnull().any())
+            self.assertTrue(result['interval_end'].notnull().any())
+            self.assertFalse((result['interval_end'][result['interval_end'].notnull()] == result.index[result['interval_end'].notnull()]).any())
 
             self.assertTrue((result['side'] == 1).any())
             self.assertTrue((result['side'] == -1).any())
@@ -121,7 +121,7 @@ class TestDataUtil(unittest.TestCase):
 
             # test seed values
             df['seed'] = False
-            df.iloc[:10]['seed'] = True
+            df.loc[:10, 'seed'] = True
             result_seed = triple_barriers(df['close'], df['pt'], sl=df['sl'], vb=pd.Timedelta('36000s'), seed=df['seed'], parallel=False).dropna()
             self.assertLessEqual(result_seed.shape[0], 10)
 
@@ -134,10 +134,11 @@ class TestDataUtil(unittest.TestCase):
             self.assertTrue(isinstance(result_np.index, pd.MultiIndex))
 
             tmp = result_np.reset_index()['timestamp']
-            barrier_hit_tmp = result_np['barrier_hit'].reset_index(drop=True)
-            self.assertTrue(barrier_hit_tmp.isnull().any())
-            self.assertTrue(barrier_hit_tmp.notnull().any())
-            self.assertFalse((barrier_hit_tmp[barrier_hit_tmp.notnull()] == tmp[barrier_hit_tmp.notnull()]).any())
+
+            interval_end_tmp = result_np['interval_end'].reset_index(drop=True)
+            self.assertTrue(interval_end_tmp.isnull().any())
+            self.assertTrue(interval_end_tmp.notnull().any())
+            self.assertFalse((interval_end_tmp[interval_end_tmp.notnull()] == tmp[interval_end_tmp.notnull()]).any())
 
             result_p = triple_barriers(df['close'], pt=df['pt'], sl=df['pt'], vb=pd.Timedelta('36000s'), parallel=True)
             assert_frame_equal(result_np, result_p.sort_index())
@@ -162,9 +163,9 @@ class TestDataUtil(unittest.TestCase):
             df['side'] = 1
 
             result = triple_barriers(df['close'], df['pt'], sl=df['sl'], side=df['side'], vb=pd.Timedelta('36000s'), parallel=False)
-            self.assertTrue(result['barrier_hit'].isnull().any())
-            self.assertTrue(result['barrier_hit'].notnull().any())
-            self.assertFalse((result['barrier_hit'][result['barrier_hit'].notnull()] == result.index[result['barrier_hit'].notnull()]).any())
+            self.assertTrue(result['interval_end'].isnull().any())
+            self.assertTrue(result['interval_end'].notnull().any())
+            self.assertFalse((result['interval_end'][result['interval_end'].notnull()] == result.index[result['interval_end'].notnull()]).any())
 
             self.assertTrue(result['returns'].isnull().any())
             self.assertTrue(result['returns'].notnull().any())
@@ -185,7 +186,7 @@ class TestDataUtil(unittest.TestCase):
 
             # test seed values
             df['seed'] = False
-            df.iloc[:10]['seed'] = True
+            df.loc[:10, 'seed'] = True
             result_seed = triple_barriers(df['close'], df['pt'], sl=df['sl'], side=df['side'], vb=pd.Timedelta('36000s'), seed=df['seed'], parallel=False).dropna()
             self.assertLessEqual(result_seed.shape[0], 10)
 
@@ -199,10 +200,10 @@ class TestDataUtil(unittest.TestCase):
             self.assertTrue(isinstance(result_np.index, pd.MultiIndex))
 
             tmp = result_np.reset_index()['timestamp']
-            barrier_hit_tmp = result_np['barrier_hit'].reset_index(drop=True)
-            self.assertTrue(barrier_hit_tmp.isnull().any())
-            self.assertTrue(barrier_hit_tmp.notnull().any())
-            self.assertFalse((barrier_hit_tmp[barrier_hit_tmp.notnull()] == tmp[barrier_hit_tmp.notnull()]).any())
+            interval_end_tmp = result_np['interval_end'].reset_index(drop=True)
+            self.assertTrue(interval_end_tmp.isnull().any())
+            self.assertTrue(interval_end_tmp.notnull().any())
+            self.assertFalse((interval_end_tmp[interval_end_tmp.notnull()] == tmp[interval_end_tmp.notnull()]).any())
 
             self.assertTrue((result_np['size'] == 1).any())
             self.assertTrue((result_np['size'] == 0).any())
