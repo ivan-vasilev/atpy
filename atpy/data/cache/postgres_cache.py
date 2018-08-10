@@ -252,6 +252,48 @@ def request_bars(conn, bars_table: str, interval_len: int, interval_type: str, s
     :param selection: what to select
     :return: dataframe
     """
+    where, params = __bars_query_where(interval_len=interval_len, interval_type=interval_type, symbol=symbol, bgn_prd=bgn_prd, end_prd=end_prd)
+
+    sort = 'ASC' if ascending else 'DESC'
+
+    df = pd.read_sql("SELECT " + selection + " FROM " + bars_table + where + " ORDER BY timestamp " + sort + ", symbol", con=conn, index_col=['timestamp', 'symbol'], params=params)
+
+    if not df.empty:
+        del df['interval']
+
+        df.tz_localize('UTC', level='timestamp', copy=False)
+
+        if isinstance(symbol, str):
+            df.reset_index(level='symbol', inplace=True, drop=True)
+
+        for c in [c for c in ['period_volume', 'total_volume', 'number_of_trades'] if c in df.columns]:
+            df[c] = df[c].astype('uint64')
+
+    return df
+
+
+def request_symbol_counts(conn, bars_table: str, interval_len: int, interval_type: str, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None):
+    """
+    Request number of bars for each symbol
+    :param conn: connection
+    :param bars_table: table name
+    :param interval_len: interval len
+    :param interval_type: interval type
+    :param bgn_prd: start period (including)
+    :param end_prd: end period (excluding)
+    :return: series
+    """
+    where, params = __bars_query_where(interval_len=interval_len, interval_type=interval_type, symbol=None, bgn_prd=bgn_prd, end_prd=end_prd)
+
+    result = pd.read_sql("SELECT symbol, count(*) as count FROM " + bars_table + where + " GROUP BY symbol", con=conn, index_col='symbol', params=params)
+
+    if not result.empty:
+        result['count'] = result['count'].astype('uint64')
+
+    return result['count']
+
+
+def __bars_query_where(interval_len: int, interval_type: str, symbol: typing.Union[list, str] = None, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None):
     where = " WHERE 1=1"
     params = list()
 
@@ -274,22 +316,7 @@ def request_bars(conn, bars_table: str, interval_len: int, interval_type: str, s
         where += " AND timestamp <= %s"
         params.append(str(end_prd))
 
-    sort = 'ASC' if ascending else 'DESC'
-
-    df = pd.read_sql("SELECT " + selection + " FROM " + bars_table + where + " ORDER BY timestamp " + sort + ", symbol", con=conn, index_col=['timestamp', 'symbol'], params=params)
-
-    if not df.empty:
-        del df['interval']
-
-        df.tz_localize('UTC', level='timestamp', copy=False)
-
-        if isinstance(symbol, str):
-            df.reset_index(level='symbol', inplace=True, drop=True)
-
-        for c in [c for c in ['period_volume', 'total_volume', 'number_of_trades'] if c in df.columns]:
-            df[c] = df[c].astype('uint64')
-
-    return df
+    return where, params
 
 
 def insert_df(conn, table_name: str, df: pd.DataFrame):

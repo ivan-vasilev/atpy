@@ -37,11 +37,11 @@ class TestInfluxDBCache(unittest.TestCase):
                 filters = (BarsInPeriodFilter(ticker="IBM", bgn_prd=bgn_prd, end_prd=end_prd, interval_len=3600, ascend=True, interval_type='s'),
                            BarsInPeriodFilter(ticker="AAPL", bgn_prd=bgn_prd, end_prd=end_prd, interval_len=3600, ascend=True, interval_type='s'))
 
+                data = [history.request_data(f, sync_timestamps=False) for f in filters]
+
                 filters_no_limit = (BarsInPeriodFilter(ticker="IBM", bgn_prd=bgn_prd, end_prd=None, interval_len=3600, ascend=True, interval_type='s'),
                                     BarsInPeriodFilter(ticker="AAPL", bgn_prd=bgn_prd, end_prd=None, interval_len=3600, ascend=True, interval_type='s'),
                                     BarsInPeriodFilter(ticker="AMZN", bgn_prd=bgn_prd, end_prd=None, interval_len=3600, ascend=True, interval_type='s'))
-
-                data = [history.request_data(f, sync_timestamps=False) for f in filters]
 
                 for datum, f in zip(data, filters):
                     del datum['timestamp']
@@ -56,6 +56,7 @@ class TestInfluxDBCache(unittest.TestCase):
                 latest_old = pd.read_sql("select symbol, max(timestamp) as timestamp from {0} group by symbol".format(table_name), con=con, index_col=['symbol'])['timestamp']
 
                 update_to_latest(url=url, bars_table=table_name, symbols={('AAPL', 3600, 's'), ('AMZN', 3600, 's')}, noncache_provider=noncache_provider(history), time_delta_back=relativedelta(years=10))
+                data_no_limit = [history.request_data(f, sync_timestamps=False) for f in filters_no_limit]
 
                 latest_current = pd.read_sql("select symbol, max(timestamp) as timestamp from {0} group by symbol".format(table_name), con=con, index_col=['symbol'])['timestamp']
 
@@ -64,9 +65,8 @@ class TestInfluxDBCache(unittest.TestCase):
                 for k in latest_current.keys() & latest_old.keys():
                     self.assertGreater(latest_current[k], latest_old[k])
 
-                data_no_limit = [history.request_data(f, sync_timestamps=False) for f in filters_no_limit]
                 cache_data_no_limit = [request_bars(conn=engine, bars_table=table_name, interval_len=3600, interval_type='s', symbol=f.ticker,
-                                                    bgn_prd=f.bgn_prd.astimezone(tz.tzutc()) + relativedelta(microseconds=1)) for f in filters_no_limit]
+                                                    bgn_prd=f.bgn_prd.astimezone(tz.tzutc())) for f in filters_no_limit]
                 for df1, df2 in zip(data_no_limit, cache_data_no_limit):
                     del df1['timestamp']
                     del df1['total_volume']
@@ -226,6 +226,45 @@ class TestInfluxDBCache(unittest.TestCase):
                 self.assertGreater(i, 0)
             finally:
                 shutil.rmtree(tmpdir)
+                con.cursor().execute("DROP TABLE IF EXISTS bars_test;")
+
+    def test_symbol_counts(self):
+        with IQFeedHistoryProvider(num_connections=2) as history:
+            table_name = 'bars_test'
+
+            url = 'postgresql://postgres:postgres@localhost:5432/test'
+
+            engine = create_engine(url)
+            con = psycopg2.connect(url)
+            con.autocommit = True
+
+            try:
+                cur = con.cursor()
+
+                cur.execute(create_bars.format(table_name))
+                cur.execute(bars_indices.format(table_name))
+
+                now = datetime.datetime.now()
+                bgn_prd = datetime.datetime(now.year - 1, 3, 1).astimezone(tz.gettz('US/Eastern'))
+                filters = (BarsInPeriodFilter(ticker="IBM", bgn_prd=bgn_prd, end_prd=None, interval_len=3600, ascend=True, interval_type='s'),
+                           BarsInPeriodFilter(ticker="AAPL", bgn_prd=bgn_prd, end_prd=None, interval_len=3600, ascend=True, interval_type='s'))
+
+                data = [history.request_data(f, sync_timestamps=False) for f in filters]
+
+                for datum, f in zip(data, filters):
+                    del datum['timestamp']
+                    del datum['total_volume']
+                    del datum['number_of_trades']
+                    datum['symbol'] = f.ticker
+                    datum['interval'] = '3600_s'
+
+                    datum = datum.tz_localize(None)
+                    datum.to_sql(table_name, con=engine, if_exists='append')
+
+                counts = request_symbol_counts(conn=con, interval_len=3600, interval_type='s', bars_table=table_name)
+                self.assertEqual(counts.size, 2)
+                self.assertGreater(counts.min(), 0)
+            finally:
                 con.cursor().execute("DROP TABLE IF EXISTS bars_test;")
 
     def test_update_adjustments(self):
