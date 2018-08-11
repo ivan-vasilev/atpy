@@ -1,15 +1,15 @@
+import functools
+import shutil
+import tempfile
 import unittest
 
 from pandas.util.testing import assert_frame_equal
 from sqlalchemy import create_engine
 
+import atpy.data.cache.lmdb_cache as lmdb_cache
 from atpy.data.cache.postgres_cache import *
 from atpy.data.iqfeed.iqfeed_level_1_provider import get_fundamentals, get_splits_dividends
 from atpy.data.iqfeed.iqfeed_postgres_cache import *
-import tempfile
-import atpy.data.cache.lmdb_cache as lmdb_cache
-import shutil
-import functools
 
 
 class TestInfluxDBCache(unittest.TestCase):
@@ -66,7 +66,7 @@ class TestInfluxDBCache(unittest.TestCase):
                     self.assertGreater(latest_current[k], latest_old[k])
 
                 cache_data_no_limit = [request_bars(conn=engine, bars_table=table_name, interval_len=3600, interval_type='s', symbol=f.ticker,
-                                                    bgn_prd=f.bgn_prd.astimezone(tz.tzutc())) for f in filters_no_limit]
+                                                    bgn_prd=f.bgn_prd.astimezone(tz.tzutc()) + relativedelta(microseconds=1)) for f in filters_no_limit]
                 for df1, df2 in zip(data_no_limit, cache_data_no_limit):
                     del df1['timestamp']
                     del df1['total_volume']
@@ -279,10 +279,9 @@ class TestInfluxDBCache(unittest.TestCase):
 
             cur = con.cursor()
 
-            cur.execute(create_adjustments.format(table_name))
-            cur.execute(adjustments_indices.format(table_name))
+            cur.execute(create_json_data.format(table_name))
 
-            insert_df(con, table_name, adjustments)
+            insert_df_json(con, table_name, adjustments)
 
             now = datetime.datetime.now()
 
@@ -301,12 +300,15 @@ class TestInfluxDBCache(unittest.TestCase):
         con.autocommit = True
 
         try:
+            cur = con.cursor()
+
+            cur.execute(create_json_data.format(table_name))
+
             fundamentals = get_fundamentals({'IBM', 'AAPL', 'GOOG', 'MSFT'})
 
-            engine = create_engine(url)
+            update_fundamentals(conn=con, fundamentals=fundamentals, table_name=table_name)
 
-            update_fundamentals(engine, fundamentals)
-            fund = request_fundamentals(engine, symbol=['IBM', 'AAPL', 'GOOG'])
+            fund = request_fundamentals(con, symbol=['IBM', 'AAPL', 'GOOG'], table_name=table_name)
 
             self.assertTrue(isinstance(fund, pd.DataFrame))
             self.assertEqual(len(fund), 3)

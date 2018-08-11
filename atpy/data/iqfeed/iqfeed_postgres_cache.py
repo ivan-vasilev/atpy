@@ -4,9 +4,9 @@ import json
 import typing
 
 import pandas as pd
-import sqlalchemy
 from dateutil import tz
 
+from atpy.data.cache.postgres_cache import insert_json
 from atpy.data.iqfeed.iqfeed_history_provider import IQFeedHistoryProvider, BarsInPeriodFilter, BarsDailyForDatesFilter
 
 
@@ -33,31 +33,33 @@ def noncache_provider(history: IQFeedHistoryProvider):
     return functools.partial(_request_noncache_data, h=history)
 
 
-def update_fundamentals(sqlalchemy_conn, fundamentals: dict, table_name: str = 'iqfeed_fundamentals'):
-    cur = sqlalchemy_conn.execute("SELECT to_regclass('public.{0}')".format(table_name))
+def update_fundamentals(conn, fundamentals: dict, table_name: str = 'json_data'):
+    to_store = list()
+    for v in fundamentals.values():
+        v['provider'] = 'iqfeed'
+        v['type'] = 'fundamentals'
 
-    exists = [t for t in cur][0][0] is not None
+        to_store.append(json.dumps(v, default=lambda x: x.isoformat() if isinstance(x, datetime.datetime) else str(x)))
 
-    if exists:
-        sqlalchemy_conn.execute("DROP TABLE IF EXISTS {0};".format(table_name))
-
-    for f in fundamentals:
-        fundamentals[f] = json.dumps(fundamentals[f], default=lambda x: x.isoformat() if isinstance(x, datetime.datetime) else str(x))
-
-    df = pd.DataFrame(list(fundamentals.items()), columns=['symbol', 'fundamentals']).set_index('symbol', drop=True)
-
-    df.to_sql(table_name, sqlalchemy_conn, index_label='symbol', dtype={'fundamentals': sqlalchemy.types.JSON})
+    insert_json(conn=conn, table_name=table_name, data='\n'.join(to_store))
 
 
-def request_fundamentals(sqlalchemy_conn, symbol: typing.Union[list, str], table_name: str = 'iqfeed_fundamentals'):
-    query = "select * from {0}".format(table_name)
+def request_fundamentals(conn, symbol: typing.Union[list, str], table_name: str = 'json_data'):
+    where = " WHERE json_data ->> 'type' = 'fundamentals' AND json_data ->> 'provider' = 'iqfeed'"
     params = list()
 
     if isinstance(symbol, list):
-        query += " WHERE symbol IN (%s)" % ','.join(['%s'] * len(symbol))
+        where += " AND json_data ->> 'symbol' IN (%s)" % ','.join(['%s'] * len(symbol))
         params += symbol
     elif isinstance(symbol, str):
-        query += " WHERE symbol = %s"
+        where += " AND json_data ->> 'symbol' = %s"
         params.append(symbol)
 
-    return pd.read_sql(query, con=sqlalchemy_conn, index_col=['symbol'], params=params)
+    cursor = conn.cursor()
+    cursor.execute("select * from {0} {1}".format(table_name, where), params)
+    records = cursor.fetchall()
+
+    if len(records) > 0:
+        df = pd.DataFrame([x[0] for x in records]).drop(['type', 'provider'], axis=1)
+
+    return df

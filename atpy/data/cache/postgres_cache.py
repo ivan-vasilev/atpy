@@ -81,61 +81,6 @@ bars_indices = \
         TABLESPACE pg_default;
     """
 
-create_adjustments = \
-    """
-    -- Table: public.{0}
-
-    DROP TABLE IF EXISTS public.{0};
-
-    CREATE TABLE public.{0}
-    (
-        "timestamp" timestamp without time zone NOT NULL,
-        symbol character varying COLLATE pg_catalog."default" NOT NULL,
-        "type" character varying COLLATE pg_catalog."default" NOT NULL,
-        provider character varying COLLATE pg_catalog."default" NOT NULL,
-        value real NOT NULL
-    )
-    WITH (
-        OIDS = FALSE
-    )
-    TABLESPACE pg_default;
-    """
-
-adjustments_indices = \
-    """
-    -- Table: public.{0}
-
-    ALTER TABLE public.{0}
-        ADD CONSTRAINT {0}_pkey PRIMARY KEY ("timestamp", symbol, type, provider);
-
-    -- Index: {0}_symbol_ind
-    
-    -- DROP INDEX public.{0}_symbol_ind;
-    
-    CREATE INDEX {0}_symbol_ind
-        ON public.{0} USING btree
-        (symbol COLLATE pg_catalog."default")
-        TABLESPACE pg_default;
-    
-    -- Index: {0}_timestamp_ind
-
-    -- DROP INDEX public.{0}_timestamp_ind;
-    
-    CREATE INDEX {0}_timestamp_ind
-        ON public.{0} USING btree
-        ("timestamp")
-        TABLESPACE pg_default;
-    
-    -- Index: {0}_type_ind
-    
-    -- DROP INDEX public.{0}_type_ind;
-    
-    CREATE INDEX {0}_type_ind
-        ON public.{0} USING btree
-        (type COLLATE pg_catalog."default")
-        TABLESPACE pg_default;
-    """
-
 
 def update_to_latest(url: str, bars_table: str, noncache_provider: typing.Callable, symbols: set = None, time_delta_back: relativedelta = relativedelta(years=5), skip_if_older_than: relativedelta = None, cluster: bool = False):
     con = psycopg2.connect(url)
@@ -321,10 +266,10 @@ def __bars_query_where(interval_len: int, interval_type: str, symbol: typing.Uni
 
 def insert_df(conn, table_name: str, df: pd.DataFrame):
     """
-    add a list of splits/dividends to the database
+    insert dataframe to the database
     :param conn: db connection
     :param table_name: table name
-    :param df: list of adjustments of the type [(timestamp: datetime.date, symbol: str, typ: str, value), ...]
+    :param df: dataframe to insert
     """
     # To CSV
     output = StringIO()
@@ -344,6 +289,33 @@ def insert_df(conn, table_name: str, df: pd.DataFrame):
     cursor.close()
 
 
+def insert_df_json(conn, table_name: str, df: pd.DataFrame):
+    """
+    insert dataframe in json table
+    :param conn: db connection
+    :param table_name: table name
+    :param df: list of adjustments of the type [(timestamp: datetime.date, symbol: str, typ: str, value), ...]
+    """
+    insert_json(conn=conn, table_name=table_name, data=df.reset_index().to_json(orient='records', lines=True))
+
+
+def insert_json(conn, table_name: str, data: str):
+    """
+    insert json data
+    :param conn: db connection
+    :param table_name: table name
+    :param data: json string (or strings, separated by new line character)
+    """
+    output = StringIO(data)
+
+    # Insert data
+    cursor = conn.cursor()
+
+    cursor.copy_from(output, table_name, null='', columns=['json_data'])
+    conn.commit()
+    cursor.close()
+
+
 def request_adjustments(conn, table_name: str, symbol: typing.Union[list, str] = None, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None, adj_type: str = None, provider: str = None):
     """
     add a list of splits/dividends to the database
@@ -359,31 +331,38 @@ def request_adjustments(conn, table_name: str, symbol: typing.Union[list, str] =
     params = list()
 
     if isinstance(symbol, list):
-        where += " AND symbol IN (%s)" % ','.join(['%s'] * len(symbol))
+        where += " AND json_data ->> 'symbol' IN (%s)" % ','.join(['%s'] * len(symbol))
         params += symbol
     elif isinstance(symbol, str):
-        where += " AND symbol = %s"
+        where += " AND json_data ->> 'symbol' = %s"
         params.append(symbol)
 
     if bgn_prd is not None:
-        where += " AND timestamp >= %s"
-        params.append(str(bgn_prd))
+        where += " AND CAST(json_data ->> 'timestamp' AS BIGINT) >= %s"
+        params.append(int(bgn_prd.timestamp() * 1000))
 
     if end_prd is not None:
-        where += " AND timestamp <= %s"
-        params.append(str(end_prd))
+        where += " AND CAST(json_data ->> 'timestamp' AS BIGINT) <= %s"
+        params.append(int(end_prd.timestamp() * 1000))
 
     if provider is not None:
-        where += " AND provider = %s"
+        where += " AND json_data ->> 'provider' = %s"
         params.append(provider)
 
     if adj_type is not None:
-        where += " AND type = %s"
+        where += " AND json_data ->> 'type' = %s"
         params.append(adj_type)
+    else:
+        where += " AND json_data ->> 'type' in ('split', 'dividend')"
 
-    df = pd.read_sql("SELECT * FROM " + table_name + where + " ORDER BY timestamp ASC, symbol", con=conn, index_col=['timestamp', 'symbol', 'type', 'provider'], params=params)
+    cursor = conn.cursor()
+    cursor.execute("select * from {0} {1}".format(table_name, where), params)
+    records = cursor.fetchall()
 
-    if not df.empty:
+    if len(records) > 0:
+        df = pd.DataFrame([x[0] for x in records])
+        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+        df.set_index(keys=['timestamp', 'symbol', 'type', 'provider'], drop=True, append=False, inplace=True)
         df.tz_localize('UTC', level='timestamp', copy=False)
         df.sort_index(inplace=True)
 
@@ -435,3 +414,16 @@ def bars_to_lmdb(provider: BarsInPeriodProvider, lmdb_path: str = None):
 
     for df in provider:
         write(provider.current_cache_key(), df, lmdb_path)
+
+
+create_json_data = \
+    """
+    CREATE TABLE public.{0}
+    (
+        json_data jsonb NOT NULL
+    )
+    WITH (
+        OIDS = FALSE
+    )
+    TABLESPACE pg_default;
+    """
