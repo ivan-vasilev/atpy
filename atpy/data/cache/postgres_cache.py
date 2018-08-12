@@ -81,6 +81,18 @@ bars_indices = \
         TABLESPACE pg_default;
     """
 
+create_json_data = \
+    """
+    CREATE TABLE public.{0}
+    (
+        json_data jsonb NOT NULL
+    )
+    WITH (
+        OIDS = FALSE
+    )
+    TABLESPACE pg_default;
+    """
+
 
 def update_to_latest(url: str, bars_table: str, noncache_provider: typing.Callable, symbols: set = None, time_delta_back: relativedelta = relativedelta(years=5), skip_if_older_than: relativedelta = None, cluster: bool = False):
     con = psycopg2.connect(url)
@@ -217,20 +229,21 @@ def request_bars(conn, bars_table: str, interval_len: int, interval_type: str, s
     return df
 
 
-def request_symbol_counts(conn, bars_table: str, interval_len: int, interval_type: str, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None):
+def request_symbol_counts(conn, bars_table: str, interval_len: int, interval_type: str, symbol: typing.Union[list, str] = None, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None):
     """
     Request number of bars for each symbol
     :param conn: connection
     :param bars_table: table name
     :param interval_len: interval len
     :param interval_type: interval type
+    :param symbol: symbol or a list of symbols
     :param bgn_prd: start period (including)
     :param end_prd: end period (excluding)
     :return: series
     """
-    where, params = __bars_query_where(interval_len=interval_len, interval_type=interval_type, symbol=None, bgn_prd=bgn_prd, end_prd=end_prd)
+    where, params = __bars_query_where(interval_len=interval_len, interval_type=interval_type, symbol=symbol, bgn_prd=bgn_prd, end_prd=end_prd)
 
-    result = pd.read_sql("SELECT symbol, count(*) as count FROM " + bars_table + where + " GROUP BY symbol", con=conn, index_col='symbol', params=params)
+    result = pd.read_sql("SELECT symbol, count(*) as count FROM " + bars_table + where + " GROUP BY symbol ORDER BY symbol ASC", con=conn, index_col='symbol', params=params)
 
     if not result.empty:
         result['count'] = result['count'].astype('uint64')
@@ -416,14 +429,54 @@ def bars_to_lmdb(provider: BarsInPeriodProvider, lmdb_path: str = None):
         write(provider.current_cache_key(), df, lmdb_path)
 
 
-create_json_data = \
+class BarsPerSymbolProvider(object):
     """
-    CREATE TABLE public.{0}
-    (
-        json_data jsonb NOT NULL
-    )
-    WITH (
-        OIDS = FALSE
-    )
-    TABLESPACE pg_default;
+    OHLCV Bars for symbols provider
     """
+
+    def __init__(self, conn, records_per_query: int, table_name: str, interval_len: int, interval_type: str, bgn_prd: datetime.datetime=None, end_prd: datetime.datetime=None, symbol: typing.Union[list, str] = None):
+        """
+        add a list of splits/dividends to the database
+        :param conn: db connection
+        :param records_per_query: how many records should a query retrieve
+        :param table_name: db connection
+        :param bgn_prd: begin period
+        :param end_prd: end period
+        :param symbol: symbol / list of symbols
+        """
+
+        self.conn = conn
+        self.records_per_query = records_per_query
+        self.bgn_prd = bgn_prd
+        self.end_prd = end_prd
+        self.bars_table = table_name
+        self.interval_len = interval_len
+        self.interval_type = interval_type
+        self.symbol = symbol
+
+    def __iter__(self):
+        self._symbol_counts = request_symbol_counts(conn=self.conn,
+                                                    bars_table=self.bars_table,
+                                                    interval_len=self.interval_len,
+                                                    interval_type=self.interval_type,
+                                                    symbol=self.symbol,
+                                                    bgn_prd=self.bgn_prd,
+                                                    end_prd=self.end_prd)
+
+        self._current = 0
+
+        return self
+
+    def __next__(self):
+        current_count = 0
+        symbols = list()
+
+        while current_count < self.records_per_query and self._current < len(self._symbol_counts):
+            symbols.append(self._symbol_counts.index[self._current])
+            current_count += self._symbol_counts[self._current]
+            self._current += 1
+
+        if len(symbols) > 0:
+            return request_bars(conn=self.conn, bars_table=self.bars_table, symbol=symbols, interval_len=self.interval_len, interval_type=self.interval_type, bgn_prd=self.bgn_prd, end_prd=self.end_prd)
+        else:
+            raise StopIteration

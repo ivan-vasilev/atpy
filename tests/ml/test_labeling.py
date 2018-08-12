@@ -159,7 +159,7 @@ class TestLabeling(unittest.TestCase):
         logging.basicConfig(level=logging.DEBUG)
 
         batch_len = 15000
-        batch_width = 2000
+        batch_width = 4000
 
         now = datetime.datetime.now()
         with IQFeedHistoryProvider() as provider:

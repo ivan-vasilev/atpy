@@ -1,4 +1,3 @@
-import functools
 import shutil
 import tempfile
 import unittest
@@ -7,6 +6,7 @@ from pandas.util.testing import assert_frame_equal
 from sqlalchemy import create_engine
 
 import atpy.data.cache.lmdb_cache as lmdb_cache
+import atpy.data.iqfeed.iqfeed_history_provider as iq_history
 from atpy.data.cache.postgres_cache import *
 from atpy.data.iqfeed.iqfeed_level_1_provider import get_fundamentals, get_splits_dividends
 from atpy.data.iqfeed.iqfeed_postgres_cache import *
@@ -197,7 +197,8 @@ class TestInfluxDBCache(unittest.TestCase):
 
                 # test all symbols cache
                 bgn_prd = datetime.datetime(now.year - 1, 3, 1, tzinfo=tz.gettz('UTC'))
-                bars_in_period = BarsInPeriodProvider(conn=con, interval_len=3600, interval_type='s', bars_table=table_name, bgn_prd=bgn_prd, delta=relativedelta(days=30), overlap=relativedelta(microseconds=-1), cache=functools.partial(lmdb_cache.read_pickle, lmdb_path=tmpdir))
+                bars_in_period = BarsInPeriodProvider(conn=con, interval_len=3600, interval_type='s', bars_table=table_name, bgn_prd=bgn_prd, delta=relativedelta(days=30), overlap=relativedelta(microseconds=-1),
+                                                      cache=functools.partial(lmdb_cache.read_pickle, lmdb_path=tmpdir))
 
                 for i, df in enumerate(bars_in_period):
                     self.assertFalse(df.empty)
@@ -224,6 +225,64 @@ class TestInfluxDBCache(unittest.TestCase):
 
                 self.assertEqual(i, len(bars_in_period._periods) - 1)
                 self.assertGreater(i, 0)
+            finally:
+                shutil.rmtree(tmpdir)
+                con.cursor().execute("DROP TABLE IF EXISTS bars_test;")
+
+    def test_bars_per_symbol(self):
+        with IQFeedHistoryProvider(num_connections=2) as history:
+            tmpdir = tempfile.mkdtemp()
+            table_name = 'bars_test'
+
+            url = 'postgresql://postgres:postgres@localhost:5432/test'
+
+            engine = create_engine(url)
+            con = psycopg2.connect(url)
+            con.autocommit = True
+
+            try:
+                cur = con.cursor()
+
+                cur.execute(create_bars.format(table_name))
+                cur.execute(bars_indices.format(table_name))
+
+                iq_history.BarsFilter(ticker="IBM", interval_len=3600, interval_type='s', max_bars=1000)
+                filters = (iq_history.BarsFilter(ticker="IBM", interval_len=3600, interval_type='s', max_bars=1000),
+                           iq_history.BarsFilter(ticker="AAPL", interval_len=3600, interval_type='s', max_bars=1000))
+
+                data = [history.request_data(f, sync_timestamps=False) for f in filters]
+
+                for datum, f in zip(data, filters):
+                    del datum['timestamp']
+                    del datum['total_volume']
+                    del datum['number_of_trades']
+                    datum['symbol'] = f.ticker
+                    datum['interval'] = '3600_s'
+
+                    datum = datum.tz_localize(None)
+                    datum.to_sql(table_name, con=engine, if_exists='append')
+
+                bars_per_symbol = BarsPerSymbolProvider(conn=con, records_per_query=1000, interval_len=3600, interval_type='s', table_name=table_name)
+
+                for i, df in enumerate(bars_per_symbol):
+                    self.assertEqual(len(df), 1000)
+
+                self.assertEqual(i, 1)
+
+                bars_per_symbol = BarsPerSymbolProvider(conn=con, records_per_query=100, interval_len=3600, interval_type='s', table_name=table_name)
+
+                for i, df in enumerate(bars_per_symbol):
+                    self.assertEqual(len(df), 1000)
+
+                self.assertEqual(i, 1)
+
+                bars_per_symbol = BarsPerSymbolProvider(conn=con, records_per_query=2000, interval_len=3600, interval_type='s', table_name=table_name)
+
+                for i, df in enumerate(bars_per_symbol):
+                    self.assertEqual(len(df), 2000)
+                    self.assertTrue(isinstance(df.index, pd.MultiIndex))
+
+                self.assertEqual(i, 0)
             finally:
                 shutil.rmtree(tmpdir)
                 con.cursor().execute("DROP TABLE IF EXISTS bars_test;")
@@ -261,7 +320,7 @@ class TestInfluxDBCache(unittest.TestCase):
                     datum = datum.tz_localize(None)
                     datum.to_sql(table_name, con=engine, if_exists='append')
 
-                counts = request_symbol_counts(conn=con, interval_len=3600, interval_type='s', bars_table=table_name)
+                counts = request_symbol_counts(conn=con, interval_len=3600, interval_type='s', symbol=["IBM", "AAPL"], bars_table=table_name)
                 self.assertEqual(counts.size, 2)
                 self.assertGreater(counts.min(), 0)
             finally:
@@ -285,7 +344,8 @@ class TestInfluxDBCache(unittest.TestCase):
 
             now = datetime.datetime.now()
 
-            df = request_adjustments(con, table_name, symbol=['IBM', 'AAPL', 'MSFT', 'GOOG'], bgn_prd=datetime.datetime(year=now.year - 30, month=now.month, day=now.day), end_prd=datetime.datetime(year=now.year + 2, month=now.month, day=now.day), provider='iqfeed')
+            df = request_adjustments(con, table_name, symbol=['IBM', 'AAPL', 'MSFT', 'GOOG'], bgn_prd=datetime.datetime(year=now.year - 30, month=now.month, day=now.day),
+                                     end_prd=datetime.datetime(year=now.year + 2, month=now.month, day=now.day), provider='iqfeed')
 
             self.assertFalse(df.empty)
             assert_frame_equal(adjustments, df)
