@@ -76,6 +76,37 @@ class TestDataUtil(unittest.TestCase):
             result_p = cumsum_filter(df, parallel=True)
             assert_frame_equal(pd.DataFrame(index=result_np), pd.DataFrame(index=result_p))
 
+    def test_cumsum_filter_performance(self):
+        logging.basicConfig(level=logging.DEBUG)
+
+        batch_len = 15000
+        batch_width = 2000
+
+        with IQFeedHistoryProvider() as provider:
+            now = datetime.datetime.now()
+
+            df1 = provider.request_data(BarsFilter(ticker="AAPL", interval_len=60, interval_type='s', max_bars=batch_len), sync_timestamps=False)
+
+            dfs1 = {'AAPL': df1}
+            for i in range(batch_width):
+                dfs1['AAPL_' + str(i)] = df1.sample(random.randint(int(len(df1) / 3), len(df1) - 1))
+
+            dfs1 = pd.concat(dfs1).swaplevel(0, 1)
+            dfs1.index.set_names(['timestamp', 'symbol'], inplace=True)
+            dfs1.sort_index(inplace=True)
+
+            logging.getLogger(__name__).debug('Random data generated in ' + str(datetime.datetime.now() - now) + ' with shapes ' + str(dfs1.shape))
+
+            now = datetime.datetime.now()
+            close = dfs1['close'].to_frame()
+            close['threshold'] = 0.01
+
+            x = cumsum_filter(close, parallel=True)
+
+            elapsed = datetime.datetime.now() - now
+            logging.getLogger(__name__).debug('Result shape: ' + str(x.shape))
+            logging.getLogger(__name__).debug('Time elapsed ' + str(elapsed) + ' for ' + str(i + 1) + ' iterations; ' + str(elapsed / (i % 1000)) + ' per iteration')
+
     def test_frac_diff_ffd(self):
         with IQFeedHistoryProvider() as provider:
             df = provider.request_data(BarsFilter(ticker="AAPL", interval_len=3600, interval_type='s', max_bars=100), sync_timestamps=False)

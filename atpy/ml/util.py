@@ -1,36 +1,13 @@
 import functools
 from multiprocessing import Pool, cpu_count
 
+import numba
 import numpy as np
 import pandas as pd
 
 """
 Chapter 2 of Advances in Financial Machine Learning book by Marcos Lopez de Prado
 """
-
-
-def _cumsum_filter(df: pd.DataFrame):
-    """
-    Non multiindex cumsum filter based on Advances in Financial Machine Learning book by Marcos Lopez de Prado
-    :param df: single index pd.DataFrame with 2 columns - 'value' and 'threshold'
-    :return events
-    """
-    sneg, spos = 0, 0
-    result = list()
-    df[df.columns[0]] = df[df.columns[0]].diff()
-    for i, v, threshold in df[1:].itertuples():
-        spos, sneg = max(0, spos + v), min(0, sneg + v)
-        if sneg < -threshold:
-            sneg = 0
-            result.append(i)
-        elif spos > threshold:
-            spos = 0
-            result.append(i)
-
-    if isinstance(df.index, pd.MultiIndex):
-        return pd.MultiIndex.from_tuples(result, names=df.index.names)
-    else:
-        return pd.DatetimeIndex(result, name=df.index.name)
 
 
 def cumsum_filter(df: pd.DataFrame, parallel=True):
@@ -44,13 +21,62 @@ def cumsum_filter(df: pd.DataFrame, parallel=True):
         grpby = df.groupby(level='symbol', group_keys=False, sort=False)
         if parallel:
             with Pool(cpu_count()) as p:
-                ret_list = [pd.Series(index=x) for x in p.map(_cumsum_filter, [group for name, group in grpby])]
+                ret_list = p.map(_cumsum_filter, [group for name, group in grpby])
 
             return pd.concat(ret_list).index
         else:
-            return grpby.apply(lambda x: pd.Series(index=_cumsum_filter(x))).index
+            return grpby.apply(_cumsum_filter).index
     else:
-        return _cumsum_filter(df)
+        return _cumsum_filter(df).index
+
+
+def _cumsum_filter(df: pd.DataFrame):
+    """
+    Non multiindex cumsum filter based on Advances in Financial Machine Learning book by Marcos Lopez de Prado
+    :param df: single index pd.DataFrame with 2 columns - 'value' and 'threshold'
+    :return events
+    """
+
+    if isinstance(df.index, pd.MultiIndex):
+        symbol_ind = df.index.names.index('symbol')
+        result = __cumsum_filter(df.index.droplevel(symbol_ind).values,
+                                 df['close'].values,
+                                 df['threshold'].values)
+
+        return pd.Series(index=pd.MultiIndex.from_product(
+            [[df.index[0][symbol_ind]], result] if symbol_ind == 0 else [result, [df.index[0][symbol_ind]]],
+            names=df.index.names
+        ))
+    else:
+        result = __cumsum_filter(df.index.values,
+                                 df['close'].values,
+                                 df['threshold'].values)
+
+        return pd.Series(index=pd.DatetimeIndex(result, name=df.index.name))
+
+
+@numba.jit(nopython=True)
+def __cumsum_filter(timestamps: np.array, values: np.array, thresholds: np.array):
+    """
+    Non multiindex cumsum filter based on Advances in Financial Machine Learning book by Marcos Lopez de Prado
+    :param timestamps: timestamps numpy array
+    :param values: the actual values of the time series
+    :param thresholds: threshold for each value
+    :return events
+    """
+    sneg, spos = 0, 0
+    result = []
+    values = np.diff(values)
+    for i, v, threshold in zip(timestamps[1:], values, thresholds[1:]):
+        spos, sneg = max(0, spos + v), min(0, sneg + v)
+        if sneg < -threshold:
+            sneg = 0
+            result.append(i)
+        elif spos > threshold:
+            spos = 0
+            result.append(i)
+
+    return result
 
 
 def _daily_volatility(price: pd.Series, span=100):
