@@ -43,6 +43,8 @@ def _cumsum_filter(df: pd.DataFrame):
                                  df['close'].values,
                                  df['threshold'].values)
 
+        result = pd.DatetimeIndex(result, tz=df.index.levels[df.index.names.index('timestamp')].tz)
+
         return pd.Series(index=pd.MultiIndex.from_product(
             [[df.index[0][symbol_ind]], result] if symbol_ind == 0 else [result, [df.index[0][symbol_ind]]],
             names=df.index.names
@@ -51,6 +53,8 @@ def _cumsum_filter(df: pd.DataFrame):
         result = __cumsum_filter(df.index.values,
                                  df['close'].values,
                                  df['threshold'].values)
+
+        result = pd.DatetimeIndex(result, tz=df.index.levels[df.index.names.index('timestamp')].tz)
 
         return pd.Series(index=pd.DatetimeIndex(result, name=df.index.name))
 

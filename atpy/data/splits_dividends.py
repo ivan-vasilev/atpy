@@ -134,10 +134,13 @@ def exclude_splits(data: pd.Series, splits: pd.Series, quarantine_length: int):
             symbol = datum.index[0][datum.index.names.index('symbol')]
             datum_index = datum.xs(symbol, level='symbol').index
 
-            for _s in splits.xs(symbol, level='symbol').index:
-                _i = datum_index.searchsorted(_s[0])
-                if 0 < _i < datum_index.size:
-                    datum.iloc[_i: _i + quarantine_length] = False
+            try:
+                for _s in splits.xs(symbol, level='symbol').index:
+                    _i = datum_index.searchsorted(_s[0])
+                    if 0 < _i < datum_index.size:
+                        datum.iloc[_i: _i + quarantine_length] = False
+            except KeyError:
+                pass
 
             return datum
 

@@ -81,6 +81,7 @@ setup(
         'TA-Lib': ['TA-Lib'],
         'quandl': ['quandl'],
         'postgres': ['psycopg2-binary', 'lmdb'],
+        'sqlalchemy': ['sqlalchemy'],
     },
 
     dependency_links=[

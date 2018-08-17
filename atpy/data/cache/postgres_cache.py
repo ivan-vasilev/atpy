@@ -83,6 +83,10 @@ bars_indices = \
 
 create_json_data = \
     """
+    -- Table: public.{0}
+
+    DROP TABLE IF EXISTS public.{0};
+
     CREATE TABLE public.{0}
     (
         json_data jsonb NOT NULL
@@ -429,12 +433,12 @@ def bars_to_lmdb(provider: BarsInPeriodProvider, lmdb_path: str = None):
         write(provider.current_cache_key(), df, lmdb_path)
 
 
-class BarsPerSymbolProvider(object):
+class BarsBySymbolProvider(object):
     """
     OHLCV Bars for symbols provider
     """
 
-    def __init__(self, conn, records_per_query: int, table_name: str, interval_len: int, interval_type: str, bgn_prd: datetime.datetime=None, end_prd: datetime.datetime=None, symbol: typing.Union[list, str] = None):
+    def __init__(self, conn, records_per_query: int, table_name: str, interval_len: int, interval_type: str, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None, symbol: typing.Union[list, str] = None):
         """
         add a list of splits/dividends to the database
         :param conn: db connection
@@ -477,6 +481,10 @@ class BarsPerSymbolProvider(object):
             self._current += 1
 
         if len(symbols) > 0:
-            return request_bars(conn=self.conn, bars_table=self.bars_table, symbol=symbols, interval_len=self.interval_len, interval_type=self.interval_type, bgn_prd=self.bgn_prd, end_prd=self.end_prd)
+            result = request_bars(conn=self.conn, bars_table=self.bars_table, symbol=symbols, interval_len=self.interval_len, interval_type=self.interval_type, bgn_prd=self.bgn_prd, end_prd=self.end_prd)
+            if isinstance(result.index, pd.MultiIndex) and result.index.names.index('symbol') > 0:
+                result = result.swaplevel(0, 1).sort_index()
+
+            return result
         else:
             raise StopIteration

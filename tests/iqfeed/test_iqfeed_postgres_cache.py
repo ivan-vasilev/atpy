@@ -229,7 +229,7 @@ class TestInfluxDBCache(unittest.TestCase):
                 shutil.rmtree(tmpdir)
                 con.cursor().execute("DROP TABLE IF EXISTS bars_test;")
 
-    def test_bars_per_symbol(self):
+    def test_bars_by_symbol(self):
         with IQFeedHistoryProvider(num_connections=2) as history:
             tmpdir = tempfile.mkdtemp()
             table_name = 'bars_test'
@@ -262,21 +262,21 @@ class TestInfluxDBCache(unittest.TestCase):
                     datum = datum.tz_localize(None)
                     datum.to_sql(table_name, con=engine, if_exists='append')
 
-                bars_per_symbol = BarsPerSymbolProvider(conn=con, records_per_query=1000, interval_len=3600, interval_type='s', table_name=table_name)
+                bars_per_symbol = BarsBySymbolProvider(conn=con, records_per_query=1000, interval_len=3600, interval_type='s', table_name=table_name)
 
                 for i, df in enumerate(bars_per_symbol):
                     self.assertEqual(len(df), 1000)
 
                 self.assertEqual(i, 1)
 
-                bars_per_symbol = BarsPerSymbolProvider(conn=con, records_per_query=100, interval_len=3600, interval_type='s', table_name=table_name)
+                bars_per_symbol = BarsBySymbolProvider(conn=con, records_per_query=100, interval_len=3600, interval_type='s', table_name=table_name)
 
                 for i, df in enumerate(bars_per_symbol):
                     self.assertEqual(len(df), 1000)
 
                 self.assertEqual(i, 1)
 
-                bars_per_symbol = BarsPerSymbolProvider(conn=con, records_per_query=2000, interval_len=3600, interval_type='s', table_name=table_name)
+                bars_per_symbol = BarsBySymbolProvider(conn=con, records_per_query=2000, interval_len=3600, interval_type='s', table_name=table_name)
 
                 for i, df in enumerate(bars_per_symbol):
                     self.assertEqual(len(df), 2000)
