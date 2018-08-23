@@ -80,12 +80,13 @@ class TestDataPipeline(unittest.TestCase):
                 tmp = orig['close'].to_frame()
                 tmp['threshold'] = 0.02
                 to_include = cumsum_filter(tmp, parallel=True)
-                df.loc[~df.index.isin(to_include)] = False
+                df.loc[~df.index.isin(to_include), 'include'] = False
 
                 self.assertTrue(df['include'].max())
                 self.assertFalse(df['include'].min())
 
                 df['frac_diff'] = frac_diff_ffd(orig['close'], 0.4)
+                pass
         finally:
             con.cursor().execute("DROP TABLE IF EXISTS bars_test;")
             con.cursor().execute("DROP TABLE IF EXISTS json_data_test;")
