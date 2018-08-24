@@ -81,6 +81,7 @@ class TestDataPipeline(unittest.TestCase):
                 tmp['threshold'] = 0.02
                 to_include = cumsum_filter(tmp, parallel=True)
                 df.loc[~df.index.isin(to_include), 'include'] = False
+                df.loc[df['interval_end'].isnull(), 'include'] = False
 
                 self.assertTrue(df['include'].max())
                 self.assertFalse(df['include'].min())
