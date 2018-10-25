@@ -60,7 +60,10 @@ class TestQuandlAPI(unittest.TestCase):
 
         def listener(event):
             if event['type'] == 'quandl_table_result':
-                results.append(event['data'])
+                if isinstance(event['data']['SHARADAR/SF1'], list):
+                    results.extend(event['data']['SHARADAR/SF1'])
+                elif isinstance(event['data']['SHARADAR/SF1'], pd.DataFrame):
+                    results.append(event['data']['SHARADAR/SF1'])
 
         listeners += listener
 
@@ -70,11 +73,9 @@ class TestQuandlAPI(unittest.TestCase):
                    'threads': 1,
                    'async': False})
 
-        data = pd.concat(results[0])
+        data = pd.concat(results)
 
         self.assertTrue(isinstance(data, pd.DataFrame))
-        self.assertTrue(isinstance(data.index, pd.MultiIndex))
-
         self.assertGreater(len(data), 0)
         results.clear()
 
@@ -83,7 +84,7 @@ class TestQuandlAPI(unittest.TestCase):
                    'threads': 1,
                    'async': False})
 
-        data = next(iter(results[0].values()))
+        data = results[0]
 
         self.assertTrue(isinstance(data, pd.DataFrame))
         self.assertGreater(len(data), 0)
