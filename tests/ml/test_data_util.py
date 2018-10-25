@@ -4,6 +4,7 @@ import unittest
 from pandas.util.testing import assert_frame_equal
 
 from atpy.data.iqfeed.iqfeed_history_provider import *
+from atpy.ml.frac_diff_features import get_weights_ffd, frac_diff_ffd
 from atpy.ml.util import *
 
 

@@ -6,6 +6,7 @@ from sqlalchemy import create_engine
 from atpy.data.cache.postgres_cache import BarsBySymbolProvider, create_bars, bars_indices, create_json_data, insert_df_json, request_adjustments
 from atpy.data.iqfeed.iqfeed_history_provider import *
 from atpy.data.splits_dividends import exclude_splits
+from atpy.ml.frac_diff_features import frac_diff_ffd
 from atpy.ml.labeling import triple_barriers
 from atpy.ml.util import *
 
