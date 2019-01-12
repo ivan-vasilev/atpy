@@ -60,7 +60,7 @@ class TestDataPipeline(unittest.TestCase):
 
         try:
             self.__generate_temp_pipeline(url)
-            bars_per_symbol = BarsBySymbolProvider(conn=con, records_per_query=50000, interval_len=3600, interval_type='s', table_name='bars_test')
+            bars_per_symbol = BarsBySymbolProvider(conn=con, records_per_query=50000, interval_len=14400, interval_type='s', table_name='bars_test')
 
             for df in bars_per_symbol:
                 orig = df
