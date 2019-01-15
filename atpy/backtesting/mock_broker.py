@@ -72,7 +72,10 @@ class MockBroker(object):
 
     def process_bar_data(self, data):
         with self._lock:
-            for o, slc in [(o, data.loc[pd.IndexSlice[:, o.symbol], :]) for o in self._pending_orders]:
+            symbol_ind = data.index.names.index('symbol')
+
+            for o in [o for o in self._pending_orders if o.symbol in data.index.levels[symbol_ind]]:
+                slc = data.loc[pd.IndexSlice[:, o.symbol], :]
                 if not slc.empty:
                     o.add_position(slc.iloc[-1]['period_volume'], slc.iloc[-1]['close'])
 

@@ -13,8 +13,10 @@ from atpy.ml.util import *
 
 class TestDataPipeline(unittest.TestCase):
 
-    @staticmethod
-    def __generate_temp_pipeline(url):
+    def setUp(self):
+        self.interval = 14400
+
+    def __generate_temp_pipeline(self, url):
         with IQFeedHistoryProvider(num_connections=2) as history:
             # historical data
             engine = create_engine(url)
@@ -26,11 +28,11 @@ class TestDataPipeline(unittest.TestCase):
             cur.execute(create_bars.format('bars_test'))
             cur.execute(bars_indices.format('bars_test'))
 
-            filters = (BarsFilter(ticker="IBM", interval_len=3600, interval_type='s', max_bars=10000),
-                       BarsFilter(ticker="AAPL", interval_len=3600, interval_type='s', max_bars=10000),
-                       BarsFilter(ticker="MSFT", interval_len=3600, interval_type='s', max_bars=10000),
-                       BarsFilter(ticker="FB", interval_len=3600, interval_type='s', max_bars=10000),
-                       BarsFilter(ticker="GOOG", interval_len=3600, interval_type='s', max_bars=10000))
+            filters = (BarsFilter(ticker="IBM", interval_len=self.interval, interval_type='s', max_bars=10000),
+                       BarsFilter(ticker="AAPL", interval_len=self.interval, interval_type='s', max_bars=10000),
+                       BarsFilter(ticker="MSFT", interval_len=self.interval, interval_type='s', max_bars=10000),
+                       BarsFilter(ticker="FB", interval_len=self.interval, interval_type='s', max_bars=10000),
+                       BarsFilter(ticker="GOOG", interval_len=self.interval, interval_type='s', max_bars=10000))
 
             data = [history.request_data(f, sync_timestamps=False) for f in filters]
 
@@ -39,7 +41,7 @@ class TestDataPipeline(unittest.TestCase):
                 del datum['total_volume']
                 del datum['number_of_trades']
                 datum['symbol'] = f.ticker
-                datum['interval'] = '3600_s'
+                datum['interval'] = str(self.interval) + '_s'
 
                 datum = datum.tz_localize(None)
                 datum.to_sql('bars_test', con=engine, if_exists='append')
@@ -60,7 +62,7 @@ class TestDataPipeline(unittest.TestCase):
 
         try:
             self.__generate_temp_pipeline(url)
-            bars_per_symbol = BarsBySymbolProvider(conn=con, records_per_query=50000, interval_len=14400, interval_type='s', table_name='bars_test')
+            bars_per_symbol = BarsBySymbolProvider(conn=con, records_per_query=50000, interval_len=self.interval, interval_type='s', table_name='bars_test')
 
             for df in bars_per_symbol:
                 orig = df
@@ -70,7 +72,7 @@ class TestDataPipeline(unittest.TestCase):
                 adj = request_adjustments(con, 'json_data_test', symbol=list(df.index.get_level_values('symbol').unique()), adj_type='split')
                 self.assertTrue(adj.size > 0)
 
-                df = triple_barriers(df['close'], df['pt'], sl=df['sl'], vb=pd.Timedelta('36000s'), parallel=False)
+                df = triple_barriers(df['close'], df['pt'], sl=df['sl'], vb=pd.Timedelta(str(self.interval * 10) + 's'), parallel=False)
                 self.assertTrue(df.size > 0)
 
                 df['include'] = True
