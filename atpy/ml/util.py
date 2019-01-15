@@ -10,13 +10,19 @@ Chapter 2 of Advances in Financial Machine Learning book by Marcos Lopez de Prad
 """
 
 
-def cumsum_filter(df: pd.DataFrame, parallel=True):
+def cumsum_filter(values: pd.Series, thresholds: pd.Series, parallel=True):
     """
     cumsum filter based on Advances in Financial Machine Learning book by Marcos Lopez de Prado
-    :param df: multi-index pd.DataFrame with 2 columns - first for the value and the second for threshold
+    :param values: series of values to apply the cumsum filter over
+    :param thresholds: series of thresholds for the values of the cumsum filter
     :param parallel: run in multiprocessing mode for multiindex dataframes
     :return events
     """
+    if values.index.equals(thresholds.index) is False:
+        raise ValueError('values and thresholds have different index')
+
+    df = pd.concat([values.rename('value'), thresholds.rename('threshold')], axis=1)
+
     if isinstance(df.index, pd.MultiIndex):
         grpby = df.groupby(level='symbol', group_keys=False, sort=False)
         if parallel:
@@ -40,7 +46,7 @@ def _cumsum_filter(df: pd.DataFrame):
     if isinstance(df.index, pd.MultiIndex):
         symbol_ind = df.index.names.index('symbol')
         result = __cumsum_filter(df.index.droplevel(symbol_ind).values,
-                                 df['close'].values,
+                                 df['value'].values,
                                  df['threshold'].values)
 
         result = pd.DatetimeIndex(result, tz=df.index.levels[df.index.names.index('timestamp')].tz)
@@ -51,10 +57,10 @@ def _cumsum_filter(df: pd.DataFrame):
         ))
     else:
         result = __cumsum_filter(df.index.values,
-                                 df['close'].values,
+                                 df['value'].values,
                                  df['threshold'].values)
 
-        result = pd.DatetimeIndex(result, tz=df.index.levels[df.index.names.index('timestamp')].tz)
+        result = pd.DatetimeIndex(result, tz=df.index.tz)
 
         return pd.Series(index=pd.DatetimeIndex(result, name=df.index.name))
 

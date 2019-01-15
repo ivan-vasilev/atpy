@@ -49,7 +49,7 @@ class TestDataUtil(unittest.TestCase):
             df = df['close'].to_frame()
             df['threshold'] = 0.01
 
-            result = cumsum_filter(df)
+            result = cumsum_filter(df['close'], df['threshold'])
             self.assertTrue(isinstance(result, pd.DatetimeIndex))
             self.assertGreater(result.size, 0)
 
@@ -57,24 +57,24 @@ class TestDataUtil(unittest.TestCase):
             df = df['close'].to_frame()
             df['threshold'] = 0.01
 
-            result_np = cumsum_filter(df, parallel=False)
+            result_np = cumsum_filter(df['close'], df['threshold'], parallel=False)
             self.assertTrue(isinstance(result_np, pd.MultiIndex))
             self.assertEqual(len(result_np.levels), 2)
             self.assertEqual(result_np.names, ['symbol', 'timestamp'])
             self.assertGreater(result_np.size, 0)
 
-            result_p = cumsum_filter(df, parallel=True)
+            result_p = cumsum_filter(df['close'], df['threshold'], parallel=True)
             assert_frame_equal(pd.DataFrame(index=result_np), pd.DataFrame(index=result_p))
 
             df = df.reorder_levels(['timestamp', 'symbol']).sort_index()
-            result_np = cumsum_filter(df, parallel=False)
+            result_np = cumsum_filter(df['close'], df['threshold'], parallel=False)
 
             self.assertTrue(isinstance(result_np, pd.MultiIndex))
             self.assertEqual(len(result_np.levels), 2)
             self.assertEqual(result_np.names, ['timestamp', 'symbol'])
             self.assertGreater(result_np.size, 0)
 
-            result_p = cumsum_filter(df, parallel=True)
+            result_p = cumsum_filter(df['close'], df['threshold'], parallel=True)
             assert_frame_equal(pd.DataFrame(index=result_np), pd.DataFrame(index=result_p))
 
     def test_cumsum_filter_performance(self):
@@ -102,7 +102,7 @@ class TestDataUtil(unittest.TestCase):
             close = dfs1['close'].to_frame()
             close['threshold'] = 0.01
 
-            x = cumsum_filter(close, parallel=True)
+            x = cumsum_filter(close['close'], close['threshold'], parallel=True)
 
             elapsed = datetime.datetime.now() - now
             logging.getLogger(__name__).debug('Result shape: ' + str(x.shape))
