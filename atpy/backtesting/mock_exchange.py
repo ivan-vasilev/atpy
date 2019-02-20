@@ -67,12 +67,12 @@ class MockExchange(object):
                 if o.order_type == orders.Type.BUY:
                     if 'tick_id' in data:
                         price = data['ask']
-                        slippage = self.slippage_loss(price)
+                        slippage = self.slippage_loss(o, price)
 
                         o.add_position(data['last_size'], price + slippage)
                     else:
                         price = data['ask'] if data['ask_size'] > 0 else data['most_recent_trade']
-                        slippage = self.slippage_loss(price)
+                        slippage = self.slippage_loss(o, price)
 
                         o.add_position(data['ask_size'] if data['ask_size'] > 0 else data['most_recent_trade_size'], price + slippage)
 
@@ -81,13 +81,13 @@ class MockExchange(object):
                 elif o.order_type == orders.Type.SELL:
                     if 'tick_id' in data:
                         price = data['bid']
-                        slippage = self.slippage_loss(price)
+                        slippage = self.slippage_loss(o, price)
 
-                        o.add_position(data['last_size'], price - slippage)
+                        o.add_position(data['last_size'], price + slippage)
                     else:
                         price = data['bid'] if data['bid_size'] > 0 else data['most_recent_trade']
-                        slippage = self.slippage_loss(price)
-                        o.add_position(data['bid_size'] if data['bid_size'] > 0 else data['most_recent_trade_size'], price - slippage)
+                        slippage = self.slippage_loss(o, price)
+                        o.add_position(data['bid_size'] if data['bid_size'] > 0 else data['most_recent_trade_size'], price + slippage)
 
                     self._slippages[o].append(slippage)
 
@@ -107,12 +107,11 @@ class MockExchange(object):
                 slc = data.loc[pd.IndexSlice[:, o.symbol], :]
                 if not slc.empty:
                     price = slc.iloc[-1]['close']
-                    if o.order_type == orders.Type.BUY:
-                        price += self.slippage_loss(price)
-                    elif o.order_type == orders.Type.SELL:
-                        price += self.slippage_loss(price)
+                    slippage = self.slippage_loss(o, price)
 
-                    o.add_position(slc.iloc[-1]['period_volume'], price)
+                    o.add_position(slc.iloc[-1]['period_volume'], price + slippage)
+
+                    self._slippages[o].append(slippage)
 
                     if o.fulfill_time is not None:
                         self._pending_orders.remove(o)
@@ -128,5 +127,8 @@ class StaticSlippageLoss:
     def __init__(self, loss_rate):
         self.loss_rate = loss_rate
 
-    def __call__(self, value):
-        return self.loss_rate * value
+    def __call__(self, o: orders.BaseOrder, price: float):
+        if o.order_type == orders.Type.BUY:
+            return self.loss_rate * price
+        elif o.order_type == orders.Type.SELL:
+            return -self.loss_rate * price
