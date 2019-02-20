@@ -81,15 +81,13 @@ class TestDataPipeline(unittest.TestCase):
                 self.assertFalse(df['include'].min())
 
                 tmp = orig['close'].to_frame()
-                tmp['threshold'] = 0.02
+                tmp['threshold'] = 0.05
                 to_include = cumsum_filter(tmp['close'], tmp['threshold'], parallel=True)
                 df.loc[~df.index.isin(to_include), 'include'] = False
                 df.loc[df['interval_end'].isnull(), 'include'] = False
 
                 self.assertTrue(df['include'].max())
                 self.assertFalse(df['include'].min())
-
-                df['frac_diff'] = frac_diff_ffd(orig['close'], 0.4)
 
                 df['frac_diff'] = frac_diff_ffd(orig['close'], 0.4)
         finally:
