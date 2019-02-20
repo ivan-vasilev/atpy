@@ -1,7 +1,7 @@
 import unittest
 
 from atpy.backtesting.data_replay import DataReplay, DataReplayEvents
-from atpy.backtesting.mock_broker import MockBroker, StaticSlippageLoss
+from atpy.backtesting.mock_exchange import MockExchange, StaticSlippageLoss
 from atpy.data.iqfeed.iqfeed_bar_data_provider import *
 from atpy.data.iqfeed.iqfeed_history_provider import *
 from atpy.data.iqfeed.iqfeed_level_1_provider import *
@@ -10,7 +10,7 @@ from pyevents.events import *
 import logging
 
 
-class TestMockOrders(unittest.TestCase):
+class TestMockExchange(unittest.TestCase):
     """
     Test Mock Orders
     """
@@ -29,7 +29,7 @@ class TestMockOrders(unittest.TestCase):
         e3 = threading.Event()
         listeners += lambda x: e3.set() if x['type'] == 'order_fulfilled' and x['data'].symbol == 'IBM' else None
 
-        MockBroker(listeners=listeners, slippage_loss=StaticSlippageLoss(0.1))
+        MockExchange(listeners=listeners, slippage_loss=StaticSlippageLoss(0.1))
 
         with IQFeedLevel1Listener(listeners=listeners) as level_1:
             level_1.watch('GOOG')
@@ -73,7 +73,7 @@ class TestMockOrders(unittest.TestCase):
         e3 = threading.Event()
         listeners += lambda x: e3.set() if x['type'] == 'order_fulfilled' and x['data'].symbol == 'IBM' else None
 
-        MockBroker(listeners=listeners, slippage_loss=StaticSlippageLoss(0.1))
+        MockExchange(listeners=listeners, slippage_loss=StaticSlippageLoss(0.1))
 
         with IQFeedBarDataListener(interval_len=300, mkt_snapshot_depth=10, listeners=listeners) as bars:
             bars.watch_bars('GOOG')
@@ -108,7 +108,7 @@ class TestMockOrders(unittest.TestCase):
     def test_historical_bar_market_order(self):
         listeners = AsyncListeners()
 
-        MockBroker(listeners=listeners, slippage_loss=StaticSlippageLoss(0.1))
+        MockExchange(listeners=listeners, slippage_loss=StaticSlippageLoss(0.1))
 
         e1 = threading.Event()
         listeners += lambda x: e1.set() if x['type'] == 'order_fulfilled' and x['data'].symbol == 'GOOG' else None
@@ -151,7 +151,7 @@ class TestMockOrders(unittest.TestCase):
     def test_limit_order(self):
         listeners = AsyncListeners()
 
-        MockBroker(listeners=listeners, slippage_loss=StaticSlippageLoss(0.1))
+        MockExchange(listeners=listeners, slippage_loss=StaticSlippageLoss(0.1))
 
         e1 = threading.Event()
         listeners += lambda x: e1.set() if x['type'] == 'order_fulfilled' and x['data'].symbol == 'GOOG' else None
@@ -195,7 +195,7 @@ class TestMockOrders(unittest.TestCase):
     def test_stop_market_order(self):
         listeners = AsyncListeners()
 
-        MockBroker(listeners=listeners, slippage_loss=StaticSlippageLoss(0.1))
+        MockExchange(listeners=listeners, slippage_loss=StaticSlippageLoss(0.1))
 
         e1 = threading.Event()
         listeners += lambda x: e1.set() if x['type'] == 'order_fulfilled' and x['data'].symbol == 'GOOG' else None
@@ -239,7 +239,7 @@ class TestMockOrders(unittest.TestCase):
     def test_stop_limit_order(self):
         listeners = AsyncListeners()
 
-        MockBroker(listeners=listeners, slippage_loss=StaticSlippageLoss(0.1))
+        MockExchange(listeners=listeners, slippage_loss=StaticSlippageLoss(0.1))
 
         e1 = threading.Event()
         listeners += lambda x: e1.set() if x['type'] == 'order_fulfilled' and x['data'].symbol == 'GOOG' else None

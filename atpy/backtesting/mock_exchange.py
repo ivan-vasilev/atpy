@@ -7,9 +7,9 @@ import pandas as pd
 import atpy.portfolio.order as orders
 
 
-class MockBroker(object):
+class MockExchange(object):
     """
-    Mock broker for executing trades based on the current streaming prices. Works with realtime and historical data.
+    Mock exchange for executing trades based on the current streaming prices. Works with realtime and historical data.
     """
 
     def __init__(self,

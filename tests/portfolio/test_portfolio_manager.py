@@ -1,6 +1,6 @@
 import unittest
 
-from atpy.backtesting.mock_broker import MockBroker
+from atpy.backtesting.mock_exchange import MockExchange
 from atpy.data.iqfeed.iqfeed_history_provider import *
 from atpy.data.iqfeed.iqfeed_level_1_provider import *
 from atpy.portfolio.portfolio_manager import *
@@ -231,7 +231,7 @@ class TestPortfolioManager(unittest.TestCase):
         with IQFeedLevel1Listener(listeners=listeners):
             pm = PortfolioManager(listeners=listeners, initial_capital=10000)
 
-            MockBroker(listeners=listeners)
+            MockExchange(listeners=listeners)
 
             e1 = threading.Event()
             listeners += lambda x: e1.set() if x['type'] == 'portfolio_update' and 'GOOG' in x['data'].symbols else None
@@ -276,7 +276,7 @@ class TestPortfolioManager(unittest.TestCase):
 
         pm = PortfolioManager(listeners=listeners, initial_capital=10000)
 
-        MockBroker(listeners=listeners)
+        MockExchange(listeners=listeners)
 
         e1 = threading.Event()
         listeners += lambda x: e1.set() if x['type'] == 'portfolio_update' and 'GOOG' in x['data'].symbols else None
@@ -327,7 +327,7 @@ class TestPortfolioManager(unittest.TestCase):
 
         pm = PortfolioManager(listeners=listeners, initial_capital=10000)
 
-        MockBroker(listeners=listeners)
+        MockExchange(listeners=listeners)
 
         e1 = threading.Event()
         listeners += lambda x: e1.set() if x['type'] == 'portfolio_update' and 'GOOG' in x['data'].symbols else None
