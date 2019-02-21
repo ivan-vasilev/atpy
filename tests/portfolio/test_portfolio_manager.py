@@ -1,6 +1,7 @@
 import unittest
 
-from atpy.backtesting.mock_exchange import MockExchange
+from atpy.backtesting.data_replay import DataReplayEvents, DataReplay
+from atpy.backtesting.mock_exchange import MockExchange, PerShareCommissionLoss
 from atpy.data.iqfeed.iqfeed_history_provider import *
 from atpy.data.iqfeed.iqfeed_level_1_provider import *
 from atpy.portfolio.portfolio_manager import *
@@ -149,7 +150,7 @@ class TestPortfolioManager(unittest.TestCase):
             listeners({'type': 'order_fulfilled', 'data': o1})
             e1.wait()
 
-            self.assertNotEquals(pm.value('GOOG'), 1)
+            self.assertNotEqual(pm.value('GOOG'), 1)
 
             # order 2
             o2 = MarketOrder(Type.BUY, 'GOOG', 90)
@@ -157,8 +158,8 @@ class TestPortfolioManager(unittest.TestCase):
             o2.add_position(86, 0.5)
             o2.fulfill_time = datetime.datetime.now()
 
-            self.assertNotEquals(pm.value('GOOG'), 1)
-            self.assertNotEquals(pm.value('GOOG'), 0.5)
+            self.assertNotEqual(pm.value('GOOG'), 1)
+            self.assertNotEqual(pm.value('GOOG'), 0.5)
 
             # order 3
             o3 = MarketOrder(Type.BUY, 'AAPL', 100)
@@ -171,67 +172,63 @@ class TestPortfolioManager(unittest.TestCase):
             listeners({'type': 'order_fulfilled', 'data': o3})
             e3.wait()
 
-            self.assertNotEquals(pm.value('GOOG'), 1)
-            self.assertNotEquals(pm.value('GOOG'), 0.5)
-            self.assertNotEquals(pm.value('AAPL'), 0.2)
+            self.assertNotEqual(pm.value('GOOG'), 1)
+            self.assertNotEqual(pm.value('GOOG'), 0.5)
+            self.assertNotEqual(pm.value('AAPL'), 0.2)
             self.assertEqual(len(pm._values), 2)
 
     def test_historical_price_updates(self):
-        filter_provider = DefaultFilterProvider(repeat=True)
-        filter_provider += TicksFilter(ticker="GOOG", max_ticks=1)
-        filter_provider += TicksFilter(ticker="AAPL", max_ticks=1)
-
         listeners = AsyncListeners()
 
-        with IQFeedHistoryEvents(listeners=listeners, fire_ticks=True, filter_provider=filter_provider):
-            pm = PortfolioManager(listeners=listeners, initial_capital=10000)
+        pm = PortfolioManager(listeners=listeners, initial_capital=10000)
 
-            # order 1
-            o1 = MarketOrder(Type.BUY, 'GOOG', 100)
-            o1.add_position(14, 1)
-            o1.add_position(86, 1)
-            o1.fulfill_time = datetime.datetime.now()
+        # order 1
+        o1 = MarketOrder(Type.BUY, 'GOOG', 100)
+        o1.add_position(14, 1)
+        o1.add_position(86, 1)
+        o1.fulfill_time = datetime.datetime.now()
 
-            e1 = threading.Event()
-            listeners += lambda x: e1.set() if x['type'] == 'portfolio_value_update' else None
-            listeners({'type': 'order_fulfilled', 'data': o1})
+        e1 = threading.Event()
+        listeners += lambda x: e1.set() if x['type'] == 'portfolio_value_update' else None
+        listeners({'type': 'order_fulfilled', 'data': o1})
+
+        # order 2
+        o2 = MarketOrder(Type.BUY, 'GOOG', 90)
+        o2.add_position(4, 0.5)
+        o2.add_position(86, 0.5)
+        o2.fulfill_time = datetime.datetime.now()
+
+        # order 3
+        o3 = MarketOrder(Type.BUY, 'AAPL', 100)
+        o3.add_position(14, 0.2)
+        o3.add_position(86, 0.2)
+        o3.fulfill_time = datetime.datetime.now()
+
+        e3 = threading.Event()
+        listeners += lambda x: e3.set() if x['type'] == 'portfolio_value_update' else None
+        listeners({'type': 'order_fulfilled', 'data': o3})
+
+        # historical data
+        with IQFeedHistoryProvider() as provider:
+            f = BarsFilter(ticker=["GOOG", "AAPL"], interval_len=60, interval_type='s', max_bars=5)
+            data = provider.request_data(f, sync_timestamps=False).swaplevel(0, 1).sort_index()
+            DataReplayEvents(listeners, DataReplay().add_source([data], 'data', historical_depth=2), event_name='bar').start()
+
             e1.wait()
-
-            self.assertNotEquals(pm.value('GOOG'), 1)
-
-            # order 2
-            o2 = MarketOrder(Type.BUY, 'GOOG', 90)
-            o2.add_position(4, 0.5)
-            o2.add_position(86, 0.5)
-            o2.fulfill_time = datetime.datetime.now()
-
-            self.assertNotEquals(pm.value('GOOG'), 1)
-            self.assertNotEquals(pm.value('GOOG'), 0.5)
-            self.assertEqual(len(pm._values), 1)
-
-            # order 3
-            o3 = MarketOrder(Type.BUY, 'AAPL', 100)
-            o3.add_position(14, 0.2)
-            o3.add_position(86, 0.2)
-            o3.fulfill_time = datetime.datetime.now()
-
-            e3 = threading.Event()
-            listeners += lambda x: e3.set() if x['type'] == 'portfolio_value_update' else None
-            listeners({'type': 'order_fulfilled', 'data': o3})
             e3.wait()
 
-        self.assertNotEquals(pm.value('GOOG'), 1)
-        self.assertNotEquals(pm.value('GOOG'), 0.5)
-        self.assertNotEquals(pm.value('AAPL'), 0.2)
+        self.assertNotEqual(pm.value('GOOG'), 1)
+        self.assertNotEqual(pm.value('GOOG'), 0.5)
+        self.assertNotEqual(pm.value('AAPL'), 0.2)
         self.assertEqual(len(pm._values), 2)
 
     def test_mock_orders(self):
         listeners = AsyncListeners()
 
-        with IQFeedLevel1Listener(listeners=listeners):
+        with IQFeedLevel1Listener(listeners=listeners) as level1:
             pm = PortfolioManager(listeners=listeners, initial_capital=10000)
 
-            MockExchange(listeners=listeners)
+            MockExchange(listeners=listeners, commission_loss=PerShareCommissionLoss(0.1))
 
             e1 = threading.Event()
             listeners += lambda x: e1.set() if x['type'] == 'portfolio_update' and 'GOOG' in x['data'].symbols else None
@@ -254,57 +251,10 @@ class TestPortfolioManager(unittest.TestCase):
             o4 = StopLimitOrder(Type.SELL, 'AAPL', 1, 1, 99999)
             listeners({'type': 'order_request', 'data': o4})
 
-            e1.wait()
-            e2.wait()
-            e3.wait()
+            level1.watch('GOOG')
+            level1.watch('AAPL')
+            level1.watch('IBM')
 
-        self.assertLess(pm.capital, pm.initial_capital)
-        self.assertTrue('GOOG' in pm.symbols)
-        self.assertTrue('AAPL' in pm.symbols)
-        self.assertTrue('IBM' in pm.symbols)
-
-        self.assertEqual(pm.quantity('GOOG'), 1)
-        self.assertEqual(pm.quantity('AAPL'), 2)
-        self.assertEqual(pm.quantity('IBM'), 1)
-
-        self.assertGreater(pm.value('GOOG'), 0)
-        self.assertGreater(pm.value('AAPL'), 0)
-        self.assertGreater(pm.value('IBM'), 0)
-
-    def test_historical_mock_orders(self):
-        listeners = AsyncListeners()
-
-        pm = PortfolioManager(listeners=listeners, initial_capital=10000)
-
-        MockExchange(listeners=listeners)
-
-        e1 = threading.Event()
-        listeners += lambda x: e1.set() if x['type'] == 'portfolio_update' and 'GOOG' in x['data'].symbols else None
-
-        e2 = threading.Event()
-        listeners += lambda x: e2.set() if x['type'] == 'portfolio_update' and 'AAPL' in x['data'].symbols else None
-
-        e3 = threading.Event()
-        listeners += lambda x: e3.set() if x['type'] == 'portfolio_update' and 'IBM' in x['data'].symbols else None
-
-        o1 = StopLimitOrder(Type.BUY, 'GOOG', 1, 99999, 1)
-        listeners({'type': 'order_request', 'data': o1})
-
-        o2 = StopLimitOrder(Type.BUY, 'AAPL', 3, 99999, 1)
-        listeners({'type': 'order_request', 'data': o2})
-
-        o3 = StopLimitOrder(Type.BUY, 'IBM', 1, 99999, 1)
-        listeners({'type': 'order_request', 'data': o3})
-
-        o4 = StopLimitOrder(Type.SELL, 'AAPL', 1, 1, 99999)
-        listeners({'type': 'order_request', 'data': o4})
-
-        filter_provider = DefaultFilterProvider(repeat=True)
-        filter_provider += TicksFilter(ticker="GOOG", max_ticks=1)
-        filter_provider += TicksFilter(ticker="AAPL", max_ticks=1)
-        filter_provider += TicksFilter(ticker="IBM", max_ticks=1)
-
-        with IQFeedHistoryEvents(listeners=listeners, fire_ticks=True, filter_provider=filter_provider):
             e1.wait()
             e2.wait()
             e3.wait()
@@ -327,7 +277,7 @@ class TestPortfolioManager(unittest.TestCase):
 
         pm = PortfolioManager(listeners=listeners, initial_capital=10000)
 
-        MockExchange(listeners=listeners)
+        MockExchange(listeners=listeners, commission_loss=PerShareCommissionLoss(0.1))
 
         e1 = threading.Event()
         listeners += lambda x: e1.set() if x['type'] == 'portfolio_update' and 'GOOG' in x['data'].symbols else None
@@ -350,12 +300,12 @@ class TestPortfolioManager(unittest.TestCase):
         o4 = StopLimitOrder(Type.SELL, 'AAPL', 1, 1, 99999)
         listeners({'type': 'order_request', 'data': o4})
 
-        filter_provider = DefaultFilterProvider(repeat=True)
-        filter_provider += BarsFilter(ticker="GOOG", interval_len=60, interval_type='s', max_bars=20)
-        filter_provider += BarsFilter(ticker="AAPL", interval_len=60, interval_type='s', max_bars=20)
-        filter_provider += BarsFilter(ticker="IBM", interval_len=60, interval_type='s', max_bars=20)
+        # historical data
+        with IQFeedHistoryProvider() as provider:
+            f = BarsFilter(ticker=["GOOG", "AAPL", "IBM"], interval_len=60, interval_type='s', max_bars=5)
+            data = provider.request_data(f, sync_timestamps=False).swaplevel(0, 1).sort_index()
+            DataReplayEvents(listeners, DataReplay().add_source([data], 'data', historical_depth=2), event_name='bar').start()
 
-        with IQFeedHistoryEvents(listeners=listeners, fire_ticks=True, filter_provider=filter_provider):
             e1.wait()
             e2.wait()
             e3.wait()

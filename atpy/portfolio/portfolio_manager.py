@@ -17,7 +17,7 @@ class PortfolioManager(object):
         self._lock = threading.RLock()
         self._values = dict()
 
-    def add_order(self, order):
+    def add_order(self, order: BaseOrder):
         with self._lock:
             if order.fulfill_time is None:
                 raise Exception("Order has no fulfill_time set")
@@ -48,6 +48,7 @@ class PortfolioManager(object):
     @property
     def _capital(self):
         turnover = 0
+        commissions = 0
         for o in self.orders:
             cost = o.cost
             if o.order_type == Type.SELL:
@@ -55,7 +56,9 @@ class PortfolioManager(object):
             elif o.order_type == Type.BUY:
                 turnover -= cost
 
-        return self.initial_capital + turnover
+            commissions += o.commission
+
+        return self.initial_capital + turnover - commissions
 
     def quantity(self, symbol=None):
         with self._lock:
@@ -86,7 +89,7 @@ class PortfolioManager(object):
     def _value(self, symbol=None, multiply_by_quantity=False):
         if symbol is not None:
             if symbol not in self._values:
-                logging.getLogger(__name__).debug("No current information available for " + symbol + ". Falling back to last traded price")
+                logging.getLogger(__name__).debug("No current information available for %s. Falling back to last traded price" % symbol)
                 symbol_orders = [o for o in self.orders if o.symbol == symbol]
                 order = sorted(symbol_orders, key=lambda o: o.fulfill_time, reverse=True)[0]
                 return order.last_cost_per_share * (self._quantity(symbol=symbol) if multiply_by_quantity else 1)
@@ -104,13 +107,17 @@ class PortfolioManager(object):
             self.add_order(event['data'])
         elif event['type'] == 'level_1_tick':
             with self._lock:
-                if event['data']['symbol'] in [o.symbol for o in self.orders]:
-                    self._values[event['data']['symbol']] = event['data']['bid']
+                data = event['data']
+                if data['symbol'] in [o.symbol for o in self.orders]:
+                    self._values[data['symbol']] = data['bid']
                     self.listeners({'type': 'portfolio_value_update', 'data': self})
         elif event['type'] == 'bar':
             with self._lock:
-                if event['data']['symbol'] in [o.symbol for o in self.orders]:
-                    self._values[event['data']['symbol']] = event['data']['close']
+                data = event['data']
+                symbol_ind = data.index.names.index('symbol')
+
+                for o in [o for o in self.orders if o.symbol in data.index.levels[symbol_ind]]:
+                    self._values[o.symbol] = event['data']['close'][-1]
                     self.listeners({'type': 'portfolio_value_update', 'data': self})
 
     def __getstate__(self):

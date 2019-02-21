@@ -67,9 +67,12 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener):
 
     def on_event(self, event):
         if event['type'] == 'watch_ticks':
-            with self._lock:
-                if event['data'] not in self.fundamentals:
-                    self.conn.watch(event['data'])
+            self.watch(event['data'])
+
+    def watch(self, symbol):
+        with self._lock:
+            if symbol not in self.fundamentals:
+                self.conn.watch(symbol)
 
     def process_invalid_symbol(self, bad_symbol: str) -> None:
         """

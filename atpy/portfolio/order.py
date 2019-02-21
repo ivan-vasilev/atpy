@@ -20,7 +20,7 @@ class BaseOrder(object, metaclass=ABCMeta):
 
         self.__obtained_positions = list()
         self.request_time = datetime.datetime.utcnow().replace(tzinfo=tz.gettz('UTC'))
-        self.commission = None
+        self.commission = 0
         self.__fulfill_time = None
 
     @property
@@ -30,7 +30,7 @@ class BaseOrder(object, metaclass=ABCMeta):
     @fulfill_time.setter
     def fulfill_time(self, fulfill_time):
         if self.obtained_quantity != self.quantity:
-            raise Exception("Order is not fulfilled. Obtained " + str(self.obtained_quantity) + " of " + str(self.quantity))
+            raise Exception("Order is not fulfilled. Obtained %d of %d" % (self.obtained_quantity, + str(self.quantity)))
 
         self.__fulfill_time = fulfill_time
 
@@ -60,12 +60,12 @@ class BaseOrder(object, metaclass=ABCMeta):
     def __str__(self):
         result = str(self.order_type).split('.')[1] + " " + self.symbol + " " + str(self.quantity)
         if self.obtained_quantity > 0:
-            result += "; fulfilled: " + str(self.obtained_quantity) + " for " + str(self.cost)
+            result += "; fulfilled: %d for %.3f" % (self.obtained_quantity, self.cost)
             if self.__fulfill_time is not None:
-                result += " in " + str(self.__fulfill_time - self.request_time)
+                result += " in %ss" % str(self.__fulfill_time - self.request_time)
 
         if self.commission is not None:
-            result += "; commission: " + str(self.commission)
+            result += "; commission: %.3f;" % self.commission
 
         return result
 

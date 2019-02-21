@@ -40,8 +40,8 @@ class MockExchange(object):
         self.listeners = listeners
         self.listeners += self.on_event
 
-        self.slippage_loss = slippage_loss if slippage_loss is not None else lambda x: 0
-        self.commission_loss = commission_loss if commission_loss is not None else lambda x: 0
+        self.slippage_loss = slippage_loss if slippage_loss is not None else lambda o, price: 0
+        self.commission_loss = commission_loss if commission_loss is not None else lambda o: 0
 
         self._pending_orders = list()
         self._slippages = dict()
@@ -119,8 +119,8 @@ class MockExchange(object):
 
                     if o.fulfill_time is not None:
                         self._pending_orders.remove(o)
-                        slippages = ', '.join(["%.2f" % s for s in self._slippages.pop(o)])
-                        logging.getLogger(__name__).info("Order fulfilled: " + str(o) + " with slippage: " + slippages)
+                        slippages = ', '.join(["%.3f" % s for s in self._slippages.pop(o)])
+                        logging.getLogger(__name__).info("Order fulfilled: " + str(o) + "; slippage: " + slippages)
 
                         self.listeners({'type': 'order_fulfilled', 'data': o})
 
