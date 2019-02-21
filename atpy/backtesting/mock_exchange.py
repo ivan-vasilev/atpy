@@ -76,6 +76,7 @@ class MockExchange(object):
 
                         o.add_position(data['ask_size'] if data['ask_size'] > 0 else data['most_recent_trade_size'], price + slippage)
 
+                    o.commission = self.commission_loss(o)
                     self._slippages[o].append(slippage)
 
                 elif o.order_type == orders.Type.SELL:
@@ -89,6 +90,7 @@ class MockExchange(object):
                         slippage = self.slippage_loss(o, price)
                         o.add_position(data['bid_size'] if data['bid_size'] > 0 else data['most_recent_trade_size'], price + slippage)
 
+                    o.commission = self.commission_loss(o)
                     self._slippages[o].append(slippage)
 
                 if o.fulfill_time is not None:
@@ -111,6 +113,8 @@ class MockExchange(object):
 
                     o.add_position(slc.iloc[-1]['period_volume'], price + slippage)
 
+                    o.commission = self.commission_loss(o)
+
                     self._slippages[o].append(slippage)
 
                     if o.fulfill_time is not None:
@@ -132,3 +136,13 @@ class StaticSlippageLoss:
             return self.loss_rate * price
         elif o.order_type == orders.Type.SELL:
             return -self.loss_rate * price
+
+
+class PerShareCommissionLoss:
+    """Apply commission loss for each share"""
+
+    def __init__(self, value):
+        self.value = value
+
+    def __call__(self, o: orders.BaseOrder):
+        return o.obtained_quantity * self.value

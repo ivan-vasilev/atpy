@@ -20,6 +20,7 @@ class BaseOrder(object, metaclass=ABCMeta):
 
         self.__obtained_positions = list()
         self.request_time = datetime.datetime.utcnow().replace(tzinfo=tz.gettz('UTC'))
+        self.commission = None
         self.__fulfill_time = None
 
     @property
@@ -62,6 +63,9 @@ class BaseOrder(object, metaclass=ABCMeta):
             result += "; fulfilled: " + str(self.obtained_quantity) + " for " + str(self.cost)
             if self.__fulfill_time is not None:
                 result += " in " + str(self.__fulfill_time - self.request_time)
+
+        if self.commission is not None:
+            result += "; commission: " + str(self.commission)
 
         return result
 
