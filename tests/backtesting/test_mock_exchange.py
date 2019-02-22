@@ -29,7 +29,7 @@ class TestMockExchange(unittest.TestCase):
         e3 = threading.Event()
         listeners += lambda x: e3.set() if x['type'] == 'order_fulfilled' and x['data'].symbol == 'IBM' else None
 
-        MockExchange(listeners=listeners, slippage_loss=StaticSlippageLoss(0.1), commission_loss=PerShareCommissionLoss(0.1))
+        MockExchange(listeners=listeners, order_processor=StaticSlippageLoss(0.1), commission_loss=PerShareCommissionLoss(0.1))
 
         with IQFeedLevel1Listener(listeners=listeners) as level_1:
             level_1.watch('GOOG')
@@ -73,7 +73,7 @@ class TestMockExchange(unittest.TestCase):
         e3 = threading.Event()
         listeners += lambda x: e3.set() if x['type'] == 'order_fulfilled' and x['data'].symbol == 'IBM' else None
 
-        MockExchange(listeners=listeners, slippage_loss=StaticSlippageLoss(0.1), commission_loss=PerShareCommissionLoss(0.1))
+        MockExchange(listeners=listeners, order_processor=StaticSlippageLoss(0.1), commission_loss=PerShareCommissionLoss(0.1))
 
         with IQFeedBarDataListener(interval_len=300, mkt_snapshot_depth=10, listeners=listeners) as bars:
             bars.watch_bars('GOOG')
@@ -108,7 +108,7 @@ class TestMockExchange(unittest.TestCase):
     def test_historical_bar_market_order(self):
         listeners = AsyncListeners()
 
-        MockExchange(listeners=listeners, slippage_loss=StaticSlippageLoss(0.1), commission_loss=PerShareCommissionLoss(0.1))
+        MockExchange(listeners=listeners, order_processor=StaticSlippageLoss(0.1), commission_loss=PerShareCommissionLoss(0.1))
 
         e1 = threading.Event()
         listeners += lambda x: e1.set() if x['type'] == 'order_fulfilled' and x['data'].symbol == 'GOOG' else None
@@ -151,7 +151,7 @@ class TestMockExchange(unittest.TestCase):
     def test_limit_order(self):
         listeners = AsyncListeners()
 
-        MockExchange(listeners=listeners, slippage_loss=StaticSlippageLoss(0.1), commission_loss=PerShareCommissionLoss(0.1))
+        MockExchange(listeners=listeners, order_processor=StaticSlippageLoss(0.1), commission_loss=PerShareCommissionLoss(0.1))
 
         e1 = threading.Event()
         listeners += lambda x: e1.set() if x['type'] == 'order_fulfilled' and x['data'].symbol == 'GOOG' else None
@@ -195,7 +195,7 @@ class TestMockExchange(unittest.TestCase):
     def test_stop_market_order(self):
         listeners = AsyncListeners()
 
-        MockExchange(listeners=listeners, slippage_loss=StaticSlippageLoss(0.1), commission_loss=PerShareCommissionLoss(0.1))
+        MockExchange(listeners=listeners, order_processor=StaticSlippageLoss(0.1), commission_loss=PerShareCommissionLoss(0.1))
 
         e1 = threading.Event()
         listeners += lambda x: e1.set() if x['type'] == 'order_fulfilled' and x['data'].symbol == 'GOOG' else None
@@ -239,7 +239,7 @@ class TestMockExchange(unittest.TestCase):
     def test_stop_limit_order(self):
         listeners = AsyncListeners()
 
-        MockExchange(listeners=listeners, slippage_loss=StaticSlippageLoss(0.1), commission_loss=PerShareCommissionLoss(0.1))
+        MockExchange(listeners=listeners, order_processor=StaticSlippageLoss(0.1), commission_loss=PerShareCommissionLoss(0.1))
 
         e1 = threading.Event()
         listeners += lambda x: e1.set() if x['type'] == 'order_fulfilled' and x['data'].symbol == 'GOOG' else None

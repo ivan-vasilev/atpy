@@ -16,14 +16,16 @@ class MockExchange(object):
                  listeners,
                  accept_bars: typing.Callable = None,
                  accept_ticks: typing.Callable = None,
-                 slippage_loss: typing.Callable = None,
+                 order_processor: typing.Callable = None,
                  commission_loss: typing.Callable = None):
         """
         Add source for data generation
         :param listeners: listeners
         :param accept_bars: treat event like bar data. Has to return the bar dataframe. If None, then the event is not accepted
         :param accept_ticks: treat event like tick data. Has to return the tick dataframe. If None, then the event is not accepted
-        :param slippage_loss: apply slippage loss to the price
+        :param order_processor: a function which takes the current bar/tick volume and price and the current order.
+                                It applies some logic to return allowed volume and price for the order, given the current conditions.
+                                This function might apply slippage and so on
         :param commission_loss: apply commission loss to the price
         """
 
@@ -40,17 +42,15 @@ class MockExchange(object):
         self.listeners = listeners
         self.listeners += self.on_event
 
-        self.slippage_loss = slippage_loss if slippage_loss is not None else lambda o, price: 0
+        self.order_processor = order_processor if order_processor is not None else lambda order, price, volume: (price, volume)
         self.commission_loss = commission_loss if commission_loss is not None else lambda o: 0
 
         self._pending_orders = list()
-        self._slippages = dict()
         self._lock = threading.RLock()
 
     def process_order_request(self, order):
         with self._lock:
             self._pending_orders.append(order)
-            self._slippages[order] = list()
 
     def on_event(self, event):
         if event['type'] == 'order_request':
@@ -66,38 +66,35 @@ class MockExchange(object):
             for o in matching_orders:
                 if o.order_type == orders.Type.BUY:
                     if 'tick_id' in data:
-                        price = data['ask']
-                        slippage = self.slippage_loss(o, price)
+                        price, volume = self.order_processor(o, data['ask'], data['last_size'])
 
-                        o.add_position(data['last_size'], price + slippage)
+                        o.add_position(volume, price)
                     else:
-                        price = data['ask'] if data['ask_size'] > 0 else data['most_recent_trade']
-                        slippage = self.slippage_loss(o, price)
+                        price, volume = self.order_processor(order=o,
+                                                             price=data['ask'] if data['ask_size'] > 0 else data['most_recent_trade'],
+                                                             volume=data['ask_size'] if data['ask_size'] > 0 else data['most_recent_trade_size'])
 
-                        o.add_position(data['ask_size'] if data['ask_size'] > 0 else data['most_recent_trade_size'], price + slippage)
+                        o.add_position(volume, price)
 
                     o.commission = self.commission_loss(o)
-                    self._slippages[o].append(slippage)
 
                 elif o.order_type == orders.Type.SELL:
                     if 'tick_id' in data:
-                        price = data['bid']
-                        slippage = self.slippage_loss(o, price)
-
-                        o.add_position(data['last_size'], price + slippage)
+                        price, volume = self.order_processor(o, data['bid'], data['last_size'])
+                        o.add_position(price, volume)
                     else:
-                        price = data['bid'] if data['bid_size'] > 0 else data['most_recent_trade']
-                        slippage = self.slippage_loss(o, price)
-                        o.add_position(data['bid_size'] if data['bid_size'] > 0 else data['most_recent_trade_size'], price + slippage)
+                        price, volume = self.order_processor(order=o,
+                                                             price=data['bid'] if data['bid_size'] > 0 else data['most_recent_trade'],
+                                                             volume=data['bid_size'] if data['bid_size'] > 0 else data['most_recent_trade_size'])
+
+                        o.add_position(price, volume)
 
                     o.commission = self.commission_loss(o)
-                    self._slippages[o].append(slippage)
 
                 if o.fulfill_time is not None:
                     self._pending_orders.remove(o)
-                    slippages = ', '.join(["%.2f" % s for s in self._slippages.pop(o)])
 
-                    logging.getLogger(__name__).info("Order fulfilled: " + str(o) + " with slippage: " + slippages)
+                    logging.getLogger(__name__).info("Order fulfilled: " + str(o))
 
                     self.listeners({'type': 'order_fulfilled', 'data': o})
 
@@ -108,19 +105,15 @@ class MockExchange(object):
             for o in [o for o in self._pending_orders if o.symbol in data.index.levels[symbol_ind]]:
                 slc = data.loc[pd.IndexSlice[:, o.symbol], :]
                 if not slc.empty:
-                    price = slc.iloc[-1]['close']
-                    slippage = self.slippage_loss(o, price)
+                    price, volume = self.order_processor(o, slc.iloc[-1]['close'], slc.iloc[-1]['period_volume'])
 
-                    o.add_position(slc.iloc[-1]['period_volume'], price + slippage)
+                    o.add_position(volume, price)
 
                     o.commission = self.commission_loss(o)
 
-                    self._slippages[o].append(slippage)
-
                     if o.fulfill_time is not None:
                         self._pending_orders.remove(o)
-                        slippages = ', '.join(["%.3f" % s for s in self._slippages.pop(o)])
-                        logging.getLogger(__name__).info("Order fulfilled: " + str(o) + "; slippage: " + slippages)
+                        logging.getLogger(__name__).info("Order fulfilled: " + str(o))
 
                         self.listeners({'type': 'order_fulfilled', 'data': o})
 
@@ -128,14 +121,19 @@ class MockExchange(object):
 class StaticSlippageLoss:
     """Apply static loss value to account for slippage per each order"""
 
-    def __init__(self, loss_rate):
+    def __init__(self, loss_rate: float, max_order_volume: float = 1.0):
+        """
+        :param loss_rate: slippage loss rate [0:1] coefficient for each order
+        :param max_order_volume: [0:1] coefficient, which says how much of the available volume can be assigned to this order
+        """
         self.loss_rate = loss_rate
+        self.max_order_volume = max_order_volume
 
-    def __call__(self, o: orders.BaseOrder, price: float):
-        if o.order_type == orders.Type.BUY:
-            return self.loss_rate * price
-        elif o.order_type == orders.Type.SELL:
-            return -self.loss_rate * price
+    def __call__(self, order: orders.BaseOrder, price: float, volume: int):
+        if order.order_type == orders.Type.BUY:
+            return price + self.loss_rate * price, int(volume * self.max_order_volume)
+        elif order.order_type == orders.Type.SELL:
+            return price - self.loss_rate * price, int(volume * self.max_order_volume)
 
 
 class PerShareCommissionLoss:
