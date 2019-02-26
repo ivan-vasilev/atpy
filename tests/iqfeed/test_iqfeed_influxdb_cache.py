@@ -64,8 +64,10 @@ class TestInfluxDBCache(unittest.TestCase):
             for df1, df2 in zip(data_no_limit, cache_data_no_limit):
                 del df1['total_volume']
                 del df1['number_of_trades']
+                del df1['period_volume']
+                del df2['period_volume']
 
-                assert_frame_equal(df1, df2)
+                assert_frame_equal(df1, df2, check_exact=False, check_less_precise=True)
 
     def test_update_to_latest_daily(self):
         with IQFeedHistoryProvider(num_connections=2) as history:

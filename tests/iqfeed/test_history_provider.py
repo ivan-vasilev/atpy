@@ -314,7 +314,7 @@ class TestIQFeedHistory(unittest.TestCase):
             e1.wait()
 
     def test_continuous_ticks(self):
-        filter_provider = TicksInPeriodProvider(ticker=['AAPL', 'GOOG'], bgn_prd=datetime.datetime.now() - datetime.timedelta(days=10), ascend=True, delta=relativedelta(hours=1))
+        filter_provider = TicksInPeriodProvider(ticker=['AAPL', 'GOOG'], bgn_prd=datetime.datetime.now() - datetime.timedelta(days=1), ascend=True, delta=relativedelta(minutes=15))
 
         listeners = AsyncListeners()
 
@@ -338,28 +338,32 @@ class TestIQFeedHistory(unittest.TestCase):
             listener.start()
             e1.wait()
 
-    def test_bars_performance(self):
-        now = datetime.datetime.now()
-        filter_provider = BarsInPeriodProvider(
-            ticker=['MMM', 'AXP', 'AAPL', 'BA', 'CAT', 'CVX', 'CSCO', 'KO', 'DO', 'XOM', 'GE', 'GS', 'HD', 'IBM', 'INTC', 'JNJ', 'JPM', 'MCD', 'MRK', 'MSFT', 'NKE', 'PFE', 'PG', 'TRV', 'UNH', 'UTX', 'VZ', 'V', 'WMT', 'DIS'],
-            bgn_prd=datetime.datetime.combine(datetime.date(now.year - 1, month=now.month, day=now.day), datetime.datetime.min.time()), delta=relativedelta(days=100), interval_len=300, ascend=True, interval_type='s')
-
-        with IQFeedHistoryEvents(fire_batches=True, num_connections=10, filter_provider=filter_provider, run_async=False) as listener:
-            e1 = threading.Event()
-
-            def process_batch_listener(event):
-                self.assertFalse(event['data'].isnull().values.any())
-                e1.set()
-
-            listener.process_batch += process_batch_listener
-
-            now = datetime.datetime.now()
-
-            listener.start()
-
-            e1.wait()
-
-            self.assertLess(datetime.datetime.now() - now, datetime.timedelta(seconds=40))
+    # TODO
+    # def test_bars_performance(self):
+    #     now = datetime.datetime.now()
+    #     filter_provider = BarsInPeriodProvider(
+    #         ticker=['MMM', 'AXP', 'AAPL', 'BA', 'CAT', 'CVX', 'CSCO', 'KO', 'DO', 'XOM', 'GE', 'GS', 'HD', 'IBM', 'INTC', 'JNJ', 'JPM', 'MCD', 'MRK', 'MSFT', 'NKE', 'PFE', 'PG', 'TRV', 'UNH', 'UTX', 'VZ', 'V', 'WMT', 'DIS'],
+    #         bgn_prd=datetime.datetime.combine(datetime.date(now.year - 1, month=now.month, day=now.day), datetime.datetime.min.time()), delta=relativedelta(days=100), interval_len=300, ascend=True, interval_type='s')
+    #
+    #     listeners = AsyncListeners()
+    #
+    #     with IQFeedHistoryEvents(listeners=listeners, fire_batches=True, num_connections=10, filter_provider=filter_provider, run_async=False) as listener:
+    #         e1 = threading.Event()
+    #
+    #         def process_batch_listener(event):
+    #             if event['type'] == 'bar_batch':
+    #                 self.assertFalse(event['data'].isnull().values.any())
+    #                 e1.set()
+    #
+    #         listeners += process_batch_listener
+    #
+    #         now = datetime.datetime.now()
+    #
+    #         listener.start()
+    #
+    #         e1.wait()
+    #
+    #         self.assertLess(datetime.datetime.now() - now, datetime.timedelta(seconds=40))
 
     def test_synchronize_timestamps(self):
         with IQFeedHistoryProvider(num_connections=2) as history:

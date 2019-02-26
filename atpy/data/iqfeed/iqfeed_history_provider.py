@@ -552,6 +552,9 @@ class IQFeedHistoryEvents(IQFeedHistoryProvider):
 
             d = self.request_data(f, sync_timestamps=self.sync_timestamps)
 
+            if d is None:
+                break
+
             if isinstance(d.index, pd.MultiIndex) and (self.adjust_data or self.timestamp_first):
                 d = d.swaplevel(0, 1)
                 d.sort_index(inplace=True)

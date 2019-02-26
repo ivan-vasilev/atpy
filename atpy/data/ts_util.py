@@ -179,9 +179,9 @@ def overlap_by_symbol(old_df: pd.DataFrame, new_df: pd.DataFrame, overlap: int):
 
         old_df_tail = old_df_tail.drop(set(old_df_tail.index.get_level_values('symbol')) - set(new_df.index.get_level_values('symbol')), level='symbol')
 
-        return pd.concat([old_df_tail, new_df])
+        return pd.concat([old_df_tail, new_df], sort=True)
     else:
-        return pd.concat([old_df.tail(overlap), new_df])
+        return pd.concat([old_df.tail(overlap), new_df], sort=True)
 
 
 class AsyncInPeriodProvider(object):

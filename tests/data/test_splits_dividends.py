@@ -115,15 +115,14 @@ class TestSplitsDividends(unittest.TestCase):
 
         now = datetime.datetime.now()
         with IQFeedHistoryProvider() as provider:
-            df1 = provider.request_data(BarsFilter(ticker="PLUS", interval_len=600, interval_type='s', max_bars=batch_len), sync_timestamps=False)
+            df1 = provider.request_data(BarsFilter(ticker="PLUS", interval_len=3600, interval_type='s', max_bars=batch_len), sync_timestamps=False)
 
             df = {'PLUS': df1}
             for i in range(batch_width):
                 df['PLUS_' + str(i)] = df1.sample(random.randint(int(len(df1) / 3), len(df1) - 1))
 
-            df = pd.concat(df)
+            df = pd.concat(df, sort=True)
             df.index.set_names(['symbol', 'timestamp'], inplace=True)
-            df.sort_index(inplace=True)
             df['include'] = True
             data = df['include']
 
@@ -144,7 +143,7 @@ class TestSplitsDividends(unittest.TestCase):
 
                 splits.append(cp)
 
-            splits = pd.concat(splits).sort_index()
+            splits = pd.concat(splits, sort=True)
 
             logging.getLogger(__name__).debug('Random data generated in ' + str(datetime.datetime.now() - now) + ' with shapes ' + str(df.shape))
 

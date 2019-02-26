@@ -91,12 +91,15 @@ class IBEvents(DefaultWrapper, DefaultClient):
     def __enter__(self):
         self.connect(self.ipaddress, self.portid, self.clientid)
 
-        thread = threading.Thread(target=self.run)
-        thread.start()
+        if self.isConnected():
+            thread = threading.Thread(target=self.run)
+            thread.start()
 
-        setattr(self, "_thread", thread)
+            setattr(self, "_thread", thread)
 
-        self.reqIds(-1)
+            self.reqIds(-1)
+        else:
+            raise Exception("Not connected. First connect via IB Gateway or TWS")
 
     def __exit__(self, exception_type, exception_value, traceback):
         """Disconnect connection etc"""

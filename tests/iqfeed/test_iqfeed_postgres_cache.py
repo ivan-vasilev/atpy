@@ -75,7 +75,7 @@ class TestPostgresCache(unittest.TestCase):
                     del df1['period_volume']
                     del df2['period_volume']
 
-                    assert_frame_equal(df1, df2)
+                    assert_frame_equal(df1, df2, check_exact=False, check_less_precise=True)
             finally:
                 con.cursor().execute("DROP TABLE IF EXISTS {0};".format(table_name))
 
