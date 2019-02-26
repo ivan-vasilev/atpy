@@ -2,6 +2,7 @@ import threading
 
 import pandas as pd
 from ibapi.client import EClient
+from ibapi.common import OrderId
 from ibapi.contract import Contract
 from ibapi.order import Order
 from ibapi.wrapper import EWrapper
@@ -25,10 +26,10 @@ class DefaultWrapper(EWrapper):
         self.next_valid_order_id = orderId
         self._has_valid_id.set()
 
-    def orderStatus(self, orderId: int, status: str, filled: float,
+    def orderStatus(self, orderId: OrderId, status: str, filled: float,
                     remaining: float, avgFillPrice: float, permId: int,
                     parentId: int, lastFillPrice: float, clientId: int,
-                    whyHeld: str):
+                    whyHeld: str, mktCapPrice: float):
 
         if status == 'Filled':
             if orderId in self._pending_orders:
@@ -50,7 +51,7 @@ class DefaultWrapper(EWrapper):
             if self._positions is None:
                 self._positions = {k: list() for k in list(contract.__dict__.keys()) + ['position', 'avgCost']}
 
-            for k, v in {**contract.__dict__, **{'position': position, 'avgCost' : avgCost}}.items():
+            for k, v in {**contract.__dict__, **{'position': position, 'avgCost': avgCost}}.items():
                 self._positions[k].append(v)
 
     def positionEnd(self):
@@ -64,7 +65,7 @@ class DefaultWrapper(EWrapper):
         if data is not None:
             self.listeners({'type': 'ibapi_positions', 'data': data})
 
-    def error(self, reqId:int, errorCode:int, errorString:str):
+    def error(self, reqId: int, errorCode: int, errorString: str):
         super().error(reqId=reqId, errorCode=errorCode, errorString=errorString)
         self.listeners({'type': 'ibapi_error', 'data': {'reqId': reqId, 'errorCode': errorCode, 'errorString': errorString}})
 
