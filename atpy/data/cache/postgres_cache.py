@@ -222,7 +222,7 @@ def request_bars(conn, bars_table: str, interval_len: int, interval_type: str, s
     if not df.empty:
         del df['interval']
 
-        df.tz_localize('UTC', level='timestamp', copy=False)
+        df = df.tz_localize('UTC', level='timestamp', copy=False)
 
         if isinstance(symbol, str):
             df.reset_index(level='symbol', inplace=True, drop=True)
@@ -378,9 +378,8 @@ def request_adjustments(conn, table_name: str, symbol: typing.Union[list, str] =
 
     if len(records) > 0:
         df = pd.DataFrame([x[0] for x in records])
-        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+        df['timestamp'] = pd.to_datetime(df['timestamp'], utc=True, unit='ms')
         df.set_index(keys=['timestamp', 'symbol', 'type', 'provider'], drop=True, append=False, inplace=True)
-        df.tz_localize('UTC', level='timestamp', copy=False)
         df.sort_index(inplace=True)
 
     return df

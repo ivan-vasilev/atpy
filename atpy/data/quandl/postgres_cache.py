@@ -6,15 +6,8 @@ import psycopg2
 from dateutil.relativedelta import relativedelta
 
 from atpy.data.cache.postgres_cache import insert_df
-from atpy.data.quandl.api import bulkdownload_sf1
+from atpy.data.quandl.api import bulkdownload_sf0
 from atpy.data.ts_util import slice_periods
-
-
-def bulkinsert_sf1(url: str, table_name: str):
-    for data in bulkdownload_sf1():
-        con = psycopg2.connect(url)
-        con.autocommit = True
-        insert_df(con, table_name, data)
 
 
 create_sf = \
@@ -83,22 +76,25 @@ create_sf_indices = \
             TABLESPACE pg_default;
     """
 
-# TODO
-# def bulkinsert_SF0(url: str, table_name: str = 'quandl_sf0'):
-#     con = psycopg2.connect(url)
-#     con.autocommit = True
-#     cur = con.cursor()
-#
-#     cur.execute("DROP TABLE IF EXISTS {0};".format(table_name))
-#
-#     cur.execute(create_sf.format(table_name))
-#
-#     bulkinsert(url, table_name=table_name, dataset='SF0')
-#
-#     cur.execute(create_sf_indices.format(table_name))
+
+def bulkinsert_SF0(url: str, table_name: str = 'quandl_sf0'):
+    con = psycopg2.connect(url)
+    con.autocommit = True
+    cur = con.cursor()
+
+    cur.execute("DROP TABLE IF EXISTS {0};".format(table_name))
+
+    cur.execute(create_sf.format(table_name))
+
+    data = bulkdownload_sf0()
+    con = psycopg2.connect(url)
+    con.autocommit = True
+    insert_df(con, table_name, data)
+
+    cur.execute(create_sf_indices.format(table_name))
 
 
-def request_sf(conn, symbol: typing.Union[list, str] = None, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None, table_name: str = 'quandl_SF1', selection='*'):
+def request_sf(conn, symbol: typing.Union[list, str] = None, bgn_prd: datetime.datetime = None, end_prd: datetime.datetime = None, table_name: str = 'quandl_SF0', selection='*'):
     """
     Request bar data
     :param conn: connection
@@ -130,7 +126,7 @@ def request_sf(conn, symbol: typing.Union[list, str] = None, bgn_prd: datetime.d
     df = pd.read_sql("SELECT " + selection + " FROM " + table_name + where + " ORDER BY date, symbol", con=conn, index_col=['date', 'symbol', 'indicator', 'dimension'], params=params)
 
     if not df.empty:
-        df.tz_localize('UTC', level='timestamp', copy=False)
+        df = df.tz_localize('UTC', level='date', copy=False)
 
     return df
 
@@ -140,7 +136,7 @@ class SFInPeriodProvider(object):
     SF (0 or 1) dataset in period provider
     """
 
-    def __init__(self, conn, bgn_prd: datetime.datetime, delta: relativedelta, symbol: typing.Union[list, str] = None, ascend: bool = True, table_name: str = 'quandl_SF1', overlap: relativedelta = None):
+    def __init__(self, conn, bgn_prd: datetime.datetime, delta: relativedelta, symbol: typing.Union[list, str] = None, ascend: bool = True, table_name: str = 'quandl_SF0', overlap: relativedelta = None):
         self._periods = slice_periods(bgn_prd=bgn_prd, delta=delta, ascend=ascend, overlap=overlap)
 
         self.conn = conn
@@ -156,6 +152,10 @@ class SFInPeriodProvider(object):
         self._deltas += 1
 
         if self._deltas < len(self._periods):
-            return request_sf(conn=self.conn, symbol=self.symbol, bgn_prd=self._periods[self._deltas][0], end_prd=self._periods[self._deltas][1], table_name=self.table_name)
+            result = request_sf(conn=self.conn, symbol=self.symbol, bgn_prd=self._periods[self._deltas][0], end_prd=self._periods[self._deltas][1], table_name=self.table_name)
+            if result.empty:
+                raise StopIteration
+
+            return result
         else:
             raise StopIteration

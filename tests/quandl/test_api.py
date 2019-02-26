@@ -11,7 +11,7 @@ from sqlalchemy import create_engine
 from atpy.backtesting.data_replay import DataReplay
 from atpy.data.quandl.api import QuandlEvents, bulkdownload, get_table
 from atpy.data.quandl.influxdb_cache import InfluxDBCache
-from atpy.data.quandl.postgres_cache import request_sf, SFInPeriodProvider
+from atpy.data.quandl.postgres_cache import bulkinsert_SF0, request_sf, SFInPeriodProvider
 from pyevents.events import SyncListeners
 
 
@@ -118,7 +118,7 @@ class TestQuandlAPI(unittest.TestCase):
                 self.assertGreater(len(cache_data), 0)
 
                 items = pd.concat(items).sort_index()
-                items.tz_localize('UTC', copy=False)
+                items = items.tz_localize('UTC', copy=False)
                 items.index.name = 'date'
 
                 assert_frame_equal(items, cache_data)
@@ -126,9 +126,8 @@ class TestQuandlAPI(unittest.TestCase):
             client.drop_database('test_cache')
             client.close()
 
-    # TODO
     def test_postgres_cache(self):
-        table_name = 'quandl_WGLF'
+        table_name = 'quandl_sf0'
         url = 'postgresql://postgres:postgres@localhost:5432/test'
         con = psycopg2.connect(url)
         con.autocommit = True
@@ -136,21 +135,19 @@ class TestQuandlAPI(unittest.TestCase):
         try:
             engine = create_engine(url)
 
-            # TODO
-            # bulkinsert_SF0(url, table_name=table_name)
+            bulkinsert_SF0(url, table_name=table_name)
 
-            df = request_sf(conn=engine, symbol=['AAPL', 'IBM'])
+            df = request_sf(conn=engine, table_name=table_name, symbol=['AAPL', 'TSLA'])
 
-            self.assertTrue(set(df.index.levels[1]) == {'AAPL', 'IBM'})
+            self.assertTrue(set(df.index.levels[1]) == {'AAPL', 'TSLA'})
 
-            df = request_sf(conn=engine, symbol=['AAPL', 'IBM'], bgn_prd=datetime.datetime(year=2017, month=1, day=1), end_prd=datetime.datetime.now())
+            df = request_sf(conn=engine, symbol=['AAPL', 'TSLA'], bgn_prd=datetime.datetime(year=2017, month=1, day=1), end_prd=datetime.datetime.now())
 
-            self.assertTrue(set(df.index.levels[1]) == {'AAPL', 'IBM'})
+            self.assertTrue(set(df.index.levels[1]) == {'AAPL', 'TSLA'})
             self.assertEqual(min(df.index.levels[0]).year, 2017)
         finally:
             con.cursor().execute("DROP TABLE IF EXISTS {0};".format(table_name))
 
-    # TODO
     def test_in_period_provider(self):
         table_name = 'quandl_sf0'
         url = 'postgresql://postgres:postgres@localhost:5432/test'
@@ -160,18 +157,22 @@ class TestQuandlAPI(unittest.TestCase):
         try:
             engine = create_engine(url)
 
-            # TODO
-            # bulkinsert_SF0(url, table_name=table_name)
+            bulkinsert_SF0(url, table_name=table_name)
 
             now = datetime.datetime.now()
-            bars_in_period = SFInPeriodProvider(conn=engine, bgn_prd=datetime.datetime(year=now.year - 5, month=1, day=1), delta=relativedelta(years=1), overlap=relativedelta(microseconds=-1))
+            bars_in_period = SFInPeriodProvider(conn=engine, table_name=table_name, bgn_prd=datetime.datetime(year=now.year - 5, month=1, day=1), delta=relativedelta(years=1), overlap=relativedelta(microseconds=-1))
+
+            called = False
+
             for df in bars_in_period:
+                called = True
                 self.assertEqual(len(df.index.levels), 4)
                 self.assertFalse(df.empty)
+
+            self.assertTrue(called)
         finally:
             con.cursor().execute("DROP TABLE IF EXISTS {0};".format(table_name))
 
-    # TODO
     def test_data_replay(self):
         table_name = 'quandl_sf0'
         url = 'postgresql://postgres:postgres@localhost:5432/test'
@@ -181,17 +182,16 @@ class TestQuandlAPI(unittest.TestCase):
         dates = set()
         try:
             engine = create_engine(url)
-            # TODO
-            # bulkinsert_SF0(url, table_name=table_name)
+
+            bulkinsert_SF0(url, table_name=table_name)
 
             now = datetime.datetime.now()
-            bars_in_period = SFInPeriodProvider(conn=engine, bgn_prd=datetime.datetime(year=now.year - 10, month=1, day=1), delta=relativedelta(years=1), overlap=relativedelta(microseconds=-1))
+            bars_in_period = SFInPeriodProvider(conn=engine, table_name=table_name, bgn_prd=datetime.datetime(year=now.year - 10, month=1, day=1), delta=relativedelta(years=1), overlap=relativedelta(microseconds=-1))
 
             dr = DataReplay().add_source(bars_in_period, 'e1', historical_depth=2)
 
             for i, r in enumerate(dr):
-                for e in r:
-                    d = r[e].iloc[-1].name[0].to_pydatetime()
+                d = r['e1'].iloc[-1].name[0].to_pydatetime()
 
                 if len(dates) > 0:
                     self.assertGreater(d, max(dates))
@@ -203,10 +203,13 @@ class TestQuandlAPI(unittest.TestCase):
         finally:
             con.cursor().execute("DROP TABLE IF EXISTS {0};".format(table_name))
 
-    # TODO
     def test_bulkdownload(self):
+        data = bulkdownload("SF0")
+        self.assertTrue(isinstance(data, pd.DataFrame))
+        self.assertGreater(len(data), 0)
+
         called = False
-        for data in bulkdownload("ZEA"):
+        for data in bulkdownload("SF0", chunksize=100000000):
             called = True
             self.assertTrue(isinstance(data, pd.DataFrame))
             self.assertGreater(len(data), 0)

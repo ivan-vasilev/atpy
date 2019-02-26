@@ -66,7 +66,7 @@ def __get_data(filters: typing.List[dict], api_type: __APIType, threads=1, async
             if api_type == __APIType.TIME_SERIES:
                 data = quandl.get(**f, paginate=True, api_key=api_k)
                 if data is not None:
-                    data.tz_localize('UTC', copy=False)
+                    data = data.tz_localize('UTC', copy=False)
                     q.put((f['dataset'], processor(data, **f) if processor is not None else data))
             elif api_type == __APIType.TABLES:
                 data = quandl.get_table(**f, paginate=True, api_key=api_k)
@@ -123,10 +123,6 @@ def __get_data(filters: typing.List[dict], api_type: __APIType, threads=1, async
         return q
 
 
-def default_ts_processor(df: pd.DataFrame):
-    df.tz_localize('UTC', copy=False)
-
-
 def bulkdownload(dataset: str, chunksize=None):
     with tempfile.TemporaryDirectory() as td:
         filename = os.path.join(td, dataset + '.zip')
@@ -136,8 +132,7 @@ def bulkdownload(dataset: str, chunksize=None):
 
         logging.getLogger(__name__).info("Done... Start yielding dataframes")
 
-        for df in pd.read_csv(glob.glob(os.path.join(td, '*.csv'))[0], header=None, chunksize=chunksize, parse_dates=[1]):
-            yield df
+        return pd.read_csv(glob.glob(os.path.join(td, '*.csv'))[0], header=None, chunksize=chunksize, parse_dates=[1])
 
 
 def get_sf1(filters: typing.List[dict], threads=1, async=False):
@@ -152,7 +147,7 @@ def get_sf1(filters: typing.List[dict], threads=1, async=False):
     def _sf1_processor(df, dataset):
         df.rename(columns={'Value': 'value'}, inplace=True)
         df.index.rename('date', inplace=True)
-        df.tz_localize('UTC', copy=False)
+        df = df.tz_localize('UTC', copy=False)
         df['symbol'], df['indicator'], df['dimension'] = dataset.split('/')[1].split('_')
         df.set_index(['symbol', 'indicator', 'dimension'], drop=True, inplace=True, append=True)
 
@@ -170,15 +165,15 @@ def get_sf1(filters: typing.List[dict], threads=1, async=False):
     return result
 
 
-def bulkdownload_sf1(chunksize=100000):
-    for df in bulkdownload(dataset='SF1', chunksize=chunksize):
-        sid = df[0]
-        df.drop(0, axis=1, inplace=True)
-        df = pd.concat([df, sid.str.split('_', expand=True)], axis=1, copy=False)
-        df.columns = ['date', 'value', 'symbol', 'indicator', 'dimension']
-        df.set_index(['date', 'symbol', 'indicator', 'dimension'], drop=True, inplace=True, append=False)
+def bulkdownload_sf0():
+    df = bulkdownload(dataset='SF0', chunksize=None)
+    sid = df[0]
+    df.drop(0, axis=1, inplace=True)
+    df = pd.concat([df, sid.str.split('_', expand=True)], axis=1, copy=False)
+    df.columns = ['date', 'value', 'symbol', 'indicator', 'dimension']
+    df.set_index(['date', 'symbol', 'indicator', 'dimension'], drop=True, inplace=True, append=False)
 
-        yield df
+    return df
 
 
 class QuandlEvents(object):

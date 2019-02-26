@@ -12,7 +12,7 @@ from atpy.data.iqfeed.iqfeed_level_1_provider import get_fundamentals, get_split
 from atpy.data.iqfeed.iqfeed_postgres_cache import *
 
 
-class TestInfluxDBCache(unittest.TestCase):
+class TestPostgresCache(unittest.TestCase):
     """
     Test InfluxDBCache
     """
