@@ -13,15 +13,16 @@ class TestEnvironments(unittest.TestCase):
         listeners = SyncListeners()
 
         dre = data_replay_events(listeners)
-        add_postgres_ohlc_1d(dre, bgn_prd=datetime.datetime.now() - relativedelta(months=2))
-        add_postgres_ohlc_5m(dre, bgn_prd=datetime.datetime.now() - relativedelta(months=2))
-        add_current_period(listeners, 'bars_5m')
-        add_current_phase(listeners)
-        add_daily_log(listeners)
-        add_rolling_mean(listeners, datum_name='bars_1d_full', window=5)
-        add_gaps(listeners, 'bars_1d')
+        data_event_stream = dre.event_filter()
+        event_stream_1d, filter_1d = add_postgres_ohlc_1d(dre, bgn_prd=datetime.datetime.now() - relativedelta(months=2))
+        event_stream_5m, filter_5m = add_postgres_ohlc_5m(dre, bgn_prd=datetime.datetime.now() - relativedelta(months=2))
+        add_current_period(listeners, filter_5m)
+        add_current_phase(data_event_stream)
+        add_daily_log(data_event_stream)
+        add_rolling_mean(event_stream_1d, window=5)
+        add_gaps(listeners, filter_1d)
 
-        dct = {'bars_5m': 0, 'bars_1d': 0, 'latest_5m': None, 'latest_1d': None, 'phases': set(), 'phase_start': False}
+        dct = {'bars_5m': 0, 'bars_1d': 0, 'latest_5m': None, 'latest_1d': None, 'phases': set(), 'periods': set(), 'phase_start': False}
 
         def asserts(e):
             if e['type'] == 'data':
@@ -36,9 +37,12 @@ class TestEnvironments(unittest.TestCase):
                         self.assertGreater(e['bars_5m'].iloc[-1].name[0], dct['latest_5m'])
 
                     dct['latest_5m'] = e['bars_5m'].iloc[-1].name[0]
-                    self.assertTrue('bars_5m_current_phase' in e)
-                    self.assertTrue('current_phase' in e)
-                    dct['phases'].add(e['current_phase'])
+                    self.assertTrue('bars_5m_current_period' in e)
+                    self.assertTrue('period_name' in e)
+                    dct['periods'].add(e['period_name'])
+
+                    if e['period_start'] is True:
+                        dct['period_start'] = True
 
                 if 'bars_1d' in e:
                     self.assertTrue(isinstance(e['bars_1d'], pd.DataFrame))
@@ -56,8 +60,8 @@ class TestEnvironments(unittest.TestCase):
 
                     dct['phases'].add(e['current_phase'])
 
-                if e['phase_start'] is True:
-                    dct['phase_start'] = True
+                    if e['phase_start'] is True:
+                        dct['phase_start'] = True
 
         listeners += asserts
         dre.start()
@@ -66,16 +70,71 @@ class TestEnvironments(unittest.TestCase):
         self.assertGreater(dct['bars_1d'], 0)
         self.assertIsNotNone(dct['latest_5m'])
         self.assertIsNotNone(dct['latest_1d'])
-        self.assertEqual(dct['phases'], {'trading-hours', 'after-hours'})
-        self.assertTrue(dct['phase_start'])
+        self.assertEqual(dct['periods'], {'trading-hours', 'after-hours'})
+        self.assertTrue(dct['period_start'])
 
-    def test_postgre_ohlc_quandl_sf0(self):
+    # TODO
+    def test_postgre_backtest(self):
+        logging.basicConfig(level=logging.INFO)
+
         listeners = SyncListeners()
 
         dre = data_replay_events(listeners)
-        add_postgres_ohlc_1d(dre, bgn_prd=datetime.datetime.now() - relativedelta(months=2))
-        add_current_period(listeners, datum_name='bars_1d')
-        add_quandl_sf(dre, bgn_prd=datetime.datetime.now() - relativedelta(years=1))
+
+        event_stream_1m, filter_1m = add_postgres_ohlc_1m(dre, bgn_prd=datetime.datetime.now() - relativedelta(years=10))
+
+        strategy = add_random_strategy(listeners,
+                                       portfolio_manager=None,
+                                       bar_event_stream=event_stream_1m)
+
+        me = add_mock_exchange(listeners,
+                               order_requests_stream=strategy.order_requests_stream(),
+                               bar_event_stream=event_stream_1m,
+                               slippage_loss_ratio=0.1,
+                               commission_per_share=0.05)
+
+        pm = add_portfolio_manager(listeners=listeners,
+                                   fulfilled_orders_stream=me.fulfilled_orders_stream(),
+                                   bar_event_stream=event_stream_1m,
+                                   initial_capital=10000000)
+
+        strategy.portfolio_manager = pm
+
+        add_daily_log(dre.event_filter())
+
+        dct = {'bars_1m': 0, 'latest_1m': None}
+
+        # def asserts(e):
+        #     if e['type'] == 'data':
+        #         self.assertTrue(isinstance(e, dict))
+        #
+        #         if 'bars_1m' in e:
+        #             self.assertTrue(isinstance(e['bars_1m'], pd.DataFrame))
+        #             self.assertFalse(e['bars_1m'].empty)
+        #             dct['bars_1m'] += 1
+        #
+        #             if dct['latest_1m'] is not None:
+        #                 self.assertGreater(e['bars_1m'].iloc[-1].name[0], dct['latest_1m'])
+        #
+        #             dct['latest_1m'] = e['bars_1m'].iloc[-1].name[0]
+        #
+        # listeners += asserts
+        dre.start()
+
+        self.assertGreater(dct['bars_1m'], 0)
+
+    def test_postgre_ohlc_quandl_sf0(self):
+        logging.basicConfig(level=logging.INFO)
+
+        listeners = SyncListeners()
+
+        dre = data_replay_events(listeners)
+        data_event_stream = dre.event_filter()
+
+        event_stream_1d, filter_1d = add_postgres_ohlc_1d(dre, bgn_prd=datetime.datetime.now() - relativedelta(months=2))
+        add_daily_log(data_event_stream)
+        add_current_period(listeners, filter_1d)
+        add_quandl_sf(dre, bgn_prd=datetime.datetime.now() - relativedelta(years=2))
 
         dct = {'bars_1d': 0, 'quandl_sf0': 0, 'latest_1d': None, 'latest_quandl_sf0': None}
 

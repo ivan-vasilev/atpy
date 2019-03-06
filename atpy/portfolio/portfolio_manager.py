@@ -2,14 +2,30 @@ import logging
 import threading
 
 from atpy.portfolio.order import *
+from pyevents.events import EventFilter
 
 
 class PortfolioManager(object):
     """Orders portfolio manager"""
 
-    def __init__(self, listeners, initial_capital: float, uid=None, orders=None):
+    def __init__(self, listeners, initial_capital: float, fulfilled_orders_event_stream, bar_event_stream=None, tick_event_stream=None, uid=None, orders=None):
+        """
+        :param fulfilled_orders_event_stream: event stream for fulfilled order events
+        :param bar_event_stream: event stream for bar data events
+        :param tick_event_stream: event stream for tick data events
+        :param uid: unique id for this portfolio manager
+        :param orders: a list of pre-existing orders
+        """
+
         self.listeners = listeners
-        self.listeners += self.on_event
+
+        fulfilled_orders_event_stream += self.add_order
+
+        if bar_event_stream is not None:
+            bar_event_stream += self.process_bar_data
+
+        if tick_event_stream is not None:
+            tick_event_stream += self.process_tick_data
 
         self.initial_capital = initial_capital
         self._id = uid if uid is not None else uuid.uuid4()
@@ -36,12 +52,21 @@ class PortfolioManager(object):
             self.listeners({'type': 'watch_ticks', 'data': order.symbol})
             self.listeners({'type': 'portfolio_update', 'data': self})
 
+    def portfolio_updates_stream(self):
+        return EventFilter(listeners=self.listeners,
+                           event_filter=lambda e: True if ('type' in e and e['type'] == 'portfolio_update') else False,
+                           event_transformer=lambda e: e['data'])
+
     @property
     def symbols(self):
+        """Get list of all orders/symbols"""
+
         return set([o.symbol for o in self.orders])
 
     @property
     def capital(self):
+        """Get available capital (including orders)"""
+
         with self._lock:
             return self._capital
 
@@ -78,7 +103,9 @@ class PortfolioManager(object):
         else:
             result = dict()
             for s in set([o.symbol for o in self.orders]):
-                result[s] = self._quantity(s)
+                qty = self._quantity(s)
+                if qty > 0:
+                    result[s] = qty
 
             return result
 
@@ -102,23 +129,19 @@ class PortfolioManager(object):
 
             return result
 
-    def on_event(self, event):
-        if event['type'] == 'order_fulfilled':
-            self.add_order(event['data'])
-        elif event['type'] == 'level_1_tick':
-            with self._lock:
-                data = event['data']
-                if data['symbol'] in [o.symbol for o in self.orders]:
-                    self._values[data['symbol']] = data['bid']
-                    self.listeners({'type': 'portfolio_value_update', 'data': self})
-        elif event['type'] == 'bar':
-            with self._lock:
-                data = event['data']
-                symbol_ind = data.index.names.index('symbol')
+    def process_tick_data(self, data):
+        with self._lock:
+            if data['symbol'] in [o.symbol for o in self.orders]:
+                self._values[data['symbol']] = data['bid']
+                self.listeners({'type': 'portfolio_value_update', 'data': self})
 
-                for o in [o for o in self.orders if o.symbol in data.index.levels[symbol_ind]]:
-                    self._values[o.symbol] = event['data']['close'][-1]
-                    self.listeners({'type': 'portfolio_value_update', 'data': self})
+    def process_bar_data(self, data):
+        with self._lock:
+            symbols = data.index.get_level_values(level='symbol')
+
+            for o in [o for o in self.orders if o.symbol in symbols]:
+                self._values[o.symbol] = data['close'][-1]
+                self.listeners({'type': 'portfolio_value_update', 'data': self})
 
     def __getstate__(self):
         # Copy the object's state from self.__dict__ which contains

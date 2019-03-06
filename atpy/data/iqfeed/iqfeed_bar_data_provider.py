@@ -3,6 +3,7 @@ from dateutil import tz
 from atpy.data.iqfeed.iqfeed_level_1_provider import get_splits_dividends
 from atpy.data.iqfeed.util import *
 from atpy.data.splits_dividends import adjust_df
+from pyevents.events import EventFilter
 
 
 class IQFeedBarDataListener(iq.SilentBarListener):
@@ -70,6 +71,11 @@ class IQFeedBarDataListener(iq.SilentBarListener):
         data = self._process_data(iqfeed_to_dict(bar_data, key_suffix=self.key_suffix))
         self.listeners({'type': 'latest_bar_update', 'data': data, 'interval_type': self.interval_type, 'interval_len': self.interval_len})
 
+    def latest_bar_event_stream(self):
+        return EventFilter(listeners=self.listeners,
+                           event_filter=lambda e: True if 'type' in e and e['type'] == 'latest_bar_update' else False,
+                           event_transformer=lambda e: e['data'])
+
     def process_live_bar(self, bar_data: np.array) -> None:
         data = self._process_data(iqfeed_to_dict(bar_data, key_suffix=self.key_suffix))
         self.listeners({'type': 'bar', 'data': data, 'interval_type': self.interval_type, 'interval_len': self.interval_len})
@@ -80,6 +86,11 @@ class IQFeedBarDataListener(iq.SilentBarListener):
         adjust_df(data, get_splits_dividends(data['symbol'], self.streaming_conn))
 
         self.listeners({'type': 'bar', 'data': data, 'interval_type': self.interval_type, 'interval_len': self.interval_len})
+
+    def bar_event_stream(self):
+        return EventFilter(listeners=self.listeners,
+                           event_filter=lambda e: True if 'type' in e and e['type'] == 'bar' else False,
+                           event_transformer=lambda e: e['data'])
 
     def on_event(self, event):
         if event['type'] == 'watch_bars':

@@ -3,7 +3,9 @@ import logging
 import typing
 
 import pandas as pd
+
 from atpy.data.ts_util import overlap_by_symbol
+from pyevents.events import EventFilter
 
 
 class DataReplay(object):
@@ -141,6 +143,7 @@ class DataReplay(object):
 
 
 class DataReplayEvents(object):
+    """Add source for data generation"""
 
     def __init__(self, listeners, data_replay: DataReplay, event_name: str):
         self.listeners = listeners
@@ -151,3 +154,35 @@ class DataReplayEvents(object):
         for d in self.data_replay:
             d['type'] = self.event_name
             self.listeners(d)
+
+    def event_filter(self) -> EventFilter:
+        """
+        Return event filter, which only calls the listener for the main data replay event
+        """
+
+        return EventFilter(listeners=self.listeners,
+                           event_filter=lambda e: True if e['type'] == self.event_name else False)
+
+    def event_filter_by_source(self, source_name: str) -> EventFilter:
+        """
+        Return event filter, which only calls the listener for the main data replay event
+        if source_name exists in the event
+        :param source_name: transform the event to the dataframe of source_name only
+        """
+
+        return EventFilter(listeners=self.listeners,
+                           event_filter=
+                           lambda e: True if 'timestamp' in e and e['type'] == self.event_name and source_name in e else False,
+                           event_transformer=lambda e: e[source_name])
+
+    def event_filter_function(self, source_name: str = None) -> typing.Callable:
+        """
+        Return event filter function, which returns True for data replay events only
+        If source_name is specified, it also filters for source name
+        :return the event itself if this is a data replay event and source_name exists in the dict (if source_name is specified)
+        """
+
+        if source_name is not None:
+            return lambda e: e[source_name] if 'timestamp' in e and e['type'] == self.event_name and source_name in e else None
+        else:
+            return lambda e: e if e['type'] == self.event_name else None

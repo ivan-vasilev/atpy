@@ -8,7 +8,7 @@ import pandas as pd
 
 import pyiqfeed as iq
 from atpy.data.iqfeed.util import launch_service, iqfeed_to_dict, create_batch, IQFeedDataProvider
-from pyevents.events import SyncListeners
+from pyevents.events import SyncListeners, EventFilter
 
 
 class IQFeedLevel1Listener(iq.SilentQuoteListener):
@@ -150,6 +150,14 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener):
             if len(self.current_update_mb) == self.minibatch:
                 self.listeners({'type': 'level_1_tick_batch', 'data': pd.DataFrame(create_batch(self.current_update_mb))})
                 self.current_update_mb = None
+
+    def tick_event_filter(self):
+        if not self.fire_ticks:
+            raise AttributeError("This listener is not configured to fire ticks")
+
+        return EventFilter(listeners=self.listeners,
+                           event_filter=lambda e: True if 'type' in e and e['type'] == 'level_1_tick' else False,
+                           event_transformer=lambda e: e['data'])
 
     def update_provider(self):
         return IQFeedDataProvider(listeners=self.listeners, accept_event=lambda e: True if e['type'] == 'level_1_tick_batch' else False)

@@ -16,6 +16,10 @@ class BaseOrder(object, metaclass=ABCMeta):
         self.uid = uid if uid is not None else uuid.uuid4()
         self.order_type = order_type
         self.symbol = symbol
+
+        if quantity <= 0:
+            raise ValueError("quantity > 0")
+
         self.quantity = quantity
 
         self.__obtained_positions = list()

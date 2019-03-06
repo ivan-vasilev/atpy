@@ -5,7 +5,7 @@ from atpy.ml.cross_validation import cv_split, cv_split_reverse, cv_purge
 from atpy.ml.util import *
 
 
-class TestDataUtil(unittest.TestCase):
+class TestCV(unittest.TestCase):
 
     def test_cv_split_1(self):
         with IQFeedHistoryProvider() as provider:
@@ -67,11 +67,11 @@ class TestDataUtil(unittest.TestCase):
 
     def test_cv_split_2(self):
         with IQFeedHistoryProvider() as provider:
-            df_1 = provider.request_data(BarsFilter(ticker="AAPL", interval_len=3600, interval_type='s', max_bars=1000), sync_timestamps=False)
+            df_1 = provider.request_data(BarsFilter(ticker="AAPL", interval_len=3600, interval_type='s', max_bars=10000), sync_timestamps=False)
             df_1['interval_end'] = df_1.index.shift(50, pd.Timedelta('3600s'))
             df_1.loc[df_1['interval_end'] > df_1.index[-1], 'interval_end'] = df_1.index[-1]
 
-            df_2 = provider.request_data(BarsFilter(ticker="IBM", interval_len=3600, interval_type='s', max_bars=1000), sync_timestamps=False)
+            df_2 = provider.request_data(BarsFilter(ticker="IBM", interval_len=3600, interval_type='s', max_bars=10000), sync_timestamps=False)
             df_2['interval_end'] = df_2.index.shift(50, pd.Timedelta('3600s'))
             df_2.loc[df_2['interval_end'] > df_2.index[-1], 'interval_end'] = df_2.index[-1]
 
@@ -125,7 +125,7 @@ class TestDataUtil(unittest.TestCase):
 
     def test_cv_split_reverse_1(self):
         with IQFeedHistoryProvider() as provider:
-            df = provider.request_data(BarsFilter(ticker="AAPL", interval_len=3600, interval_type='s', max_bars=1000), sync_timestamps=False)
+            df = provider.request_data(BarsFilter(ticker="AAPL", interval_len=3600, interval_type='s', max_bars=10000), sync_timestamps=False)
             df['interval_end'] = df.index.shift(50, pd.Timedelta('3600s'))
             df.loc[df['interval_end'] > df.index[-1], 'interval_end'] = df.index[-1]
             df = df.dropna()
@@ -180,11 +180,11 @@ class TestDataUtil(unittest.TestCase):
 
     def test_cv_split_reverse_2(self):
         with IQFeedHistoryProvider() as provider:
-            df_1 = provider.request_data(BarsFilter(ticker="AAPL", interval_len=3600, interval_type='s', max_bars=1000), sync_timestamps=False)
+            df_1 = provider.request_data(BarsFilter(ticker="AAPL", interval_len=3600, interval_type='s', max_bars=10000), sync_timestamps=False)
             df_1['interval_end'] = df_1.index.shift(50, pd.Timedelta('3600s'))
             df_1.loc[df_1['interval_end'] > df_1.index[-1], 'interval_end'] = df_1.index[-1]
 
-            df_2 = provider.request_data(BarsFilter(ticker="IBM", interval_len=3600, interval_type='s', max_bars=1000), sync_timestamps=False)
+            df_2 = provider.request_data(BarsFilter(ticker="IBM", interval_len=3600, interval_type='s', max_bars=10000), sync_timestamps=False)
             df_2['interval_end'] = df_2.index.shift(50, pd.Timedelta('3600s'))
             df_2.loc[df_2['interval_end'] > df_2.index[-1], 'interval_end'] = df_2.index[-1]
 
