@@ -123,7 +123,11 @@ class IQFeedBarDataListener(iq.SilentBarListener):
         sf = self.key_suffix
 
         result['symbol' + sf] = data.pop('symbol')
-        result['timestamp' + sf] = (datetime.datetime.combine(data.pop('date'), datetime.datetime.min.time()) + data.pop('time').astype(datetime.datetime)).replace(tzinfo=tz.gettz('US/Eastern')).astimezone(tz.gettz('UTC'))
+
+        result['timestamp' + sf] = (datetime.datetime.combine(data.pop('date'), datetime.datetime.min.time())
+                                    + datetime.timedelta(microseconds=data.pop('time') // 1)) \
+            .replace(tzinfo=tz.gettz('US/Eastern')).astimezone(tz.gettz('UTC'))
+
         result['high' + sf] = data.pop('high_p')
         result['low' + sf] = data.pop('low_p')
         result['open' + sf] = data.pop('open_p')

@@ -76,10 +76,11 @@ class BarsFilter(NamedTuple):
     interval_type: str
     max_bars: int
     ascend: bool
+    label_at_begin: int
     timeout: int
 
 
-BarsFilter.__new__.__defaults__ = (True, None)
+BarsFilter.__new__.__defaults__ = (True, 0, None)
 
 
 class BarsForDaysFilter(NamedTuple):
@@ -95,10 +96,11 @@ class BarsForDaysFilter(NamedTuple):
     end_flt: datetime.time
     ascend: bool
     max_bars: int
+    label_at_begin: int
     timeout: int
 
 
-BarsForDaysFilter.__new__.__defaults__ = (None, None, True, None, None)
+BarsForDaysFilter.__new__.__defaults__ = (None, None, True, None, 0, None)
 
 
 class BarsInPeriodFilter(NamedTuple):
@@ -115,10 +117,11 @@ class BarsInPeriodFilter(NamedTuple):
     end_flt: datetime.time
     ascend: bool
     max_ticks: int
+    label_at_begin: int
     timeout: int
 
 
-BarsInPeriodFilter.__new__.__defaults__ = (None, None, True, None, None)
+BarsInPeriodFilter.__new__.__defaults__ = (None, None, True, None, 0, None)
 
 
 class BarsDailyFilter(NamedTuple):
