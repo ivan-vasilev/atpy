@@ -1,9 +1,9 @@
 import threading
 import unittest
 
-from atpy.data.iqfeed.iqfeed_bar_data_provider import *
+from atpy.data.iqfeed.iqfeed_bar_data_provider_tmp import *
 from atpy.data.latest_data_snapshot import LatestDataSnapshot
-from pyevents.events import AsyncListeners
+from pyevents.events import AsyncListeners, SyncListeners
 
 
 class TestIQFeedBarData(unittest.TestCase):
@@ -52,7 +52,7 @@ class TestIQFeedBarData(unittest.TestCase):
             e1.wait()
 
     def test_latest_bars(self):
-        listeners = AsyncListeners()
+        listeners = SyncListeners()
 
         with IQFeedBarDataListener(listeners=listeners, mkt_snapshot_depth=1000, interval_len=60) as listener:
             # test bars

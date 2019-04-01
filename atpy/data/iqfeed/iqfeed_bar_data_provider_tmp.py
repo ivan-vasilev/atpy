@@ -1,3 +1,5 @@
+import typing
+
 from dateutil import tz
 
 from atpy.data.iqfeed.iqfeed_level_1_provider import get_splits_dividends
@@ -24,7 +26,7 @@ class IQFeedBarDataListener(iq.SilentBarListener):
         self.interval_len = interval_len
         self.interval_type = interval_type
         self.mkt_snapshot_depth = mkt_snapshot_depth
-        self.watched_symbols = set()
+        self.watched_symbols = dict()
 
     def __enter__(self):
         launch_service()
@@ -65,9 +67,13 @@ class IQFeedBarDataListener(iq.SilentBarListener):
 
     def process_invalid_symbol(self, bad_symbol: str) -> None:
         if bad_symbol in self.watched_symbols and bad_symbol in self.watched_symbols:
-            self.watched_symbols.remove(bad_symbol)
+            del self.watched_symbols[bad_symbol]
 
     def process_latest_bar_update(self, bar_data: np.array) -> None:
+        bar_data = bar_data[0] if len(bar_data) == 1 else bar_data
+
+        symbol = bar_data[0].decode("utf-8")
+
         data = self._process_data(iqfeed_to_dict(bar_data, key_suffix=self.key_suffix))
         self.listeners({'type': 'latest_bar_update', 'data': data, 'interval_type': self.interval_type, 'interval_len': self.interval_len})
 
@@ -81,11 +87,36 @@ class IQFeedBarDataListener(iq.SilentBarListener):
         self.listeners({'type': 'bar', 'data': data, 'interval_type': self.interval_type, 'interval_len': self.interval_len})
 
     def process_history_bar(self, bar_data: np.array) -> None:
-        data = self._process_data(iqfeed_to_dict(np.copy(bar_data), key_suffix=self.key_suffix))
+        bar_data = (bar_data[0] if len(bar_data) == 1 else bar_data).copy()
 
-        adjust_df(data, get_splits_dividends(data['symbol'], self.streaming_conn))
+        symbol = bar_data[0].decode("utf-8")
 
-        self.listeners({'type': 'bar', 'data': data, 'interval_type': self.interval_type, 'interval_len': self.interval_len})
+        self.watched_symbols[symbol].append(bar_data)
+
+        if len(self.watched_symbols[symbol]) == self.mkt_snapshot_depth:
+            df = pd.DataFrame(create_batch(self.watched_symbols[symbol]))
+
+            df['timestamp'] = pd.Index(df['date'] + df['time']).tz_localize('US/Eastern').tz_convert('UTC')
+
+            df.drop(['date', 'time'], inplace=True, axis=1)
+
+            df.rename(index=str,
+                      columns={'open_p': 'open',
+                               'high_p': 'high',
+                               'low_p': 'low',
+                               'close_p': 'close',
+                               'tot_vlm': 'total_volume',
+                               'prd_vlm': 'period_volume',
+                               'num_trds': 'number_of_trades'},
+                      inplace=True)
+
+            df.set_index(['symbol', 'timestamp'], drop=True, inplace=True, append=False)
+
+            adjust_df(df, get_splits_dividends(symbol, self.streaming_conn))
+
+            self.watched_symbols[symbol] = df
+
+            self.listeners({'type': 'bar', 'data': df, 'interval_type': self.interval_type, 'interval_len': self.interval_len})
 
     def bar_event_stream(self):
         return EventFilter(listeners=self.listeners,
@@ -96,14 +127,14 @@ class IQFeedBarDataListener(iq.SilentBarListener):
         if event['type'] == 'watch_bars':
             self.watch_bars(event['data']['symbol'] if isinstance(event['data'], dict) else event['data'])
 
-    def watch_bars(self, symbol):
+    def watch_bars(self, symbol: typing.Union[str, list]):
         if isinstance(symbol, str) and symbol not in self.watched_symbols:
             data_copy = {'symbol': symbol, 'interval_type': self.interval_type, 'interval_len': self.interval_len}
             if self.mkt_snapshot_depth > 0:
                 data_copy['lookback_bars'] = self.mkt_snapshot_depth
 
             self.conn.watch(**data_copy)
-            self.watched_symbols.add(symbol)
+            self.watched_symbols[symbol] = list()
         elif isinstance(symbol, list):
             data_copy = dict(symbol=symbol)
             data_copy['interval_type'] = self.interval_type
@@ -115,9 +146,9 @@ class IQFeedBarDataListener(iq.SilentBarListener):
             for s in [s for s in data_copy['symbol'] if s not in self.watched_symbols]:
                 data_copy['symbol'] = s
                 self.conn.watch(**data_copy)
-                self.watched_symbols.add(s)
+                self.watched_symbols[s] = list()
 
-    def _process_data(self, data):
+    def _bar_to_df(self, data):
         result = dict()
 
         sf = self.key_suffix
