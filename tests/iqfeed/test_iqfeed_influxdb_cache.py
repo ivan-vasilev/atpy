@@ -6,7 +6,7 @@ from pandas.util.testing import assert_frame_equal
 
 import atpy.data.cache.influxdb_cache_requests as inf_cache
 from atpy.data.cache.influxdb_cache import update_to_latest, ranges
-from atpy.data.iqfeed.iqfeed_bar_data_provider import *
+import pandas as pd
 from atpy.data.iqfeed.iqfeed_influxdb_cache import *
 from atpy.data.iqfeed.iqfeed_influxdb_cache_requests import get_cache_fundamentals
 from atpy.data.iqfeed.iqfeed_level_1_provider import get_fundamentals

@@ -11,7 +11,7 @@ def adjust_df(data: pd.DataFrame, adjustments: pd.DataFrame):
     :param adjustments: list of adjustments in the form of [(date, split_factor/dividend_amount, 'split'/'dividend'), ...]
     :return adjusted data
     """
-    if not data.empty:
+    if not data.empty and not adjustments.empty:
         idx = pd.IndexSlice
         start = data.iloc[0].name[0] if isinstance(data.iloc[0].name, tuple) else data.iloc[0].name
         end = data.iloc[-1].name[0] if isinstance(data.iloc[0].name, tuple) else data.iloc[-1].name

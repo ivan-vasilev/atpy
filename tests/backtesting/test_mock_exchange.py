@@ -77,7 +77,7 @@ class TestMockExchange(unittest.TestCase):
 
             me = MockExchange(listeners=listeners,
                               order_requests_event_stream=order_request_events,
-                              bar_event_stream=bars.bar_event_stream(),
+                              bar_event_stream=bars.all_full_bars_event_stream(),
                               order_processor=StaticSlippageLoss(0.1),
                               commission_loss=PerShareCommissionLoss(0.1))
 
