@@ -65,7 +65,7 @@ class TestIQFeedBarData(unittest.TestCase):
     def test_partial_updates(self):
         listeners = AsyncListeners()
         import time
-        with IQFeedBarDataListener(listeners=listeners, mkt_snapshot_depth=1, interval_len=60, interval_type='s', adjust_history=False, update_interval=1) as listener:
+        with IQFeedBarDataListener(listeners=listeners, mkt_snapshot_depth=10, interval_len=60, interval_type='s', adjust_history=False, update_interval=1) as listener:
             listener.watch_bars('TSLA')
             time.sleep(1000)
 

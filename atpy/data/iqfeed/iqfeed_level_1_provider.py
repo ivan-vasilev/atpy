@@ -7,20 +7,19 @@ import numpy as np
 import pandas as pd
 
 import pyiqfeed as iq
-from atpy.data.iqfeed.util import launch_service, iqfeed_to_dict, create_batch, IQFeedDataProvider
+from atpy.data.iqfeed.util import launch_service, iqfeed_to_dict, IQFeedDataProvider
 from pyevents.events import SyncListeners, EventFilter
 
 
 class IQFeedLevel1Listener(iq.SilentQuoteListener):
 
-    def __init__(self, listeners, fire_ticks=True, minibatch=None, conn: iq.QuoteConn = None, key_suffix=''):
+    def __init__(self, listeners, fire_ticks=True, conn: iq.QuoteConn = None, key_suffix=''):
         super().__init__(name="Level 1 listener")
 
         self.listeners = listeners
         self.listeners += self.on_event
 
         self.fire_ticks = fire_ticks
-        self.minibatch = minibatch
         self.conn = conn
         self._own_conn = conn is None
         self.key_suffix = key_suffix
@@ -112,19 +111,6 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener):
         if self.fire_ticks:
             self.listeners({'type': 'level_1_regional_quote', 'data': iqfeed_to_dict(quote, self.key_suffix)})
 
-        if self.minibatch is not None:
-            if self.current_regional_mb is None:
-                self.current_regional_mb = np.empty((self.minibatch,), dtype=self.conn.regional_type)
-                self._current_regional_mb_index = 0
-
-            self.current_regional_mb[self._current_regional_mb_index] = quote
-            self._current_regional_mb_index += 1
-
-            if len(self.current_regional_mb) == self.minibatch:
-                self.listeners({'type': 'level_1_regional_quote_batch', 'data': pd.DataFrame(create_batch(self.current_regional_mb))})
-
-                self._current_regional_mb_index = None
-
     def regional_quote_provider(self):
         return IQFeedDataProvider(listeners=self.listeners, accept_event=lambda e: True if e['type'] == 'level_1_regional_quote' else False)
 
@@ -138,18 +124,6 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener):
     def process_update(self, update: np.array):
         if self.fire_ticks:
             self.listeners({'type': 'level_1_tick', 'data': iqfeed_to_dict(update, self.key_suffix)})
-
-        if self.minibatch is not None:
-            if self.current_update_mb is None:
-                self.current_update_mb = np.empty((self.minibatch,), dtype=self.conn._update_dtype)
-                self._current_update_mb_index = 0
-
-            self.current_update_mb[self._current_update_mb_index] = update
-            self._current_update_mb_index += 1
-
-            if len(self.current_update_mb) == self.minibatch:
-                self.listeners({'type': 'level_1_tick_batch', 'data': pd.DataFrame(create_batch(self.current_update_mb))})
-                self.current_update_mb = None
 
     def tick_event_filter(self):
         if not self.fire_ticks:

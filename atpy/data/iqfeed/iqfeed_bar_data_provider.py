@@ -89,7 +89,11 @@ class IQFeedBarDataListener(iq.SilentBarListener):
 
             if df_timestamp != bar_timestamp:
                 data = self._bar_to_df(bar_data)
-                self.watched_symbols[symbol] = df.append(data) if self.mkt_snapshot_depth > 0 else data
+                df = df.append(data) if self.mkt_snapshot_depth > 0 else data
+                if df.shape[0] > self.mkt_snapshot_depth:
+                    df = df.iloc[df.shape[0] - self.mkt_snapshot_depth:]
+
+                self.watched_symbols[symbol] = df
             else:
                 df.iloc[-1] = bar_data['open_p'], \
                               bar_data['high_p'], \

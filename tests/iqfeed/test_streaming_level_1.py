@@ -11,7 +11,7 @@ class TestIQFeedLevel1(unittest.TestCase):
 
     def test_fundamentals(self):
         listeners = AsyncListeners()
-        with IQFeedLevel1Listener(minibatch=2, listeners=listeners) as listener, listener.fundamentals_provider() as provider:
+        with IQFeedLevel1Listener(listeners=listeners) as listener, listener.fundamentals_provider() as provider:
             listener.watch('IBM')
             listener.watch('AAPL')
             listener.watch('GOOG')
@@ -51,7 +51,7 @@ class TestIQFeedLevel1(unittest.TestCase):
     def test_summary(self):
         listeners = AsyncListeners()
 
-        with IQFeedLevel1Listener(minibatch=2, listeners=listeners) as listener, listener.summary_provider() as data_provider:
+        with IQFeedLevel1Listener(listeners=listeners) as listener, listener.summary_provider() as data_provider:
             listener.watch('IBM')
             listener.watch('AAPL')
             listener.watch('GOOG')
