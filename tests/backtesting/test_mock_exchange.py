@@ -25,7 +25,7 @@ class TestMockExchange(unittest.TestCase):
 
             me = MockExchange(listeners=listeners,
                               order_requests_event_stream=order_request_events,
-                              tick_event_stream=level_1.tick_event_filter(),
+                              tick_event_stream=level_1.all_level_1_filter(),
                               order_processor=StaticSlippageLoss(0.1),
                               commission_loss=PerShareCommissionLoss(0.1))
 
@@ -185,7 +185,7 @@ class TestMockExchange(unittest.TestCase):
 
             me = MockExchange(listeners=listeners,
                               order_requests_event_stream=order_request_events,
-                              tick_event_stream=level_1.tick_event_filter(),
+                              tick_event_stream=level_1.all_level_1_filter(),
                               order_processor=StaticSlippageLoss(0.1),
                               commission_loss=PerShareCommissionLoss(0.1))
 
@@ -237,7 +237,7 @@ class TestMockExchange(unittest.TestCase):
 
             me = MockExchange(listeners=listeners,
                               order_requests_event_stream=order_request_events,
-                              tick_event_stream=level_1.tick_event_filter(),
+                              tick_event_stream=level_1.all_level_1_filter(),
                               order_processor=StaticSlippageLoss(0.1),
                               commission_loss=PerShareCommissionLoss(0.1))
 
@@ -289,7 +289,7 @@ class TestMockExchange(unittest.TestCase):
 
             me = MockExchange(listeners=listeners,
                               order_requests_event_stream=order_request_events,
-                              tick_event_stream=level_1.tick_event_filter(),
+                              tick_event_stream=level_1.all_level_1_filter(),
                               order_processor=StaticSlippageLoss(0.1),
                               commission_loss=PerShareCommissionLoss(0.1))
 

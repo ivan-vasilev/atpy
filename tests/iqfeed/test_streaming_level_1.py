@@ -11,7 +11,7 @@ class TestIQFeedLevel1(unittest.TestCase):
 
     def test_fundamentals(self):
         listeners = AsyncListeners()
-        with IQFeedLevel1Listener(listeners=listeners) as listener, listener.fundamentals_provider() as provider:
+        with IQFeedLevel1Listener(listeners=listeners) as listener, listener.fundamentals_provider() as fund_provider:
             listener.watch('IBM')
             listener.watch('AAPL')
             listener.watch('GOOG')
@@ -21,17 +21,16 @@ class TestIQFeedLevel1(unittest.TestCase):
             e1 = threading.Event()
 
             def on_fund_item(event):
-                if event['type'] == 'level_1_fundamentals':
-                    try:
-                        self.assertEqual(len(event['data']), 50)
-                    finally:
-                        e1.set()
+                try:
+                    self.assertEqual(len(event['data']), 50)
+                finally:
+                    e1.set()
 
-            listeners += on_fund_item
+            fund_provider += on_fund_item
 
             e1.wait()
 
-            for i, fund_item in enumerate(provider):
+            for i, fund_item in enumerate(fund_provider):
                 self.assertEqual(len(fund_item), 50)
                 s = fund_item['symbol']
                 self.assertTrue('SPY' == s or 'AAPL' == s or 'IBM' == s or 'GOOG' == s or 'MSFT' == s)
@@ -128,7 +127,7 @@ class TestIQFeedLevel1(unittest.TestCase):
     def test_news(self):
         listeners = AsyncListeners()
 
-        with IQFeedLevel1Listener(minibatch=2, listeners=listeners) as listener, listener.news_provider() as provider:
+        with IQFeedLevel1Listener(minibatch=2, listeners=listeners) as listener, listener.news_filter() as provider:
             listener.watch('IBM')
             listener.watch('AAPL')
             listener.watch('GOOG')

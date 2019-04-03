@@ -2,7 +2,8 @@ import threading
 import unittest
 
 from atpy.data.iqfeed.iqfeed_bar_data_provider import *
-from pyevents.events import AsyncListeners
+from pyevents.events import AsyncListeners, SyncListeners
+from pandas.util.testing import assert_frame_equal
 from atpy.data.util import get_nasdaq_listed_companies
 
 logging.basicConfig(level=logging.DEBUG)
@@ -52,21 +53,75 @@ class TestIQFeedBarData(unittest.TestCase):
 
             e1.wait()
 
+    def test_correctness_small(self):
+        self._test_correctness('IBM')
+
+    def test_correctness_large(self):
+        nasdaq = get_nasdaq_listed_companies()
+        nasdaq = nasdaq.loc[nasdaq['Market Category'] == 'Q']
+        nasdaq = nasdaq.sample(400)
+
+        self._test_correctness(nasdaq['Symbol'].to_list())
+
+    def _test_correctness(self, symbols):
+        listeners = SyncListeners()
+        depth = 5
+        with IQFeedBarDataListener(listeners=listeners, mkt_snapshot_depth=depth, interval_len=60, interval_type='s', adjust_history=False, update_interval=1) as listener:
+            dfs = dict()
+
+            te = threading.Event()
+
+            def full_bar_listener(df):
+                self.assertEqual(df.shape[0], depth)
+                symbol_ind = df.index.names.index('symbol')
+                symbol = df.index.levels[symbol_ind][0]
+                dfs[symbol] = df.copy(deep=True)
+
+            full_bars = listener.all_full_bars_event_stream()
+            full_bars += full_bar_listener
+
+            conditions = {'ind_equal': False, 'ind_not_equal': False}
+
+            def bar_update_listener(df):
+                self.assertEqual(df.shape[0], depth)
+                symbol_ind = df.index.names.index('symbol')
+                symbol = df.index.levels[symbol_ind][0]
+                old_df = dfs[symbol]
+
+                if old_df.index.equals(df.index):
+                    assert_frame_equal(old_df.iloc[:-1], df.iloc[:-1], check_index_type=False)
+                    conditions['ind_equal'] = True
+                    print("Equal indices")
+                else:
+                    assert_frame_equal(old_df.iloc[1:], df.iloc[:-1], check_index_type=False)
+                    conditions['ind_not_equal'] = True
+                    print("Not equal indices")
+
+                try:
+                    assert_frame_equal(old_df.iloc[-1:], df.iloc[-1:], check_index_type=False)
+                except AssertionError:
+                    pass
+                else:
+                    raise AssertionError
+
+                if conditions['ind_equal'] is True and conditions['ind_not_equal'] is True:
+                    te.set()
+
+            bar_updates = listener.bar_updates_event_stream()
+            bar_updates += bar_update_listener
+
+            listener.watch_bars(symbols)
+
+            te.wait()
+
     def test_performance(self):
         listeners = AsyncListeners()
         import time
         nasdaq = get_nasdaq_listed_companies()
         nasdaq = nasdaq.loc[nasdaq['Market Category'] == 'Q']
-        nasdaq = nasdaq.sample(400)
-        with IQFeedBarDataListener(listeners=listeners, mkt_snapshot_depth=200, interval_len=60, interval_type='s', adjust_history=False, update_interval=1) as listener:
+        nasdaq = nasdaq.sample(480)
+        with IQFeedBarDataListener(listeners=listeners, mkt_snapshot_depth=200, interval_len=1, interval_type='s', adjust_history=False) as listener:
             listener.watch_bars(nasdaq['Symbol'].to_list())
-            time.sleep(1000)
-
-    def test_partial_updates(self):
-        listeners = AsyncListeners()
-        import time
-        with IQFeedBarDataListener(listeners=listeners, mkt_snapshot_depth=10, interval_len=60, interval_type='s', adjust_history=False, update_interval=1) as listener:
-            listener.watch_bars('TSLA')
             time.sleep(1000)
 
 

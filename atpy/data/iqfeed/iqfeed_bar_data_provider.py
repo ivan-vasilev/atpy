@@ -85,13 +85,16 @@ class IQFeedBarDataListener(iq.SilentBarListener):
                 .replace(tzinfo=tz.gettz('US/Eastern')) \
                 .astimezone(tz.gettz('UTC'))
 
-            df_timestamp = df.index[-1][df.index.names.index('timestamp')]
+            timestamp_ind = df.index.names.index('timestamp')
+            df_timestamp = df.index[-1][timestamp_ind]
 
             if df_timestamp != bar_timestamp:
                 data = self._bar_to_df(bar_data)
                 df = df.append(data) if self.mkt_snapshot_depth > 0 else data
                 if df.shape[0] > self.mkt_snapshot_depth:
                     df = df.iloc[df.shape[0] - self.mkt_snapshot_depth:]
+
+                df.index.set_levels(pd.to_datetime(df.index.levels[timestamp_ind], utc=True), level='timestamp', inplace=True)
 
                 self.watched_symbols[symbol] = df
             else:
@@ -103,7 +106,7 @@ class IQFeedBarDataListener(iq.SilentBarListener):
                               bar_data['prd_vlm'], \
                               bar_data['num_trds']
 
-        self.bar_updates += 1
+        self.bar_updates = (self.bar_updates + 1) % 1000000007
 
         if self.bar_updates % 100 == 0:
             logging.getLogger(__name__).debug("%d bar updates" % self.bar_updates)
@@ -112,12 +115,10 @@ class IQFeedBarDataListener(iq.SilentBarListener):
 
     def process_latest_bar_update(self, bar_data: np.array) -> None:
         df = self._process_bar_update(bar_data)
-
         self.listeners({'type': 'latest_bar_update', 'data': df, 'interval_type': self.interval_type, 'interval_len': self.interval_len})
 
     def process_live_bar(self, bar_data: np.array) -> None:
         df = self._process_bar_update(bar_data)
-
         self.listeners({'type': 'live_bar', 'data': df, 'interval_type': self.interval_type, 'interval_len': self.interval_len})
 
     def process_history_bar(self, bar_data: np.array) -> None:
@@ -140,7 +141,7 @@ class IQFeedBarDataListener(iq.SilentBarListener):
 
             self.listeners({'type': 'history_bars', 'data': df, 'interval_type': self.interval_type, 'interval_len': self.interval_len})
 
-    def latest_bar_event_stream(self):
+    def bar_updates_event_stream(self):
         return EventFilter(listeners=self.listeners,
                            event_filter=lambda e: True if 'type' in e and e['type'] == 'latest_bar_update' else False,
                            event_transformer=lambda e: e['data'])

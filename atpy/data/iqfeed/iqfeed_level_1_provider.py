@@ -13,22 +13,18 @@ from pyevents.events import SyncListeners, EventFilter
 
 class IQFeedLevel1Listener(iq.SilentQuoteListener):
 
-    def __init__(self, listeners, fire_ticks=True, conn: iq.QuoteConn = None, key_suffix=''):
+    def __init__(self, listeners, conn: iq.QuoteConn = None, key_suffix=''):
         super().__init__(name="Level 1 listener")
 
         self.listeners = listeners
         self.listeners += self.on_event
 
-        self.fire_ticks = fire_ticks
         self.conn = conn
         self._own_conn = conn is None
         self.key_suffix = key_suffix
 
-        self.fundamentals = dict()
+        self.watched_symbols = dict()
 
-        self.current_news_mb = list()
-        self.current_regional_mb = None
-        self.current_update_mb = None
         self._lock = threading.RLock()
 
     def __enter__(self):
@@ -68,10 +64,23 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener):
         if event['type'] == 'watch_ticks':
             self.watch(event['data'])
 
-    def watch(self, symbol):
-        with self._lock:
-            if symbol not in self.fundamentals:
-                self.conn.watch(symbol)
+    def watch(self, symbol: typing.Union[str, list]):
+        if isinstance(symbol, str) and symbol not in self.watched_symbols:
+            self.watched_symbols[symbol] = None
+            self.conn.watch(symbol)
+        elif isinstance(symbol, list):
+            for s in [s for s in symbol if s not in self.watched_symbols]:
+                self.watched_symbols[s] = None
+                self.conn.watch(s)
+
+    def unwatch(self, symbol: typing.Union[str, list]):
+        if isinstance(symbol, str) and symbol in self.watched_symbols:
+            del self.watched_symbols[symbol]
+            self.conn.unwatch(symbol)
+        elif isinstance(symbol, list):
+            for s in [s for s in symbol if s in self.watched_symbols]:
+                del self.watched_symbols[s]
+                self.conn.unwatch(s)
 
     def process_invalid_symbol(self, bad_symbol: str) -> None:
         """
@@ -82,55 +91,38 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener):
         logging.getLogger(__name__).warning("Invalid symbol request: " + str(bad_symbol))
 
         if bad_symbol in self.fundamentals:
-            if isinstance(self.fundamentals[bad_symbol], threading.Event):
-                e = self.fundamentals[bad_symbol]
-                del self.fundamentals[bad_symbol]
-                e.set()
+            del self.watched_symbols[bad_symbol]
 
     def process_news(self, news_item: iq.QuoteConn.NewsMsg):
-        news_item = news_item._asdict()
-
-        self.listeners({'type': 'level_1_news_item', 'data': news_item})
-
-        if self.minibatch is not None:
-            self.current_news_mb.append(news_item)
-            if len(self.current_news_mb) == self.minibatch:
-                processed_data = {f + self.key_suffix: list() for f in news_item.keys()}
-                for ni in self.current_news_mb:
-                    for k, v in ni.items():
-                        processed_data[k].append(v)
-
-                self.listeners({'type': 'level_1_news_batch', 'data': processed_data})
-
-                self.current_news_mb = list()
-
-    def news_provider(self):
-        return IQFeedDataProvider(listeners=self.listeners, accept_event=lambda e: True if e['type'] == 'level_1_news_item' else False)
+        self.listeners({'type': 'level_1_news_item', 'data': news_item._asdict()})
 
     def process_regional_quote(self, quote: np.array):
-        if self.fire_ticks:
-            self.listeners({'type': 'level_1_regional_quote', 'data': iqfeed_to_dict(quote, self.key_suffix)})
-
-    def regional_quote_provider(self):
-        return IQFeedDataProvider(listeners=self.listeners, accept_event=lambda e: True if e['type'] == 'level_1_regional_quote' else False)
+        self.listeners({'type': 'level_1_regional_quote', 'data': iqfeed_to_dict(quote)})
 
     def process_summary(self, summary: np.array):
-        if self.fire_ticks:
-            self.listeners({'type': 'level_1_tick', 'data': iqfeed_to_dict(summary, self.key_suffix)})
-
-    def summary_provider(self):
-        return IQFeedDataProvider(listeners=self.listeners, accept_event=lambda e: True if e['type'] == 'level_1_tick' else False)
+        self.listeners({'type': 'level_1_summary', 'data': iqfeed_to_dict(summary, )})
 
     def process_update(self, update: np.array):
-        if self.fire_ticks:
-            self.listeners({'type': 'level_1_tick', 'data': iqfeed_to_dict(update, self.key_suffix)})
+        self.listeners({'type': 'level_1_update', 'data': iqfeed_to_dict(update)})
 
-    def tick_event_filter(self):
-        if not self.fire_ticks:
-            raise AttributeError("This listener is not configured to fire ticks")
-
+    def news_filter(self):
         return EventFilter(listeners=self.listeners,
-                           event_filter=lambda e: True if 'type' in e and e['type'] == 'level_1_tick' else False,
+                           event_filter=lambda e: True if e['type'] == 'level_1_news_item' else False,
+                           event_transformer=lambda e: e['data'])
+
+    def regional_quote_filter(self):
+        return EventFilter(listeners=self.listeners,
+                           event_filter=lambda e: True if e['type'] == 'level_1_regional_quote' else False,
+                           event_transformer=lambda e: e['data'])
+
+    def all_level_1_filter(self):
+        return EventFilter(listeners=self.listeners,
+                           event_filter=lambda e: True if 'type' in e and e['type'] in ('level_1_summary', 'level_1_update') else False,
+                           event_transformer=lambda e: e['data'])
+
+    def level_1_update_filter(self):
+        return EventFilter(listeners=self.listeners,
+                           event_filter=lambda e: True if 'type' in e and e['type'] == 'level_1_update' else False,
                            event_transformer=lambda e: e['data'])
 
     def update_provider(self):
@@ -150,39 +142,40 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener):
 
         self.listeners({'type': 'level_1_fundamentals', 'data': f})
 
-    def fundamentals_provider(self):
-        return IQFeedDataProvider(listeners=self.listeners, accept_event=lambda e: True if e['type'] == 'level_1_fundamentals' else False)
-
-    def get_fundamentals(self, symbol: typing.Union[set, str]):
-        if isinstance(symbol, str):
-            symbol = {symbol}
-
-        with self._lock:
-            batch = list()
-            for i, s in enumerate(symbol):
-                if s not in self.fundamentals:
-                    e = threading.Event()
-                    self.fundamentals[s] = e
-                    batch.append((s, e))
-
-                    if len(batch) == 10 or i == len(symbol) - 1:
-                        for batch_sym, _ in batch:
-                            self.conn.watch(batch_sym)
-
-                        for _, e in batch:
-                            e.wait()
-
-                        batch = list()
-
-                    if i % 100 == 0 and i > 0:
-                        logging.getLogger(__name__).info("Fundamentals loaded: " + str(i))
-
-        return {s: self.fundamentals[s] for s in symbol if s in self.fundamentals}
+    def fundamentals_filter(self):
+        return EventFilter(listeners=self.listeners,
+                           event_filter=lambda e: True if e['type'] == 'level_1_fundamentals' else False,
+                           event_transformer=lambda e: e['data'])
 
 
-def get_fundamentals(symbol: typing.Union[set, str], conn: iq.QuoteConn = None):
-    with IQFeedLevel1Listener(listeners=SyncListeners(), fire_ticks=False, conn=conn) as listener:
-        return listener.get_fundamentals(symbol)
+def get_fundamentals(symbol: typing.Union[str, list], conn: iq.QuoteConn = None):
+    result = dict()
+    invalid = set()
+
+    if isinstance(symbol, str):
+        symbol = {symbol}
+
+    e = threading.Event()
+
+    class TmpIQFeedLevel1Listener(IQFeedLevel1Listener):
+        def process_invalid_symbol(self, bad_symbol: str) -> None:
+            super().process_invalid_symbol(bad_symbol)
+            invalid.add(bad_symbol)
+            if (result.keys() | invalid) - symbol == {}:
+                e.set()
+
+        def process_fundamentals(self, fund: np.array):
+            fundamentals = super().process_fundamentals()
+            s = fundamentals['Symbol']
+            result[s] = fundamentals
+            if (result.keys() | invalid) - symbol == {}:
+                e.set()
+
+    with TmpIQFeedLevel1Listener(listeners=SyncListeners(), conn=conn) as listener:
+        listener.watch(symbol)
+        e.wait()
+
+    return result
 
 
 def get_splits_dividends(symbol: typing.Union[set, str], conn: iq.QuoteConn = None):
