@@ -9,11 +9,12 @@ import pandas as pd
 import pyiqfeed as iq
 from atpy.data.iqfeed.util import launch_service, iqfeed_to_dict, IQFeedDataProvider
 from pyevents.events import SyncListeners, EventFilter
+from collections import Iterable
 
 
 class IQFeedLevel1Listener(iq.SilentQuoteListener):
 
-    def __init__(self, listeners, conn: iq.QuoteConn = None, key_suffix=''):
+    def __init__(self, listeners, conn: iq.QuoteConn = None):
         super().__init__(name="Level 1 listener")
 
         self.listeners = listeners
@@ -21,7 +22,6 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener):
 
         self.conn = conn
         self._own_conn = conn is None
-        self.key_suffix = key_suffix
 
         self.watched_symbols = dict()
 
@@ -64,16 +64,16 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener):
         if event['type'] == 'watch_ticks':
             self.watch(event['data'])
 
-    def watch(self, symbol: typing.Union[str, list]):
+    def watch(self, symbol: typing.Union[str, Iterable]):
         if isinstance(symbol, str) and symbol not in self.watched_symbols:
             self.watched_symbols[symbol] = None
             self.conn.watch(symbol)
-        elif isinstance(symbol, list):
+        elif isinstance(symbol, Iterable):
             for s in [s for s in symbol if s not in self.watched_symbols]:
                 self.watched_symbols[s] = None
                 self.conn.watch(s)
 
-    def unwatch(self, symbol: typing.Union[str, list]):
+    def unwatch(self, symbol: typing.Union[str, Iterable]):
         if isinstance(symbol, str) and symbol in self.watched_symbols:
             del self.watched_symbols[symbol]
             self.conn.unwatch(symbol)
@@ -120,26 +120,18 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener):
                            event_filter=lambda e: True if 'type' in e and e['type'] in ('level_1_summary', 'level_1_update') else False,
                            event_transformer=lambda e: e['data'])
 
+    def level_1_summary_filter(self):
+        return EventFilter(listeners=self.listeners,
+                           event_filter=lambda e: True if 'type' in e and e['type'] == 'level_1_summary' else False,
+                           event_transformer=lambda e: e['data'])
+
     def level_1_update_filter(self):
         return EventFilter(listeners=self.listeners,
                            event_filter=lambda e: True if 'type' in e and e['type'] == 'level_1_update' else False,
                            event_transformer=lambda e: e['data'])
 
-    def update_provider(self):
-        return IQFeedDataProvider(listeners=self.listeners, accept_event=lambda e: True if e['type'] == 'level_1_tick_batch' else False)
-
     def process_fundamentals(self, fund: np.array):
-        f = iqfeed_to_dict(fund, self.key_suffix)
-        symbol = f['symbol']
-
-        if symbol in self.fundamentals and isinstance(self.fundamentals[symbol], threading.Event):
-            e = self.fundamentals[symbol]
-            self.fundamentals[symbol] = f
-            e.set()
-            self.conn.unwatch(symbol)
-        else:
-            self.fundamentals[symbol] = f
-
+        f = iqfeed_to_dict(fund)
         self.listeners({'type': 'level_1_fundamentals', 'data': f})
 
     def fundamentals_filter(self):
@@ -148,7 +140,7 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener):
                            event_transformer=lambda e: e['data'])
 
 
-def get_fundamentals(symbol: typing.Union[str, list], conn: iq.QuoteConn = None):
+def get_fundamentals(symbol: typing.Union[str, Iterable], conn: iq.QuoteConn = None):
     result = dict()
     invalid = set()
 
@@ -165,10 +157,10 @@ def get_fundamentals(symbol: typing.Union[str, list], conn: iq.QuoteConn = None)
                 e.set()
 
         def process_fundamentals(self, fund: np.array):
-            fundamentals = super().process_fundamentals()
-            s = fundamentals['Symbol']
+            fundamentals = iqfeed_to_dict(fund)
+            s = fundamentals['symbol']
             result[s] = fundamentals
-            if (result.keys() | invalid) - symbol == {}:
+            if len(symbol - (result.keys() | invalid)) == 0:
                 e.set()
 
     with TmpIQFeedLevel1Listener(listeners=SyncListeners(), conn=conn) as listener:

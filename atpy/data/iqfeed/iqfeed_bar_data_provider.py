@@ -1,4 +1,5 @@
 import typing
+from collections import Iterable
 
 from dateutil import tz
 
@@ -155,7 +156,7 @@ class IQFeedBarDataListener(iq.SilentBarListener):
         if event['type'] == 'watch_bars':
             self.watch_bars(event['data']['symbol'] if isinstance(event['data'], dict) else event['data'])
 
-    def watch_bars(self, symbol: typing.Union[str, list]):
+    def watch_bars(self, symbol: typing.Union[str, Iterable]):
         data_copy = {'symbol': symbol,
                      'interval_type': self.interval_type,
                      'interval_len': self.interval_len,
@@ -165,7 +166,7 @@ class IQFeedBarDataListener(iq.SilentBarListener):
         if isinstance(symbol, str) and symbol not in self.watched_symbols:
             self.watched_symbols[symbol] = None
             self.conn.watch(**data_copy)
-        elif isinstance(symbol, list):
+        elif isinstance(symbol, Iterable):
             for s in [s for s in data_copy['symbol'] if s not in self.watched_symbols]:
                 data_copy['symbol'] = s
                 self.watched_symbols[s] = None
