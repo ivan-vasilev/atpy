@@ -6,8 +6,6 @@ from pyevents.events import AsyncListeners, SyncListeners
 from pandas.util.testing import assert_frame_equal
 from atpy.data.util import get_nasdaq_listed_companies
 
-logging.basicConfig(level=logging.DEBUG)
-
 
 class TestIQFeedBarData(unittest.TestCase):
     """
@@ -56,7 +54,7 @@ class TestIQFeedBarData(unittest.TestCase):
     def test_correctness_small(self):
         self._test_correctness('IBM')
 
-    def test_correctness_large(self):
+    def test_nasdaq_correctness_large(self):
         nasdaq = get_nasdaq_listed_companies()
         nasdaq = nasdaq.loc[nasdaq['Market Category'] == 'Q']
         nasdaq = nasdaq.sample(400)
@@ -64,6 +62,8 @@ class TestIQFeedBarData(unittest.TestCase):
         self._test_correctness(nasdaq['Symbol'].to_list())
 
     def _test_correctness(self, symbols):
+        logging.basicConfig(level=logging.DEBUG)
+
         listeners = SyncListeners()
         depth = 5
         with IQFeedBarDataListener(listeners=listeners, mkt_snapshot_depth=depth, interval_len=60, interval_type='s', adjust_history=False, update_interval=1) as listener:
@@ -91,11 +91,9 @@ class TestIQFeedBarData(unittest.TestCase):
                 if old_df.index.equals(df.index):
                     assert_frame_equal(old_df.iloc[:-1], df.iloc[:-1], check_index_type=False)
                     conditions['ind_equal'] = True
-                    print("Equal indices")
                 else:
                     assert_frame_equal(old_df.iloc[1:], df.iloc[:-1], check_index_type=False)
                     conditions['ind_not_equal'] = True
-                    print("Not equal indices")
 
                 try:
                     assert_frame_equal(old_df.iloc[-1:], df.iloc[-1:], check_index_type=False)
@@ -114,7 +112,8 @@ class TestIQFeedBarData(unittest.TestCase):
 
             te.wait()
 
-    def test_performance(self):
+    @unittest.skip('Run manually')
+    def test_nasdaq_performance(self):
         listeners = AsyncListeners()
         import time
         nasdaq = get_nasdaq_listed_companies()

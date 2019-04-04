@@ -74,7 +74,7 @@ class IQFeedBarDataListener(iq.SilentBarListener):
     def _process_bar_update(self, bar_data: np.array) -> pd.DataFrame:
         bar_data = bar_data[0] if len(bar_data) == 1 else bar_data
 
-        symbol = bar_data[0].decode("utf-8")
+        symbol = bar_data[0].decode("ascii")
 
         df = self.watched_symbols[symbol]
 
@@ -95,7 +95,7 @@ class IQFeedBarDataListener(iq.SilentBarListener):
                 if df.shape[0] > self.mkt_snapshot_depth:
                     df = df.iloc[df.shape[0] - self.mkt_snapshot_depth:]
 
-                df.index.set_levels(pd.to_datetime(df.index.levels[timestamp_ind], utc=True), level='timestamp', inplace=True)
+                df.index = df.index.set_levels(pd.to_datetime(df.index.levels[timestamp_ind], utc=True), level='timestamp')
 
                 self.watched_symbols[symbol] = df
             else:
@@ -125,8 +125,8 @@ class IQFeedBarDataListener(iq.SilentBarListener):
     def process_history_bar(self, bar_data: np.array) -> None:
         bar_data = (bar_data[0] if len(bar_data) == 1 else bar_data).copy()
 
-        symbol = bar_data[0].decode("utf-8")
-
+        symbol = bar_data[0].decode("ascii")
+        
         if self.watched_symbols[symbol] is None:
             self.watched_symbols[symbol] = list()
 
@@ -177,25 +177,22 @@ class IQFeedBarDataListener(iq.SilentBarListener):
         if len(bars) == 0:
             return pd.DataFrame()
 
-        df = pd.DataFrame(create_batch(bars))
+        df = iqfeed_to_df(bars)
 
         df['timestamp'] = pd.Index(df['date'] + pd.to_timedelta(df['time'], unit='us')) \
             .tz_localize('US/Eastern') \
             .tz_convert('UTC')
 
-        df.rename(index=str,
-                  columns={'open_p': 'open',
-                           'high_p': 'high',
-                           'low_p': 'low',
-                           'close_p': 'close',
-                           'tot_vlm': 'total_volume',
-                           'prd_vlm': 'period_volume',
-                           'num_trds': 'number_of_trades'},
-                  inplace=True)
-
-        df.set_index(['timestamp', 'symbol'], drop=True, inplace=True, append=False)
-
-        df.drop(['date', 'time'], inplace=True, axis=1)
+        df = df.rename(index=str,
+                       columns={'open_p': 'open',
+                                'high_p': 'high',
+                                'low_p': 'low',
+                                'close_p': 'close',
+                                'tot_vlm': 'total_volume',
+                                'prd_vlm': 'period_volume',
+                                'num_trds': 'number_of_trades'}) \
+            .set_index(['timestamp', 'symbol'], drop=True, append=False) \
+            .drop(['date', 'time'], axis=1)
 
         return df
 
@@ -205,7 +202,7 @@ class IQFeedBarDataListener(iq.SilentBarListener):
 
         bar_data = (bar_data[0] if len(bar_data) == 1 else bar_data).copy()
 
-        result['symbol'] = bar_data[0].decode("utf-8")
+        result['symbol'] = bar_data[0].decode("ascii")
 
         result['timestamp'] = (datetime.datetime.combine(bar_data['date'].astype(datetime.datetime), datetime.datetime.min.time())
                                + datetime.timedelta(microseconds=bar_data['time'].astype(np.uint64) / 1)) \
@@ -219,8 +216,8 @@ class IQFeedBarDataListener(iq.SilentBarListener):
         result['period_volume'] = bar_data['prd_vlm']
         result['number_of_trades'] = bar_data['num_trds']
 
-        result = pd.DataFrame(result, index=pd.MultiIndex.from_tuples([(result['timestamp'], result['symbol'])], names=['timestamp', 'symbol']))
-        result.drop(['timestamp', 'symbol'], axis=1, inplace=True)
+        result = pd.DataFrame(result, index=pd.MultiIndex.from_tuples([(result['timestamp'], result['symbol'])], names=['timestamp', 'symbol'])) \
+            .drop(['timestamp', 'symbol'], axis=1)
 
         return result
 

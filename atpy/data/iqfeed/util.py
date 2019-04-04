@@ -4,12 +4,14 @@ import os
 import queue
 import tempfile
 import zipfile
+import typing
 
 import numpy as np
 import pandas as pd
 import requests
 
 import pyiqfeed as iq
+from collections import OrderedDict, deque
 
 
 def dtn_credentials():
@@ -31,17 +33,22 @@ def launch_service():
     svc.launch(headless=headless)
 
 
-def create_batch(data, key_suffix=''):
+def iqfeed_to_df(data: typing.Collection):
     """
-    Create minibatch-type data based on the pyiqfeed data format
+    Create minibatch-type data frame based on the pyiqfeed data format
     :param data: data list
     :return:
     """
+    result = None
+
     for i, datum in enumerate(data):
         datum = datum[0] if len(datum) == 1 else datum
 
-        if i == 0:
-            result = {n.replace(" ", "_").lower() + key_suffix: np.empty((len(data),), d.dtype if str(d.dtype) not in ('|S4', '|S3') else object) for n, d in zip(datum.dtype.names, datum)}
+        if result is None:
+            result = OrderedDict(
+                [(n.replace(" ", "_").lower(),
+                  np.empty((len(data),), d.dtype if str(d.dtype) not in ('|S4', '|S3') else object))
+                 for n, d in zip(datum.dtype.names, datum)])
 
         for j, f in enumerate(datum.dtype.names):
             d = datum[j]
@@ -50,25 +57,50 @@ def create_batch(data, key_suffix=''):
 
             result[f.replace(" ", "_").lower()][i] = d
 
+    return pd.DataFrame(result)
+
+
+def iqfeed_to_deque(data: typing.Iterable, maxlen: int = None):
+    """
+    Create minibatch-type dict of deques based on the pyiqfeed data format
+    :param data: data list
+    :param maxlen: maximum deque length
+    :return:
+    """
+    result = None
+
+    for i, datum in enumerate(data):
+        datum = datum[0] if len(datum) == 1 else datum
+
+        if result is None:
+            result = OrderedDict(
+                [(n.replace(" ", "_").lower(),
+                  deque(maxlen=maxlen))
+                 for n, d in zip(datum.dtype.names, datum)])
+
+        for j, f in enumerate(datum.dtype.names):
+            d = datum[j]
+            if isinstance(datum[j], bytes):
+                d = datum[j].decode('ascii')
+
+            result[f.replace(" ", "_").lower()].append(d)
+
     return result
 
 
-def iqfeed_to_dict(data, key_suffix=''):
+def iqfeed_to_dict(data):
     """
     Turn one iqfeed data item to dict
     :param data: data list
-    :param key_suffix: suffix to each name
     :return:
     """
     data = data[0] if len(data) == 1 else data
 
-    result = {n.replace(" ", "_").lower() + key_suffix: d for n, d in zip(data.dtype.names, data)}
+    result = OrderedDict([(n.replace(" ", "_").lower(), d) for n, d in zip(data.dtype.names, data)])
 
     for k, v in result.items():
         if isinstance(v, bytes):
             result[k] = v.decode('ascii')
-        elif isinstance(v, np.datetime64):
-            result[k] = v.astype(datetime.datetime)
         elif pd.isnull(v):
             result[k] = None
 

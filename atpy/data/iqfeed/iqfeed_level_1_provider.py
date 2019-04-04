@@ -7,25 +7,27 @@ import numpy as np
 import pandas as pd
 
 import pyiqfeed as iq
-from atpy.data.iqfeed.util import launch_service, iqfeed_to_dict, IQFeedDataProvider
+from atpy.data.iqfeed.util import launch_service, iqfeed_to_dict, iqfeed_to_deque
 from pyevents.events import SyncListeners, EventFilter
 from collections import Iterable
 
 
 class IQFeedLevel1Listener(iq.SilentQuoteListener):
 
-    def __init__(self, listeners, conn: iq.QuoteConn = None):
+    def __init__(self, listeners, mkt_snapshot_depth=0, conn: iq.QuoteConn = None):
         super().__init__(name="Level 1 listener")
 
         self.listeners = listeners
         self.listeners += self.on_event
+
+        self.mkt_snapshot_depth = mkt_snapshot_depth
 
         self.conn = conn
         self._own_conn = conn is None
 
         self.watched_symbols = dict()
 
-        self._lock = threading.RLock()
+        self.total_updates = 0
 
     def __enter__(self):
         if self._own_conn:
@@ -65,6 +67,7 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener):
             self.watch(event['data'])
 
     def watch(self, symbol: typing.Union[str, Iterable]):
+        """Watch symbol for both trades and quotes"""
         if isinstance(symbol, str) and symbol not in self.watched_symbols:
             self.watched_symbols[symbol] = None
             self.conn.watch(symbol)
@@ -72,6 +75,16 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener):
             for s in [s for s in symbol if s not in self.watched_symbols]:
                 self.watched_symbols[s] = None
                 self.conn.watch(s)
+
+    def watch_trades(self, symbol: typing.Union[str, Iterable]):
+        """Watch symbol for both trades only"""
+        if isinstance(symbol, str) and symbol not in self.watched_symbols:
+            self.watched_symbols[symbol] = None
+            self.conn.trades_watch(symbol)
+        elif isinstance(symbol, Iterable):
+            for s in [s for s in symbol if s not in self.watched_symbols]:
+                self.watched_symbols[s] = None
+                self.conn.trades_watch(s)
 
     def unwatch(self, symbol: typing.Union[str, Iterable]):
         if isinstance(symbol, str) and symbol in self.watched_symbols:
@@ -90,7 +103,7 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener):
 
         logging.getLogger(__name__).warning("Invalid symbol request: " + str(bad_symbol))
 
-        if bad_symbol in self.fundamentals:
+        if bad_symbol in self.watched_symbols:
             del self.watched_symbols[bad_symbol]
 
     def process_news(self, news_item: iq.QuoteConn.NewsMsg):
@@ -100,10 +113,33 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener):
         self.listeners({'type': 'level_1_regional_quote', 'data': iqfeed_to_dict(quote)})
 
     def process_summary(self, summary: np.array):
-        self.listeners({'type': 'level_1_summary', 'data': iqfeed_to_dict(summary, )})
+        if self.mkt_snapshot_depth > 0:
+            s = iqfeed_to_deque([summary], maxlen=self.mkt_snapshot_depth)
+            self.watched_symbols[s['symbol'][0]] = s
+
+        self.listeners({'type': 'level_1_summary', 'data': iqfeed_to_dict(summary)})
 
     def process_update(self, update: np.array):
-        self.listeners({'type': 'level_1_update', 'data': iqfeed_to_dict(update)})
+        if self.mkt_snapshot_depth > 0:
+            update = update[0] if len(update) == 1 else update
+            symbol = update[0].decode("ascii")
+
+            data = self.watched_symbols[symbol]
+
+            for deq, v in zip(data.values(), update):
+                if isinstance(v, bytes):
+                    v = v.decode('ascii')
+
+                deq.append(v)
+        else:
+            data = iqfeed_to_dict(update)
+
+        self.total_updates = (self.total_updates + 1) % 1000000007
+
+        if self.total_updates % 1000 == 0:
+            logging.getLogger(__name__).debug("%d total updates" % self.total_updates)
+
+        self.listeners({'type': 'level_1_update', 'data': data})
 
     def news_filter(self):
         return EventFilter(listeners=self.listeners,
@@ -146,6 +182,8 @@ def get_fundamentals(symbol: typing.Union[str, Iterable], conn: iq.QuoteConn = N
 
     if isinstance(symbol, str):
         symbol = {symbol}
+    elif not isinstance(symbol, set) and isinstance(symbol, Iterable):
+        symbol = set(symbol)
 
     e = threading.Event()
 
