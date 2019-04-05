@@ -87,6 +87,8 @@ class TestIQFeedLevel1(unittest.TestCase):
                 try:
                     self.assertEqual(len(data), 16)
                     self.assertTrue(isinstance(data, OrderedDict))
+                    self.assertEqual(next(iter(data.keys())), 'symbol')
+                    self.assertTrue(isinstance(data['symbol'], str))
                 finally:
                     e1.set()
 
@@ -100,6 +102,8 @@ class TestIQFeedLevel1(unittest.TestCase):
                     self.assertEqual(len(data), 16)
                     self.assertTrue(isinstance(data, OrderedDict))
                     self.assertGreater(len(next(iter(data.values()))), 1)
+                    self.assertEqual(next(iter(data.keys())), 'symbol')
+                    self.assertTrue(isinstance(data['symbol'], str))
                 finally:
                     e2.set()
 
@@ -118,7 +122,7 @@ class TestIQFeedLevel1(unittest.TestCase):
     def test_update_summary_deque_trades_only(self):
         listeners = SyncListeners()
 
-        mkt_snapshot_depth = 10
+        mkt_snapshot_depth = 2
         with IQFeedLevel1Listener(listeners=listeners, mkt_snapshot_depth=mkt_snapshot_depth) as listener:
             e1 = threading.Event()
 
@@ -181,7 +185,7 @@ class TestIQFeedLevel1(unittest.TestCase):
 
             e1.wait()
 
-    # @unittest.skip('Run manually')
+    @unittest.skip('Run manually')
     def test_nasdaq_quotes_and_trades_performance(self):
         logging.basicConfig(level=logging.DEBUG)
 
@@ -194,7 +198,7 @@ class TestIQFeedLevel1(unittest.TestCase):
             listener.watch(nasdaq['Symbol'].to_list())
             time.sleep(1000)
 
-    # @unittest.skip('Run manually')
+    @unittest.skip('Run manually')
     def test_nasdaq_trades_performance(self):
         logging.basicConfig(level=logging.DEBUG)
 
@@ -205,19 +209,6 @@ class TestIQFeedLevel1(unittest.TestCase):
         nasdaq = nasdaq.sample(480)
         with IQFeedLevel1Listener(listeners=listeners, mkt_snapshot_depth=200) as listener:
             listener.watch_trades(nasdaq['Symbol'].to_list())
-            time.sleep(1000)
-
-    # @unittest.skip('Run manually')
-    def test_nyse_quotes_and_trades_performance(self):
-        logging.basicConfig(level=logging.DEBUG)
-
-        listeners = AsyncListeners()
-        import time
-        nyse = pd.read_csv('/home/ivan/Downloads/cik_ticker.csv', sep='|')
-        nyse = nyse.loc[nyse['Exchange'] == 'NYSE']
-        nyse = nyse.sample(480)
-        with IQFeedLevel1Listener(listeners=listeners, mkt_snapshot_depth=200) as listener:
-            listener.watch(nyse['Ticker'].to_list())
             time.sleep(1000)
 
 

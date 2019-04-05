@@ -1,5 +1,8 @@
 import logging
 import threading
+from collections import Collection
+
+import pandas as pd
 
 from atpy.portfolio.order import *
 from pyevents.events import EventFilter
@@ -131,8 +134,9 @@ class PortfolioManager(object):
 
     def process_tick_data(self, data):
         with self._lock:
-            if data['symbol'] in [o.symbol for o in self.orders]:
-                self._values[data['symbol']] = data['bid']
+            symbol = data['symbol']
+            if symbol in [o.symbol for o in self.orders]:
+                self._values[symbol] = data['bid'][-1] if isinstance(data['bid'], Collection) else data['bid']
                 self.listeners({'type': 'portfolio_value_update', 'data': self})
 
     def process_bar_data(self, data):
@@ -140,8 +144,10 @@ class PortfolioManager(object):
             symbols = data.index.get_level_values(level='symbol')
 
             for o in [o for o in self.orders if o.symbol in symbols]:
-                self._values[o.symbol] = data['close'][-1]
-                self.listeners({'type': 'portfolio_value_update', 'data': self})
+                slc = data.loc[pd.IndexSlice[:, o.symbol], 'close']
+                if not slc.empty:
+                    self._values[o.symbol] = slc[-1]
+                    self.listeners({'type': 'portfolio_value_update', 'data': self})
 
     def __getstate__(self):
         # Copy the object's state from self.__dict__ which contains

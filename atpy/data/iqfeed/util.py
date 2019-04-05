@@ -1,17 +1,16 @@
-import datetime
 import logging
 import os
 import queue
 import tempfile
-import zipfile
 import typing
+import zipfile
+from collections import OrderedDict, deque
 
 import numpy as np
 import pandas as pd
 import requests
 
 import pyiqfeed as iq
-from collections import OrderedDict, deque
 
 
 def dtn_credentials():
@@ -47,13 +46,13 @@ def iqfeed_to_df(data: typing.Collection):
         if result is None:
             result = OrderedDict(
                 [(n.replace(" ", "_").lower(),
-                  np.empty((len(data),), d.dtype if str(d.dtype) not in ('|S4', '|S3') else object))
+                  np.empty((len(data),), d.dtype if str(d.dtype) not in ('|S4', '|S2', '|S3') else object))
                  for n, d in zip(datum.dtype.names, datum)])
 
         for j, f in enumerate(datum.dtype.names):
             d = datum[j]
-            if isinstance(datum[j], bytes):
-                d = datum[j].decode('ascii')
+            if isinstance(d, bytes):
+                d = d.decode('ascii')
 
             result[f.replace(" ", "_").lower()][i] = d
 
@@ -86,6 +85,15 @@ def iqfeed_to_deque(data: typing.Iterable, maxlen: int = None):
             result[f.replace(" ", "_").lower()].append(d)
 
     return result
+
+
+def get_last_value(data: dict) -> dict:
+    """
+    If the data is a result is a time-serires (dict of collections), return the last one
+    :param data: data list
+    :return:
+    """
+    return OrderedDict([(k, v[-1] if isinstance(v, typing.Collection) else v) for k, v in data.items()])
 
 
 def iqfeed_to_dict(data):

@@ -1,10 +1,11 @@
 import threading
 import unittest
 
-from atpy.data.iqfeed.iqfeed_bar_data_provider import *
-from pyevents.events import AsyncListeners, SyncListeners
 from pandas.util.testing import assert_frame_equal
+
+from atpy.data.iqfeed.iqfeed_bar_data_provider import *
 from atpy.data.util import get_nasdaq_listed_companies
+from pyevents.events import AsyncListeners, SyncListeners
 
 
 class TestIQFeedBarData(unittest.TestCase):
@@ -22,7 +23,8 @@ class TestIQFeedBarData(unittest.TestCase):
             def bar_listener(event):
                 if event['type'] == 'bar':
                     df = event['data']
-                    symbol = df.index[0][1]
+                    symbol_ind = df.index.names.index('symbol')
+                    symbol = df.index[symbol_ind][1]
                     self.assertTrue(symbol in ['IBM', 'GOOG'])
                     self.assertEqual(len(df), listener.mkt_snapshot_depth)
                     e1[symbol].set()
@@ -39,17 +41,66 @@ class TestIQFeedBarData(unittest.TestCase):
             for e in e1.values():
                 e.wait()
 
+    def test_multiple_intervals(self):
+        listeners = SyncListeners()
+
+        with    IQFeedBarDataListener(listeners=listeners, mkt_snapshot_depth=10, interval_len=30, update_interval=1) as listener_30, \
+                IQFeedBarDataListener(listeners=listeners, mkt_snapshot_depth=10, interval_len=60, update_interval=1) as listener_60, \
+                IQFeedBarDataListener(listeners=listeners, mkt_snapshot_depth=10, interval_len=120, update_interval=1) as listener_120:
+
+            e1 = {'GOOG': threading.Event(), 'FB': threading.Event(), 'AAPL': threading.Event(), 'TSLA': threading.Event()}
+
+            def bar_listener(event):
+                self.assertTrue(isinstance(event, dict))
+                self.assertEqual(len(event), 3)
+
+                symbols = set()
+                timestamps = list()
+
+                for k, df in event.items():
+                    self.assertFalse(df.empty)
+                    symbol_ind = df.index.names.index('symbol')
+                    symbol = df.index[0][symbol_ind]
+                    symbols.add(symbol)
+
+                    timestamp_ind = df.index.names.index('timestamp')
+                    timestamps.append(df.index.levels[timestamp_ind])
+
+                self.assertFalse((timestamps[0] == timestamps[1]).min())
+                self.assertFalse((timestamps[0] == timestamps[2]).min())
+                self.assertEqual(len(symbols), 1)
+
+                e1[symbol].set()
+
+            mbars_filter = MultiIntervalBarsListener(listeners,
+                                                     {'30s': listener_30.all_full_bars_event_stream(),
+                                                      '60s': listener_60.all_full_bars_event_stream(),
+                                                      '120s': listener_120.all_full_bars_event_stream()}) \
+                .event_filter()
+
+            mbars_filter += bar_listener
+
+            listeners({'type': 'watch_bars', 'data': {'symbol': ['GOOG', 'FB', 'AAPL', 'TSLA'], 'update': 1}})
+
+            for e in e1.values():
+                e.wait()
+
     def test_listener(self):
         listeners = AsyncListeners()
 
         with IQFeedBarDataListener(listeners=listeners, interval_len=300, interval_type='s', mkt_snapshot_depth=10) as listener:
             e1 = threading.Event()
+            full_bars_filter = listener.all_full_bars_event_stream()
+            full_bars_filter += lambda data: [self.assertEqual(data.index[0][1], 'SPY'), e1.set()]
 
-            listeners += lambda event: [self.assertEqual(event['data'].index[0][1], 'SPY'), e1.set()] if event['type'] == 'bar' else None
+            e2 = threading.Event()
+            updates_filter = listener.all_full_bars_event_stream()
+            updates_filter += lambda data: [self.assertEqual(data.index[0][1], 'SPY'), e2.set()]
 
             listener.watch_bars(symbol='SPY')
 
             e1.wait()
+            e2.wait()
 
     def test_correctness_small(self):
         self._test_correctness('IBM')

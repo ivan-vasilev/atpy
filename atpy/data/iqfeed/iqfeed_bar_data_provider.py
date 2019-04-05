@@ -1,4 +1,4 @@
-import typing
+import datetime
 from collections import Iterable
 
 from dateutil import tz
@@ -10,12 +10,18 @@ from pyevents.events import EventFilter
 
 
 class IQFeedBarDataListener(iq.SilentBarListener):
+    """Real-time bar data"""
 
     def __init__(self, listeners, interval_len, interval_type='s', mkt_snapshot_depth=0, adjust_history=True, update_interval=0):
         """
+        :param listeners: listeners to notify for incombing bars
+        :param interval_len: interval length
+        :param interval_type: interval type
         :param mkt_snapshot_depth: construct and maintain dataframe representing the current market snapshot with depth. If 0, then don't construct, otherwise construct for the past periods
+        :param adjust_history: adjust historical bars for splits and dividends
+        :param update_interval: how often to update each bar
         """
-        super().__init__(name="Bar data listener")
+        super().__init__(name="Bar data listener %d%s" % (interval_len, interval_type))
 
         self.listeners = listeners
         self.listeners += self.on_event
@@ -38,25 +44,29 @@ class IQFeedBarDataListener(iq.SilentBarListener):
         self.conn.connect()
 
         # streaming conn for fundamental data
-        self.streaming_conn = iq.QuoteConn()
-        self.streaming_conn.connect()
+        if self.adjust_history:
+            self.streaming_conn = iq.QuoteConn()
+            self.streaming_conn.connect()
 
         return self
 
     def __exit__(self, exception_type, exception_value, traceback):
         """Disconnect connection etc"""
         self.conn.remove_listener(self)
+
         self.conn.disconnect()
 
-        self.streaming_conn.disconnect()
-        self.streaming_conn = None
-
         self.conn = None
+
+        if self.streaming_conn is not None:
+            self.streaming_conn.disconnect()
+            self.streaming_conn = None
 
     def __del__(self):
         if self.conn is not None:
             self.conn.remove_listener(self)
-            self.conn.disconnect()
+            if self.own_conn:
+                self.conn.disconnect()
 
         if self.streaming_conn is not None:
             self.streaming_conn.disconnect()
@@ -126,7 +136,7 @@ class IQFeedBarDataListener(iq.SilentBarListener):
         bar_data = (bar_data[0] if len(bar_data) == 1 else bar_data).copy()
 
         symbol = bar_data[0].decode("ascii")
-        
+
         if self.watched_symbols[symbol] is None:
             self.watched_symbols[symbol] = list()
 
@@ -144,12 +154,18 @@ class IQFeedBarDataListener(iq.SilentBarListener):
 
     def bar_updates_event_stream(self):
         return EventFilter(listeners=self.listeners,
-                           event_filter=lambda e: True if 'type' in e and e['type'] == 'latest_bar_update' else False,
+                           event_filter=
+                           lambda e: True if 'type' in e
+                                             and e['type'] == 'latest_bar_update'
+                                             and e['interval_type'] == self.interval_type
+                                             and e['interval_len'] == self.interval_len
+                           else False,
                            event_transformer=lambda e: e['data'])
 
     def all_full_bars_event_stream(self):
         return EventFilter(listeners=self.listeners,
-                           event_filter=lambda e: True if 'type' in e and e['type'] in ('history_bars', 'live_bar') else False,
+                           event_filter=
+                           lambda e: True if 'type' in e and e['type'] in ('history_bars', 'live_bar') and e['interval_type'] == self.interval_type and e['interval_len'] == self.interval_len else False,
                            event_transformer=lambda e: e['data'])
 
     def on_event(self, event):
@@ -223,3 +239,50 @@ class IQFeedBarDataListener(iq.SilentBarListener):
 
     def bar_provider(self):
         return IQFeedDataProvider(self.listeners, accept_event=lambda e: True if e['type'] == 'bar' else False)
+
+
+class MultiIntervalBarsListener(object):
+    """
+    Combined in real time bars in multiple intervals.
+    This class attempts to synchronize the bars with matching timestamps in a single event
+    """
+
+    def __init__(self, listeners, filters: dict):
+        """
+        :param listeners: event listeners to generate combined events
+        :param filters: a dict of type key: EventFilter_object
+        """
+
+        self.listeners = listeners
+
+        symbols = dict()
+
+        for filter_name, event_filter in filters.items():
+            event_filter += self.__MultiIntervalBarListener(listeners, symbols, filter_name, len(filters))
+
+    def event_filter(self):
+        return EventFilter(listeners=self.listeners,
+                           event_filter=lambda e: True if 'type' in e and e['type'] == 'multiple_bars' else False,
+                           event_transformer=lambda e: e['data'])
+
+    class __MultiIntervalBarListener(object):
+        def __init__(self, listeners, symbols: dict, name: str, count):
+            self.listeners = listeners
+            self.symbols = symbols
+            self.name = name
+            self.count = count
+
+        def __call__(self, bar_data):
+            symbol_ind = bar_data.index.names.index('symbol')
+            symbol = bar_data.index[0][symbol_ind]
+
+            if symbol not in self.symbols:
+                bars = dict()
+                self.symbols[symbol] = bars
+            else:
+                bars = self.symbols[symbol]
+
+            bars[self.name] = bar_data
+
+            if len(bars) == self.count:
+                self.listeners({'type': 'multiple_bars', 'data': bars})

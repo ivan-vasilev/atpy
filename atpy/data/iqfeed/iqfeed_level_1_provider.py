@@ -2,6 +2,7 @@ import logging
 import queue
 import threading
 import typing
+from collections import Iterable
 
 import numpy as np
 import pandas as pd
@@ -9,7 +10,6 @@ import pandas as pd
 import pyiqfeed as iq
 from atpy.data.iqfeed.util import launch_service, iqfeed_to_dict, iqfeed_to_deque
 from pyevents.events import SyncListeners, EventFilter
-from collections import Iterable
 
 
 class IQFeedLevel1Listener(iq.SilentQuoteListener):
@@ -115,7 +115,12 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener):
     def process_summary(self, summary: np.array):
         if self.mkt_snapshot_depth > 0:
             s = iqfeed_to_deque([summary], maxlen=self.mkt_snapshot_depth)
-            self.watched_symbols[s['symbol'][0]] = s
+
+            # no need for deque for the symbol
+            symbol = s['symbol'][0]
+            s['symbol'] = symbol
+
+            self.watched_symbols[symbol] = s
 
         self.listeners({'type': 'level_1_summary', 'data': iqfeed_to_dict(summary)})
 
@@ -126,11 +131,12 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener):
 
             data = self.watched_symbols[symbol]
 
-            for deq, v in zip(data.values(), update):
-                if isinstance(v, bytes):
-                    v = v.decode('ascii')
+            for key, v in zip(data, update):  # skip symbol
+                if key != 'symbol':
+                    if isinstance(v, bytes):
+                        v = v.decode('ascii')
 
-                deq.append(v)
+                    data[key].append(v)
         else:
             data = iqfeed_to_dict(update)
 

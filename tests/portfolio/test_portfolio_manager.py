@@ -143,7 +143,7 @@ class TestPortfolioManager(unittest.TestCase):
     def test_price_updates(self):
         listeners = AsyncListeners()
 
-        with IQFeedLevel1Listener(listeners=listeners, minibatch=2) as level_1:
+        with IQFeedLevel1Listener(listeners=listeners, mkt_snapshot_depth=2) as level_1:
             listeners = AsyncListeners()
 
             fulfilled_orders = SyncListeners()

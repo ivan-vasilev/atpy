@@ -323,7 +323,7 @@ class IQFeedHistoryProvider(object):
                 signals = pd.concat(signals)
                 signals.index.set_names('symbol', level=0, inplace=True)
 
-                for symbol in signals.index.get_level_values('symbol').unique():
+                for symbol in signals.index.levels[0].unique():
                     if 0 in signals.loc[symbol, 'open'].values:
                         logging.getLogger(__name__).warning(symbol + " contains 0 in the Open column before timestamp sync")
 
@@ -361,7 +361,7 @@ class IQFeedHistoryProvider(object):
 
                 zero_values = list()
 
-                for symbol in signals.index.get_level_values('symbol').unique():
+                for symbol in signals.index.levels[0].unique():
                     if 0 in signals.loc[symbol, 'open'].values:
                         logging.getLogger(__name__).warning(symbol + " contains 0 in the Open column after timestamp sync")
                         zero_values.append(symbol)
