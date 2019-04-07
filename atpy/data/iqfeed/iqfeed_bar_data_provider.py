@@ -237,9 +237,6 @@ class IQFeedBarDataListener(iq.SilentBarListener):
 
         return result
 
-    def bar_provider(self):
-        return IQFeedDataProvider(self.listeners, accept_event=lambda e: True if e['type'] == 'bar' else False)
-
 
 class MultiIntervalBarsListener(object):
     """

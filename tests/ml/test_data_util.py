@@ -166,3 +166,15 @@ class TestDataUtil(unittest.TestCase):
 
             self.assertTrue(isinstance(result.index, pd.MultiIndex))
             self.assertFalse(result.empty)
+
+    def test_merge_bars_to_last_correctness(self):
+        open_p = np.array([10, 20, 30, 40, 50, 60, 70, 80, 90], dtype=np.float32)
+        high_p = np.array([1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000], dtype=np.float32)
+        low_p = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9], dtype=np.float32)
+        close_p = np.array([100, 200, 300, 400, 500, 600, 700, 800, 900], dtype=np.float32)
+        volume = np.array([2, 2, 5, 1, 2, 7, 7, 1, 1], dtype=np.float32)
+
+        df = pd.DataFrame.from_dict({'open': open_p, 'high': high_p, 'low': low_p, 'close': close_p, 'volume': volume})
+        result = merge_bars_to_last(df.copy(deep=True), threshold=3)
+        self.assertEqual(9, df.shape[0])
+        self.assertEqual(6, result.shape[0])

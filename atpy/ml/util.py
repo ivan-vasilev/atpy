@@ -147,3 +147,91 @@ def daily_volatility(price: pd.Series, span=100, parallel=True):
         result = _daily_volatility(price)
 
     return result
+
+
+def merge_bars_to_last(df: pd.DataFrame, threshold: float, dollar_value: bool = False, parallel: bool = True):
+    """
+    Merge bars in the last bar of the sequence until their combined volume surpasses min_volume
+    This is done to increase the statistical significance of the bar data
+    :param df: df with open, high, low, close, volume columns
+    :param threshold: threshold value (volume or volume * price)
+    :param dollar_value: whether to measure by volume * close_price or just volume
+    :param parallel: run in multiprocessing mode for multiindex dataframes
+    """
+    if isinstance(df.index, pd.MultiIndex):
+        grpby = df.groupby(level='symbol', group_keys=False, sort=False)
+
+        if parallel:
+            params = list()
+            for _, df in grpby:
+                params.append([df['open'], df['high'], df['low'], df['close'], df['volume'], threshold, dollar_value])
+
+            with Pool(cpu_count()) as p:
+                p.map(__merge_bars_to_last, params)
+        else:
+            def tmp(tmp_df):
+                __merge_bars_to_last(open_p=tmp_df['open'],
+                                     high_p=tmp_df['high'],
+                                     low_p=tmp_df['low'],
+                                     close_p=tmp_df['close'],
+                                     volume=tmp_df['volume'],
+                                     threshold=threshold,
+                                     dollar_value=dollar_value)
+
+            grpby.apply(tmp)
+    else:
+        __merge_bars_to_last(open_p=df['open'].values,
+                             high_p=df['high'].values,
+                             low_p=df['low'].values,
+                             close_p=df['close'].values,
+                             volume=df['volume'].values,
+                             threshold=threshold,
+                             dollar_value=dollar_value)
+
+        return df.dropna()
+
+
+@numba.jit(nopython=True, nogil=True)
+def __merge_bars_to_last(open_p: np.array,
+                         high_p: np.array,
+                         low_p: np.array,
+                         close_p: np.array,
+                         volume: np.array,
+                         threshold,
+                         dollar_value: bool = False):
+    """
+    Merge bars in the last bar of the sequence until their combined volume surpasses min_volume
+    This is done to increase the statistical significance of the bar data
+    :param open_p: open price
+    :param high_p: high price
+    :param low_p: low price
+    :param close_p: close price
+    :param volume: period volume
+    :param threshold: threshold value (volume or volume * price)
+    :param dollar_value: whether to measure by volume * close_price or just volume
+    """
+
+    current_vol = 0
+    current_start = 0
+    for i, vol in enumerate(volume):
+        current_vol += vol
+        if (current_vol >= threshold and dollar_value is False) \
+                or (current_vol * close_p[i] >= threshold and dollar_value is True) \
+                or (len(volume) == i + 1):
+            if current_start < i:
+                volume[i] = current_vol
+
+                open_p[i] = open_p[current_start]
+
+                for j in range(current_start, i):
+                    if high_p[i] < high_p[j]:
+                        high_p[i] = high_p[j]
+
+                    if low_p[i] > low_p[j]:
+                        low_p[i] = low_p[j]
+
+                    open_p[j] = high_p[j] = low_p[j] = close_p[j] = np.nan
+                    volume[j] = -1
+
+            current_vol = 0
+            current_start = i + 1
