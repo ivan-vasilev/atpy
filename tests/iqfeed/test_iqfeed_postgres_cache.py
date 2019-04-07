@@ -72,8 +72,8 @@ class TestPostgresCache(unittest.TestCase):
                     del df1['total_volume']
                     del df1['number_of_trades']
                     del df1['symbol']
-                    del df1['period_volume']
-                    del df2['period_volume']
+                    del df1['volume']
+                    del df2['volume']
 
                     assert_frame_equal(df1, df2, check_exact=False, check_less_precise=True)
             finally:

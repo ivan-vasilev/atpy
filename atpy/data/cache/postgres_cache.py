@@ -37,7 +37,7 @@ create_bars = \
         high real NOT NULL,
         low real NOT NULL,
         close real NOT NULL,
-        period_volume integer NOT NULL,
+        volume integer NOT NULL,
         "interval" character varying COLLATE pg_catalog."default" NOT NULL
     )
     WITH (
@@ -162,7 +162,7 @@ def update_to_latest(url: str, bars_table: str, noncache_provider: typing.Callab
             ft, df = filters[tupl[0]], tupl[1]
 
             # Prepare data
-            for c in [c for c in df.columns if c not in ['symbol', 'open', 'high', 'low', 'close', 'period_volume']]:
+            for c in [c for c in df.columns if c not in ['symbol', 'open', 'high', 'low', 'close', 'volume']]:
                 del df[c]
 
             df['interval'] = str(ft.interval_len) + '_' + ft.interval_type
@@ -227,7 +227,7 @@ def request_bars(conn, bars_table: str, interval_len: int, interval_type: str, s
         if isinstance(symbol, str):
             df.reset_index(level='symbol', inplace=True, drop=True)
 
-        for c in [c for c in ['period_volume', 'total_volume', 'number_of_trades'] if c in df.columns]:
+        for c in [c for c in ['volume', 'total_volume', 'number_of_trades'] if c in df.columns]:
             df[c] = df[c].astype('uint64')
 
     return df

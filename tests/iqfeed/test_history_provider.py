@@ -1,6 +1,7 @@
 import unittest
 
 from atpy.data.iqfeed.iqfeed_history_provider import *
+from atpy.data.util import resample_bars
 from pyevents.events import AsyncListeners, SyncListeners
 
 
@@ -235,6 +236,13 @@ class TestIQFeedHistory(unittest.TestCase):
 
                 if i == 1:
                     break
+
+    def test_resample(self):
+        with IQFeedHistoryProvider() as provider:
+            df = provider.request_data(BarsFilter(ticker=["IBM", "AAPL", "GOOG"], interval_len=60, interval_type='s', max_bars=100), sync_timestamps=False)
+            resampled_df = resample_bars(df, '5min')
+            self.assertLess(len(resampled_df), len(df))
+            self.assertEqual(df['volume'].sum(), resampled_df['volume'].sum())
 
     def test_daily(self):
         filter_provider = DefaultFilterProvider()

@@ -30,7 +30,7 @@ class RandomStrategy:
 
         for _ in range(buys):
             symbol = data.sample().index.get_level_values('symbol')[0]
-            volume = random.randint(1, data.loc[pd.IndexSlice[:, symbol], :].iloc[-1]['period_volume'])
+            volume = random.randint(1, data.loc[pd.IndexSlice[:, symbol], :].iloc[-1]['volume'])
 
             o = MarketOrder(Type.BUY, symbol, volume)
 

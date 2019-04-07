@@ -334,7 +334,7 @@ class IQFeedHistoryProvider(object):
                 signals.reset_index(inplace=True)
                 signals.set_index(multi_index, inplace=True)
 
-                for c in [c for c in ['period_volume', 'number_of_trades'] if c in signals.columns]:
+                for c in [c for c in ['volume', 'number_of_trades'] if c in signals.columns]:
                     signals[c].fillna(0, inplace=True)
 
                 if 'close' in signals.columns:
@@ -442,7 +442,7 @@ class IQFeedHistoryProvider(object):
         result.set_index('timestamp' + sf, inplace=True, drop=False)
         result.drop(['date', 'time'], axis=1, inplace=True)
 
-        result.rename({"high_p": "high" + sf, "low_p": "low" + sf, "open_p": "open" + sf, "close_p": "close" + sf, "tot_vlm": "total_volume" + sf, "prd_vlm": "period_volume" + sf, "num_trds": "number_of_trades" + sf}, axis="columns",
+        result.rename({"high_p": "high" + sf, "low_p": "low" + sf, "open_p": "open" + sf, "close_p": "close" + sf, "tot_vlm": "total_volume" + sf, "prd_vlm": "volume" + sf, "num_trds": "number_of_trades" + sf}, axis="columns",
                       copy=False, inplace=True)
         result['symbol'] = data_filter.ticker
 
@@ -451,7 +451,7 @@ class IQFeedHistoryProvider(object):
     def _process_daily(self, data, data_filter):
         result = pd.DataFrame(data)
         sf = self.key_suffix
-        result.rename({"date": "timestamp" + sf, "high_p": "high" + sf, "low_p": "low" + sf, "open_p": "open" + sf, "close_p": "close" + sf, "prd_vlm": "period_volume" + sf, "open_int": "open_interest" + sf}, axis="columns", copy=False,
+        result.rename({"date": "timestamp" + sf, "high_p": "high" + sf, "low_p": "low" + sf, "open_p": "open" + sf, "close_p": "close" + sf, "prd_vlm": "volume" + sf, "open_int": "open_interest" + sf}, axis="columns", copy=False,
                       inplace=True)
 
         result['timestamp' + sf] = pd.Index(result['timestamp' + sf]).tz_localize('US/Eastern').tz_convert('UTC')

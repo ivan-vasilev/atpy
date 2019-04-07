@@ -204,7 +204,6 @@ class TestDataUtil(unittest.TestCase):
 
         with IQFeedHistoryProvider() as provider:
             df = provider.request_data(BarsFilter(ticker=["AAPL", "IBM"], interval_len=60, interval_type='s', max_bars=batch_len)) \
-                .rename({'period_volume': 'volume'}, axis=1) \
                 .drop(['symbol', 'timestamp', 'total_volume', 'number_of_trades'], axis=1)
 
             mean = df['volume'].mean()
@@ -224,8 +223,7 @@ class TestDataUtil(unittest.TestCase):
         batch = 10000
         depth = 300
         with IQFeedHistoryProvider() as provider:
-            df = provider.request_data(BarsFilter(ticker="AAPL", interval_len=600, interval_type='s', max_bars=depth), sync_timestamps=False). \
-                rename({'period_volume': 'volume'}, axis=1) \
+            df = provider.request_data(BarsFilter(ticker="AAPL", interval_len=600, interval_type='s', max_bars=depth), sync_timestamps=False) \
                 .drop(['symbol', 'timestamp', 'total_volume', 'number_of_trades'], axis=1)
             df.sort_index(inplace=True)
 
@@ -260,8 +258,7 @@ class TestDataUtil(unittest.TestCase):
 
         now = datetime.datetime.now()
         with IQFeedHistoryProvider() as provider:
-            df1 = provider.request_data(BarsFilter(ticker="AAPL", interval_len=600, interval_type='s', max_bars=batch_len), sync_timestamps=False). \
-                rename({'period_volume': 'volume'}, axis=1) \
+            df1 = provider.request_data(BarsFilter(ticker="AAPL", interval_len=600, interval_type='s', max_bars=batch_len), sync_timestamps=False) \
                 .drop(['symbol', 'timestamp', 'total_volume', 'number_of_trades'], axis=1)
 
             df = {'AAPL': df1}

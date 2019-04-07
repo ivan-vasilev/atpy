@@ -31,7 +31,7 @@ def reindex_and_fill(df: pd.DataFrame, index) -> pd.DataFrame:
     df.reset_index(inplace=True)
     df.set_index(index, inplace=True)
 
-    for c in [c for c in ['period_volume', 'number_of_trades'] if c in df.columns]:
+    for c in [c for c in ['volume', 'number_of_trades'] if c in df.columns]:
         df[c].fillna(0, inplace=True)
 
     if 'close' in df.columns:

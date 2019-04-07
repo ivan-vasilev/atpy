@@ -57,3 +57,24 @@ def get_us_listed_companies():
 
 def get_s_and_p_500():
     return pd.read_csv('https://raw.githubusercontent.com/datasets/s-and-p-500-companies/master/data/constituents.csv').set_index('Symbol', drop=True)
+
+
+def resample_bars(df: pd.DataFrame, rule: str, period_id: str = 'right') -> pd.DataFrame:
+    """
+    Resample bars in higher periods
+    :param df: data frame
+    :param rule: conversion target period (for reference see pandas.DataFrame.resample)
+    :param period_id: whether to associate the bar with the beginning or the end of the interval
+                    (the inclusion is also closed to the left or right respectively)
+    """
+    if isinstance(df.index, pd.MultiIndex):
+        result = df.groupby(level='symbol', group_keys=False, sort=False) \
+            .resample(rule, closed=period_id, label=period_id, level='timestamp') \
+            .agg({'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'}) \
+            .dropna()
+    else:
+        result = df.resample(rule, closed=period_id, label=period_id) \
+            .agg({'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'}) \
+            .dropna()
+
+    return result

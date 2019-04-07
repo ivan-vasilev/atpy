@@ -75,21 +75,21 @@ def adjust_split(data, split_factor: float, split_date: datetime.date):
                 split_date = datetime.datetime.combine(split_date, datetime.datetime.min.time()).replace(tzinfo=data.iloc[0]['timestamp'].tz)
 
                 if split_date > data.iloc[-1]['timestamp']:
-                    for c in [c for c in ['period_volume', 'total_volume', 'last_size'] if c in data.columns]:
+                    for c in [c for c in ['volume', 'total_volume', 'last_size'] if c in data.columns]:
                         data[c] = (data[c] * (1 / split_factor)).astype(np.uint64)
 
                     for c in [c for c in ['close', 'high', 'open', 'low', 'ask', 'bid', 'last'] if c in data.columns]:
                         data[c] *= split_factor
                 elif split_date > data.iloc[0]['timestamp']:
-                    for c in [c for c in ['period_volume', 'total_volume', 'last_size'] if c in data.columns]:
+                    for c in [c for c in ['volume', 'total_volume', 'last_size'] if c in data.columns]:
                         data.loc[data['timestamp'] < split_date, c] *= (1 / split_factor)
                         data[c] = data[c].astype(np.uint64)
 
                     for c in [c for c in ['close', 'high', 'open', 'low', 'ask', 'bid', 'last'] if c in data.columns]:
                         data.loc[data['timestamp'] < split_date, c] *= split_factor
         elif split_date > data['timestamp']:
-            for c in [c for c in {'close', 'high', 'open', 'low', 'period_volume', 'total_volume', 'ask', 'bid', 'last', 'last_size'} if c in data.keys()]:
-                if c in ('period_volume', 'total_volume', 'last_size'):
+            for c in [c for c in {'close', 'high', 'open', 'low', 'volume', 'total_volume', 'ask', 'bid', 'last', 'last_size'} if c in data.keys()]:
+                if c in ('volume', 'total_volume', 'last_size'):
                     data[c] = int(data[c] * (1 / split_factor))
                 else:
                     data[c] *= split_factor
@@ -113,7 +113,7 @@ def adjust_split_multiindex(data: pd.DataFrame, symbol: str, split_factor: float
         idx = pd.IndexSlice
 
         if data.loc[idx[:, symbol], :].iloc[0].name[0] <= split_date <= data.loc[idx[:, symbol], :].iloc[-1].name[0]:
-            for c in [c for c in ['period_volume', 'total_volume', 'last_size'] if c in data.columns]:
+            for c in [c for c in ['volume', 'total_volume', 'last_size'] if c in data.columns]:
                 data.loc[idx[:split_date, symbol], c] *= (1 / split_factor)
                 data.loc[idx[:split_date, symbol], c] = data[c].astype(np.uint64)
             for c in [c for c in ['close', 'high', 'open', 'low', 'ask', 'bid', 'last'] if c in data.columns]:

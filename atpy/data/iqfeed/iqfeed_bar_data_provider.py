@@ -221,7 +221,7 @@ class IQFeedBarDataListener(iq.SilentBarListener):
                                 'low_p': 'low',
                                 'close_p': 'close',
                                 'tot_vlm': 'total_volume',
-                                'prd_vlm': 'period_volume',
+                                'prd_vlm': 'volume',
                                 'num_trds': 'number_of_trades'}) \
             .set_index('timestamp', drop=True, append=False) \
             .drop(['date', 'time'], axis=1)
@@ -243,53 +243,9 @@ class IQFeedBarDataListener(iq.SilentBarListener):
         result['low'] = bar_data['low_p']
         result['close'] = bar_data['close_p']
         result['total_volume'] = bar_data['tot_vlm']
-        result['period_volume'] = bar_data['prd_vlm']
+        result['volume'] = bar_data['prd_vlm']
         result['number_of_trades'] = bar_data['num_trds']
 
         result = pd.DataFrame(result, index=result['timestamp']).drop('timestamp', axis=1)
 
         return result
-
-
-class MultiIntervalBarsListener(object):
-    """
-    Combined in real time bars in multiple intervals.
-    This class attempts to synchronize the bars with matching timestamps in a single event
-    """
-
-    def __init__(self, listeners, filters: dict):
-        """
-        :param listeners: event listeners to generate combined events
-        :param filters: a dict of type key: EventFilter_object
-        """
-
-        self.listeners = listeners
-
-        symbols = dict()
-
-        for filter_name, event_filter in filters.items():
-            event_filter += self.__MultiIntervalBarListener(listeners, symbols, filter_name, len(filters))
-
-    def event_filter(self):
-        return EventFilter(listeners=self.listeners,
-                           event_filter=lambda e: True if 'type' in e and e['type'] == 'multiple_bars' else False,
-                           event_transformer=lambda e: (e['data'], e['symbol']))
-
-    class __MultiIntervalBarListener(object):
-        def __init__(self, listeners, symbols: dict, name: str, count):
-            self.listeners = listeners
-            self.symbols = symbols
-            self.name = name
-            self.count = count
-
-        def __call__(self, bar_data, symbol):
-            if symbol not in self.symbols:
-                bars = dict()
-                self.symbols[symbol] = bars
-            else:
-                bars = self.symbols[symbol]
-
-            bars[self.name] = bar_data
-
-            if len(bars) == self.count:
-                self.listeners({'type': 'multiple_bars', 'data': bars})

@@ -4,7 +4,7 @@ import unittest
 from pandas.util.testing import assert_frame_equal
 
 from atpy.data.iqfeed.iqfeed_bar_data_provider import *
-from atpy.data.util import get_nasdaq_listed_companies
+from atpy.data.util import get_nasdaq_listed_companies, resample_bars
 from pyevents.events import AsyncListeners, SyncListeners
 
 
@@ -42,44 +42,23 @@ class TestIQFeedBarData(unittest.TestCase):
 
             e3.wait()
 
-    def test_multiple_intervals(self):
+    def test_resample(self):
         listeners = SyncListeners()
 
-        with    IQFeedBarDataListener(listeners=listeners, mkt_snapshot_depth=10, interval_len=30, update_interval=1) as listener_30, \
-                IQFeedBarDataListener(listeners=listeners, mkt_snapshot_depth=10, interval_len=60, update_interval=1) as listener_60, \
-                IQFeedBarDataListener(listeners=listeners, mkt_snapshot_depth=10, interval_len=120, update_interval=1) as listener_120:
+        with IQFeedBarDataListener(listeners=listeners, mkt_snapshot_depth=100, interval_len=60) as listener:
+            # test bars
+            e1 = {'GOOG': threading.Event(), 'IBM': threading.Event()}
 
-            e1 = {'GOOG': threading.Event(), 'FB': threading.Event(), 'AAPL': threading.Event(), 'TSLA': threading.Event()}
-
-            def bar_listener(event, symbol):
-                self.assertTrue(isinstance(event, dict))
-                self.assertEqual(len(event), 3)
-
-                symbols = set()
-                timestamps = list()
-
-                for k, df in event.items():
-                    self.assertFalse(df.empty)
-                    symbols.add(symbol)
-
-                    timestamp_ind = df.index.names.index('timestamp')
-                    timestamps.append(df.index.levels[timestamp_ind])
-
-                self.assertFalse((timestamps[0] == timestamps[1]).min())
-                self.assertFalse((timestamps[0] == timestamps[2]).min())
-                self.assertEqual(len(symbols), 1)
-
+            def bar_listener(df, symbol):
+                resampled_df = resample_bars(df, '5min')
+                self.assertLess(len(resampled_df), len(df))
+                self.assertEqual(df['volume'].sum(), resampled_df['volume'].sum())
                 e1[symbol].set()
 
-            mbars_filter = MultiIntervalBarsListener(listeners,
-                                                     {'30s': listener_30.all_full_bars_event_stream(),
-                                                      '60s': listener_60.all_full_bars_event_stream(),
-                                                      '120s': listener_120.all_full_bars_event_stream()}) \
-                .event_filter()
+            full_bars = listener.all_full_bars_event_stream()
+            full_bars += bar_listener
 
-            mbars_filter += bar_listener
-
-            listeners({'type': 'watch_bars', 'data': {'symbol': ['GOOG', 'FB', 'AAPL', 'TSLA'], 'update': 1}})
+            listeners({'type': 'watch_bars', 'data': {'symbol': ['GOOG', 'IBM'], 'update': 1}})
 
             for e in e1.values():
                 e.wait()

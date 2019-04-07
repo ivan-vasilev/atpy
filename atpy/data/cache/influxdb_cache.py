@@ -76,7 +76,7 @@ def update_to_latest(client: DataFrameClient, noncache_provider: typing.Callable
 
             if to_cache is not None and not to_cache.empty:
                 # Prepare data
-                for c in [c for c in to_cache.columns if c not in ['symbol', 'open', 'high', 'low', 'close', 'period_volume']]:
+                for c in [c for c in to_cache.columns if c not in ['symbol', 'open', 'high', 'low', 'close', 'volume']]:
                     to_cache.drop(c, axis=1, inplace=True)
 
                 to_cache['interval'] = str(ft.interval_len) + '_' + ft.interval_type

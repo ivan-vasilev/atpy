@@ -99,7 +99,7 @@ class MockExchange(object):
                 slc = data.loc[ix, :]
 
                 if not slc.empty:
-                    price, volume = self.order_processor(o, slc.iloc[-1]['close'], slc.iloc[-1]['period_volume'])
+                    price, volume = self.order_processor(o, slc.iloc[-1]['close'], slc.iloc[-1]['volume'])
 
                     o.add_position(min(o.quantity - o.obtained_quantity, volume), price)
 
