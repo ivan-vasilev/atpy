@@ -58,7 +58,7 @@ class PortfolioManager(object):
     def portfolio_updates_stream(self):
         return EventFilter(listeners=self.listeners,
                            event_filter=lambda e: True if ('type' in e and e['type'] == 'portfolio_update') else False,
-                           event_transformer=lambda e: e['data'])
+                           event_transformer=lambda e: (e['data'],))
 
     @property
     def symbols(self):

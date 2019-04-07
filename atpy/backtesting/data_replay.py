@@ -173,7 +173,7 @@ class DataReplayEvents(object):
         return EventFilter(listeners=self.listeners,
                            event_filter=
                            lambda e: True if 'timestamp' in e and e['type'] == self.event_name and source_name in e else False,
-                           event_transformer=lambda e: e[source_name])
+                           event_transformer=lambda e: (e[source_name],))
 
     def event_filter_function(self, source_name: str = None) -> typing.Callable:
         """

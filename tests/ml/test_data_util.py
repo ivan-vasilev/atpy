@@ -221,7 +221,7 @@ class TestDataUtil(unittest.TestCase):
 
     def test_merge_bars_to_last_performance_single(self):
         logging.basicConfig(level=logging.INFO)
-        batch = 1000
+        batch = 10000
         depth = 300
         with IQFeedHistoryProvider() as provider:
             df = provider.request_data(BarsFilter(ticker="AAPL", interval_len=600, interval_type='s', max_bars=depth), sync_timestamps=False). \
@@ -233,7 +233,7 @@ class TestDataUtil(unittest.TestCase):
 
             data = [df.copy(deep=True) for _ in range(batch)]
             mean = df['volume'].mean()
-            merge_bars_to_last(df, threshold=mean, parallel=False)
+            merge_bars_to_last(df.copy(deep=True), threshold=mean, parallel=False)
 
             now = datetime.datetime.now()
             for d in data:
@@ -242,6 +242,9 @@ class TestDataUtil(unittest.TestCase):
 
             logging.getLogger(__name__).info('Result shape ' + str(result.shape))
             logging.getLogger(__name__).info('Task done in ' + str(delta) + '; ' + str(delta / batch) + ' per iteration')
+
+            self.assertLess(result.shape[0], df.shape[0])
+            self.assertEqual(result['volume'].sum(), df['volume'].sum())
 
     def test_merge_bars_to_last_performance_wide(self):
         df = self._generate_random_merge_bars_data(batch_len=200, batch_width=10000)

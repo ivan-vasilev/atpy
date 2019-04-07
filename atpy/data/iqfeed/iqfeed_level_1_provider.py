@@ -150,27 +150,27 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener):
     def news_filter(self):
         return EventFilter(listeners=self.listeners,
                            event_filter=lambda e: True if e['type'] == 'level_1_news_item' else False,
-                           event_transformer=lambda e: e['data'])
+                           event_transformer=lambda e: (e['data'],))
 
     def regional_quote_filter(self):
         return EventFilter(listeners=self.listeners,
                            event_filter=lambda e: True if e['type'] == 'level_1_regional_quote' else False,
-                           event_transformer=lambda e: e['data'])
+                           event_transformer=lambda e: (e['data'],))
 
     def all_level_1_filter(self):
         return EventFilter(listeners=self.listeners,
                            event_filter=lambda e: True if 'type' in e and e['type'] in ('level_1_summary', 'level_1_update') else False,
-                           event_transformer=lambda e: e['data'])
+                           event_transformer=lambda e: (e['data'],))
 
     def level_1_summary_filter(self):
         return EventFilter(listeners=self.listeners,
                            event_filter=lambda e: True if 'type' in e and e['type'] == 'level_1_summary' else False,
-                           event_transformer=lambda e: e['data'])
+                           event_transformer=lambda e: (e['data'],))
 
     def level_1_update_filter(self):
         return EventFilter(listeners=self.listeners,
                            event_filter=lambda e: True if 'type' in e and e['type'] == 'level_1_update' else False,
-                           event_transformer=lambda e: e['data'])
+                           event_transformer=lambda e: (e['data'],))
 
     def process_fundamentals(self, fund: np.array):
         f = iqfeed_to_dict(fund)
@@ -179,7 +179,7 @@ class IQFeedLevel1Listener(iq.SilentQuoteListener):
     def fundamentals_filter(self):
         return EventFilter(listeners=self.listeners,
                            event_filter=lambda e: True if e['type'] == 'level_1_fundamentals' else False,
-                           event_transformer=lambda e: e['data'])
+                           event_transformer=lambda e: (e['data'],))
 
 
 def get_fundamentals(symbol: typing.Union[str, Iterable], conn: iq.QuoteConn = None):

@@ -177,7 +177,8 @@ def merge_bars_to_last(df: pd.DataFrame, threshold: float, dollar_value: bool = 
                              threshold=threshold,
                              dollar_value=dollar_value)
 
-        result = df.dropna()
+        # this is faster than dropna
+        result = df.loc[pd.notnull(df['close'])]
 
     return result
 

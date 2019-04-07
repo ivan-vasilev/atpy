@@ -58,4 +58,4 @@ class RandomStrategy:
     def order_requests_stream(self):
         return EventFilter(listeners=self.listeners,
                            event_filter=lambda e: True if ('type' in e and e['type'] == 'order_request') else False,
-                           event_transformer=lambda e: e['data'])
+                           event_transformer=lambda e: (e['data'],))

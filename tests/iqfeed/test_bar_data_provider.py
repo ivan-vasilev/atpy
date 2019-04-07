@@ -20,26 +20,27 @@ class TestIQFeedBarData(unittest.TestCase):
             # test bars
             e1 = {'GOOG': threading.Event(), 'IBM': threading.Event()}
 
-            def bar_listener(event):
-                if event['type'] == 'bar':
-                    df = event['data']
-                    symbol_ind = df.index.names.index('symbol')
-                    symbol = df.index[symbol_ind][1]
-                    self.assertTrue(symbol in ['IBM', 'GOOG'])
-                    self.assertEqual(len(df), listener.mkt_snapshot_depth)
-                    e1[symbol].set()
+            def bar_listener(df, symbol):
+                self.assertTrue(symbol in ['IBM', 'GOOG'])
+                self.assertEqual(len(df), listener.mkt_snapshot_depth)
+                self.assertEqual(df.shape[1], 8),
+                e1[symbol].set()
 
-            listeners += bar_listener
+            full_bars = listener.all_full_bars_event_stream()
+            full_bars += bar_listener
 
             # test market snapshot
             e3 = threading.Event()
 
-            listeners += lambda event: [self.assertEqual(event['data'].shape[1], 9), e3.set()] if event['type'] == 'bar_market_snapshot' else None
+            bar_updates = listener.bar_updates_event_stream()
+            bar_updates += lambda data, symbol: [self.assertEqual(symbol.shape[1], 8), e3.set()]
 
             listeners({'type': 'watch_bars', 'data': {'symbol': ['GOOG', 'IBM'], 'update': 1}})
 
             for e in e1.values():
                 e.wait()
+
+            e3.wait()
 
     def test_multiple_intervals(self):
         listeners = SyncListeners()
@@ -50,7 +51,7 @@ class TestIQFeedBarData(unittest.TestCase):
 
             e1 = {'GOOG': threading.Event(), 'FB': threading.Event(), 'AAPL': threading.Event(), 'TSLA': threading.Event()}
 
-            def bar_listener(event):
+            def bar_listener(event, symbol):
                 self.assertTrue(isinstance(event, dict))
                 self.assertEqual(len(event), 3)
 
@@ -59,8 +60,6 @@ class TestIQFeedBarData(unittest.TestCase):
 
                 for k, df in event.items():
                     self.assertFalse(df.empty)
-                    symbol_ind = df.index.names.index('symbol')
-                    symbol = df.index[0][symbol_ind]
                     symbols.add(symbol)
 
                     timestamp_ind = df.index.names.index('timestamp')
@@ -122,10 +121,8 @@ class TestIQFeedBarData(unittest.TestCase):
 
             te = threading.Event()
 
-            def full_bar_listener(df):
+            def full_bar_listener(df, symbol):
                 self.assertEqual(df.shape[0], depth)
-                symbol_ind = df.index.names.index('symbol')
-                symbol = df.index.levels[symbol_ind][0]
                 dfs[symbol] = df.copy(deep=True)
 
             full_bars = listener.all_full_bars_event_stream()
@@ -133,10 +130,8 @@ class TestIQFeedBarData(unittest.TestCase):
 
             conditions = {'ind_equal': False, 'ind_not_equal': False}
 
-            def bar_update_listener(df):
+            def bar_update_listener(df, symbol):
                 self.assertEqual(df.shape[0], depth)
-                symbol_ind = df.index.names.index('symbol')
-                symbol = df.index.levels[symbol_ind][0]
                 old_df = dfs[symbol]
 
                 if old_df.index.equals(df.index):

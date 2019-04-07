@@ -126,11 +126,23 @@ class IQFeedBarDataListener(iq.SilentBarListener):
 
     def process_latest_bar_update(self, bar_data: np.array) -> None:
         df = self._process_bar_update(bar_data)
-        self.listeners({'type': 'latest_bar_update', 'data': df, 'interval_type': self.interval_type, 'interval_len': self.interval_len})
+        symbol = bar_data[0].decode("ascii")
+
+        self.listeners({'type': 'latest_bar_update',
+                        'data': df,
+                        'symbol': symbol,
+                        'interval_type': self.interval_type,
+                        'interval_len': self.interval_len})
 
     def process_live_bar(self, bar_data: np.array) -> None:
         df = self._process_bar_update(bar_data)
-        self.listeners({'type': 'live_bar', 'data': df, 'interval_type': self.interval_type, 'interval_len': self.interval_len})
+        symbol = bar_data[0].decode("ascii")
+
+        self.listeners({'type': 'live_bar',
+                        'data': df,
+                        'symbol': symbol,
+                        'interval_type': self.interval_type,
+                        'interval_len': self.interval_len})
 
     def process_history_bar(self, bar_data: np.array) -> None:
         bar_data = (bar_data[0] if len(bar_data) == 1 else bar_data).copy()
@@ -150,7 +162,11 @@ class IQFeedBarDataListener(iq.SilentBarListener):
 
             self.watched_symbols[symbol] = df
 
-            self.listeners({'type': 'history_bars', 'data': df, 'interval_type': self.interval_type, 'interval_len': self.interval_len})
+            self.listeners({'type': 'history_bars',
+                            'data': df,
+                            'symbol': symbol,
+                            'interval_type': self.interval_type,
+                            'interval_len': self.interval_len})
 
     def bar_updates_event_stream(self):
         return EventFilter(listeners=self.listeners,
@@ -160,13 +176,13 @@ class IQFeedBarDataListener(iq.SilentBarListener):
                                              and e['interval_type'] == self.interval_type
                                              and e['interval_len'] == self.interval_len
                            else False,
-                           event_transformer=lambda e: e['data'])
+                           event_transformer=lambda e: (e['data'], e['symbol']))
 
     def all_full_bars_event_stream(self):
         return EventFilter(listeners=self.listeners,
                            event_filter=
                            lambda e: True if 'type' in e and e['type'] in ('history_bars', 'live_bar') and e['interval_type'] == self.interval_type and e['interval_len'] == self.interval_len else False,
-                           event_transformer=lambda e: e['data'])
+                           event_transformer=lambda e: (e['data'], e['symbol']))
 
     def on_event(self, event):
         if event['type'] == 'watch_bars':
@@ -207,7 +223,7 @@ class IQFeedBarDataListener(iq.SilentBarListener):
                                 'tot_vlm': 'total_volume',
                                 'prd_vlm': 'period_volume',
                                 'num_trds': 'number_of_trades'}) \
-            .set_index(['timestamp', 'symbol'], drop=True, append=False) \
+            .set_index('timestamp', drop=True, append=False) \
             .drop(['date', 'time'], axis=1)
 
         return df
@@ -217,8 +233,6 @@ class IQFeedBarDataListener(iq.SilentBarListener):
         result = dict()
 
         bar_data = (bar_data[0] if len(bar_data) == 1 else bar_data).copy()
-
-        result['symbol'] = bar_data[0].decode("ascii")
 
         result['timestamp'] = (datetime.datetime.combine(bar_data['date'].astype(datetime.datetime), datetime.datetime.min.time())
                                + datetime.timedelta(microseconds=bar_data['time'].astype(np.uint64) / 1)) \
@@ -232,8 +246,7 @@ class IQFeedBarDataListener(iq.SilentBarListener):
         result['period_volume'] = bar_data['prd_vlm']
         result['number_of_trades'] = bar_data['num_trds']
 
-        result = pd.DataFrame(result, index=pd.MultiIndex.from_tuples([(result['timestamp'], result['symbol'])], names=['timestamp', 'symbol'])) \
-            .drop(['timestamp', 'symbol'], axis=1)
+        result = pd.DataFrame(result, index=result['timestamp']).drop('timestamp', axis=1)
 
         return result
 
@@ -260,7 +273,7 @@ class MultiIntervalBarsListener(object):
     def event_filter(self):
         return EventFilter(listeners=self.listeners,
                            event_filter=lambda e: True if 'type' in e and e['type'] == 'multiple_bars' else False,
-                           event_transformer=lambda e: e['data'])
+                           event_transformer=lambda e: (e['data'], e['symbol']))
 
     class __MultiIntervalBarListener(object):
         def __init__(self, listeners, symbols: dict, name: str, count):
@@ -269,10 +282,7 @@ class MultiIntervalBarsListener(object):
             self.name = name
             self.count = count
 
-        def __call__(self, bar_data):
-            symbol_ind = bar_data.index.names.index('symbol')
-            symbol = bar_data.index[0][symbol_ind]
-
+        def __call__(self, bar_data, symbol):
             if symbol not in self.symbols:
                 bars = dict()
                 self.symbols[symbol] = bars

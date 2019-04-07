@@ -114,7 +114,7 @@ class MockExchange(object):
     def fulfilled_orders_stream(self):
         return EventFilter(listeners=self.listeners,
                            event_filter=lambda e: True if 'type' in e and e['type'] == 'order_fulfilled' else False,
-                           event_transformer=lambda e: e['data'])
+                           event_transformer=lambda e: (e['data'],))
 
 
 class StaticSlippageLoss:
