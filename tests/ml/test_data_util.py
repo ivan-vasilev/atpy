@@ -19,7 +19,7 @@ class TestDataUtil(unittest.TestCase):
             self.assertTrue(isinstance(result.index, pd.DatetimeIndex))
             self.assertGreater(result.size, 0)
 
-            df = provider.request_data(BarsFilter(ticker=["AAPL", "IBM"], interval_len=3600, interval_type='s', max_bars=batch_len))
+            df = provider.request_data(BarsFilter(ticker=["AAPL", "IBM"], interval_len=3600, interval_type='s', max_bars=batch_len), sync_timestamps=False)
             result_np = daily_volatility(df['close'], parallel=False)
             self.assertTrue(isinstance(result_np.index, pd.MultiIndex))
             self.assertEqual(result_np.index.names, ['symbol', 'timestamp'])
@@ -175,6 +175,116 @@ class TestDataUtil(unittest.TestCase):
         volume = np.array([2, 2, 5, 1, 2, 7, 7, 1, 1], dtype=np.float32)
 
         df = pd.DataFrame.from_dict({'open': open_p, 'high': high_p, 'low': low_p, 'close': close_p, 'volume': volume})
-        result = merge_bars_to_last(df.copy(deep=True), threshold=3)
+        merged_1 = merge_bars_to_last(df.copy(deep=True), threshold=3).reset_index(drop=True)
         self.assertEqual(9, df.shape[0])
-        self.assertEqual(6, result.shape[0])
+        self.assertEqual(6, merged_1.shape[0])
+        self.assertEqual(merged_1['volume'].sum(), df['volume'].sum())
+        np.testing.assert_array_equal(merged_1['volume'].values, np.array([4, 5, 3, 7, 7, 2], dtype=np.float32))
+        np.testing.assert_array_equal(merged_1['low'].values, np.array([1, 3, 4, 6, 7, 8], dtype=np.float32))
+
+        df_copy = df.copy(deep=True)
+        df_copy['symbol'] = 'SYMBOL_2'
+
+        multiind_df = pd.concat({'SYMBOL_1': df, 'SYMBOL_2': df.copy(deep=True)})
+        multiind_df.index.set_names('symbol', level=0, inplace=True)
+        multiind_df.sort_index(inplace=True)
+
+        merged_single_thread = merge_bars_to_last(multiind_df.copy(deep=True), threshold=3, parallel=False)
+        merged_parallel = merge_bars_to_last(multiind_df.copy(deep=True), threshold=3, parallel=True)
+
+        assert_frame_equal(merged_single_thread, merged_parallel)
+
+        slice_1 = merged_single_thread.loc[pd.IndexSlice['SYMBOL_1', :]].reset_index(drop=True)
+        slice_2 = merged_single_thread.loc[pd.IndexSlice['SYMBOL_2', :]].reset_index(drop=True)
+        assert_frame_equal(slice_1, slice_2)
+        assert_frame_equal(slice_1, merged_1)
+
+    def test_merge_bars_to_last_real_data(self):
+        batch_len = 1000
+
+        with IQFeedHistoryProvider() as provider:
+            df = provider.request_data(BarsFilter(ticker=["AAPL", "IBM"], interval_len=60, interval_type='s', max_bars=batch_len)) \
+                .rename({'period_volume': 'volume'}, axis=1) \
+                .drop(['symbol', 'timestamp', 'total_volume', 'number_of_trades'], axis=1)
+
+            mean = df['volume'].mean()
+            merged_1 = merge_bars_to_last(df, threshold=mean, parallel=False)
+            self.assertLess(merged_1.shape[0], df.shape[0])
+            self.assertEqual(merged_1['volume'].sum(), df['volume'].sum())
+
+            for s in merged_1.index.get_level_values('symbol').unique():
+                self.assertGreaterEqual(merged_1.loc[s]['volume'][:-1].min(), mean)
+
+            merged_2 = merge_bars_to_last(df, threshold=mean, parallel=True)
+
+            assert_frame_equal(merged_1, merged_2)
+
+    def test_merge_bars_to_last_performance_single(self):
+        logging.basicConfig(level=logging.INFO)
+        batch = 1000
+        depth = 300
+        with IQFeedHistoryProvider() as provider:
+            df = provider.request_data(BarsFilter(ticker="AAPL", interval_len=600, interval_type='s', max_bars=depth), sync_timestamps=False). \
+                rename({'period_volume': 'volume'}, axis=1) \
+                .drop(['symbol', 'timestamp', 'total_volume', 'number_of_trades'], axis=1)
+            df.sort_index(inplace=True)
+
+            logging.getLogger(__name__).info('DataFrame shape ' + str(df.shape))
+
+            data = [df.copy(deep=True) for _ in range(batch)]
+            mean = df['volume'].mean()
+            merge_bars_to_last(df, threshold=mean, parallel=False)
+
+            now = datetime.datetime.now()
+            for d in data:
+                result = merge_bars_to_last(d, threshold=mean, parallel=False)
+            delta = datetime.datetime.now() - now
+
+            logging.getLogger(__name__).info('Result shape ' + str(result.shape))
+            logging.getLogger(__name__).info('Task done in ' + str(delta) + '; ' + str(delta / batch) + ' per iteration')
+
+    def test_merge_bars_to_last_performance_wide(self):
+        df = self._generate_random_merge_bars_data(batch_len=200, batch_width=10000)
+        self._test_merge_bars_to_last_performance(df, df['volume'].mean(), parallel=False)
+
+    def test_merge_bars_to_last_performance_deep(self):
+        df = self._generate_random_merge_bars_data(batch_len=15000, batch_width=2000)
+        self._test_merge_bars_to_last_performance(df, df['volume'].mean(), parallel=False)
+
+    @staticmethod
+    def _generate_random_merge_bars_data(batch_len, batch_width):
+        logging.basicConfig(level=logging.INFO)
+
+        now = datetime.datetime.now()
+        with IQFeedHistoryProvider() as provider:
+            df1 = provider.request_data(BarsFilter(ticker="AAPL", interval_len=600, interval_type='s', max_bars=batch_len), sync_timestamps=False). \
+                rename({'period_volume': 'volume'}, axis=1) \
+                .drop(['symbol', 'timestamp', 'total_volume', 'number_of_trades'], axis=1)
+
+            df = {'AAPL': df1}
+            for i in range(batch_width):
+                df['AAPL_' + str(i)] = df1.sample(random.randint(int(len(df1) / 3), len(df1) - 1))
+
+            df = pd.concat(df)
+            df.index.set_names(['symbol', 'timestamp'], inplace=True)
+            df.sort_index(inplace=True)
+
+            logging.getLogger(__name__).info('Random data generated in ' + str(datetime.datetime.now() - now) + ' with shapes ' + str(df.shape))
+
+        return df
+
+    def _test_merge_bars_to_last_performance(self, df, mean, parallel=True):
+        now = datetime.datetime.now()
+
+        result = merge_bars_to_last(df, threshold=mean, parallel=parallel)
+        logging.getLogger(__name__).info('Task done in ' + str(datetime.datetime.now() - now) + ' with shapes ' + str(result.shape))
+
+        self.assertLess(result.shape[0], df.shape[0])
+        self.assertEqual(result['volume'].sum(), df['volume'].sum())
+
+        for s in result.index.get_level_values('symbol').unique():
+            self.assertGreaterEqual(result.loc[s]['volume'][:-1].min(), mean)
+
+
+if __name__ == '__main__':
+    unittest.main()

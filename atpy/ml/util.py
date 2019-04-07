@@ -162,23 +162,12 @@ def merge_bars_to_last(df: pd.DataFrame, threshold: float, dollar_value: bool = 
         grpby = df.groupby(level='symbol', group_keys=False, sort=False)
 
         if parallel:
-            params = list()
-            for _, df in grpby:
-                params.append([df['open'], df['high'], df['low'], df['close'], df['volume'], threshold, dollar_value])
-
             with Pool(cpu_count()) as p:
-                p.map(__merge_bars_to_last, params)
-        else:
-            def tmp(tmp_df):
-                __merge_bars_to_last(open_p=tmp_df['open'],
-                                     high_p=tmp_df['high'],
-                                     low_p=tmp_df['low'],
-                                     close_p=tmp_df['close'],
-                                     volume=tmp_df['volume'],
-                                     threshold=threshold,
-                                     dollar_value=dollar_value)
+                result = p.starmap(_merge_bars_to_last, [(df, threshold, dollar_value) for _, df in grpby])
 
-            grpby.apply(tmp)
+            result = pd.concat(result).dropna()
+        else:
+            result = grpby.apply(_merge_bars_to_last, threshold=threshold, dollar_value=dollar_value).dropna()
     else:
         __merge_bars_to_last(open_p=df['open'].values,
                              high_p=df['high'].values,
@@ -188,7 +177,21 @@ def merge_bars_to_last(df: pd.DataFrame, threshold: float, dollar_value: bool = 
                              threshold=threshold,
                              dollar_value=dollar_value)
 
-        return df.dropna()
+        result = df.dropna()
+
+    return result
+
+
+def _merge_bars_to_last(df, threshold, dollar_value):
+    __merge_bars_to_last(open_p=df['open'].values,
+                         high_p=df['high'].values,
+                         low_p=df['low'].values,
+                         close_p=df['close'].values,
+                         volume=df['volume'].values,
+                         threshold=threshold,
+                         dollar_value=dollar_value)
+
+    return df
 
 
 @numba.jit(nopython=True, nogil=True)
@@ -213,8 +216,8 @@ def __merge_bars_to_last(open_p: np.array,
 
     current_vol = 0
     current_start = 0
-    for i, vol in enumerate(volume):
-        current_vol += vol
+    for i in range(volume.size):
+        current_vol += volume[i]
         if (current_vol >= threshold and dollar_value is False) \
                 or (current_vol * close_p[i] >= threshold and dollar_value is True) \
                 or (len(volume) == i + 1):
